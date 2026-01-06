@@ -385,17 +385,13 @@ export function FlowScreen() {
   };
 
   const handleRemoveSpot = (spotId: string) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FlowScreen.tsx:355',message:'handleRemoveSpot called',data:{spotId,removeSpotFromFlowType:typeof removeSpotFromFlow,isFunction:typeof removeSpotFromFlow === 'function'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     const spot = getSpotById(spotId);
+    
     if (typeof removeSpotFromFlow !== 'function') {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FlowScreen.tsx:360',message:'ERROR: removeSpotFromFlow is not a function',data:{spotId,removeSpotFromFlowType:typeof removeSpotFromFlow},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       console.error('removeSpotFromFlow is not a function', typeof removeSpotFromFlow);
       return;
     }
+    
     removeSpotFromFlow(spotId);
     
     // Si es un flow desde spot, agregar a sugerencias
@@ -750,8 +746,8 @@ export function FlowScreen() {
         <FlowyaMapView
           spots={flowSpots}
           onSpotPress={(spot) => {
-            // TODO: Navegar al spot seleccionado
-            console.log('Spot pressed:', spot.id);
+            // Navegar al spot seleccionado
+            router.push(`/spot-detail?id=${spot.id}`);
           }}
           showRoute={true}
           flowSpots={flowSpots}
