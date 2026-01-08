@@ -31,7 +31,8 @@ const getEnvVar = (key: string): string => {
 };
 
 const supabaseUrl = getEnvVar('EXPO_PUBLIC_SUPABASE_URL');
-const supabaseAnonKey = getEnvVar('EXPO_PUBLIC_SUPABASE_ANON_KEY');
+// Buscar ambas variantes: EXPO_PUBLIC_SUPABASE_ANON_KEY o EXPO_PUBLIC_SUPABASE_KEY
+const supabaseAnonKey = getEnvVar('EXPO_PUBLIC_SUPABASE_ANON_KEY') || getEnvVar('EXPO_PUBLIC_SUPABASE_KEY');
 
 // Solo crear el cliente si las credenciales están configuradas
 let supabase: SupabaseClient | null = null;

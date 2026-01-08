@@ -19,6 +19,7 @@ import { FlowCard } from '@/components/FlowCard';
 import { SpotMediaCard } from '@/components/SpotMediaCard';
 import { Icon } from '@/components/ui/Icon';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { SkeletonList } from '@/components/ui/SkeletonList';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamilyMedium, textStyles } from '@/constants/typography';
@@ -28,6 +29,7 @@ import { useSpot } from '@/contexts/SpotContext';
 import { Spot, SpotType } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { calculateDistanceToSpot } from '@/utils/distance';
+import { anyLoading, shouldShowSkeleton } from '@/utils/loadingHelpers';
 import { searchAll } from '@/utils/searchLogic';
 
 
@@ -39,9 +41,12 @@ export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  const { spots } = useSpot();
-  const { paths } = usePath();
+  const { spots, isLoading: isLoadingSpots } = useSpot();
+  const { paths, isLoading: isLoadingPaths } = usePath();
   const { startFlow } = useFlow();
+
+  // Combinar estados de carga para sugerencias iniciales
+  const isLoading = anyLoading(isLoadingSpots, isLoadingPaths);
 
   // Get user location
   useEffect(() => {
@@ -319,31 +324,41 @@ export default function SearchScreen() {
           {/* CANONICAL: Suggested/Nearby spots when input is empty (same layout as results) */}
           {showSuggested && (
             <View style={styles.section}>
-              <FlatList
-                data={suggestedSpots}
-                numColumns={2}
-                keyExtractor={(item) => item.id}
-                columnWrapperStyle={styles.gridRow}
-                contentContainerStyle={styles.gridContent}
-                scrollEnabled={false}
-                windowSize={10}
-                initialNumToRender={6}
-                maxToRenderPerBatch={6}
-                removeClippedSubviews={true}
-                renderItem={({ item: spot }) => {
-                  const distance = calculateDistanceToSpot(userLocation, spot.location);
-                  return (
-                    <View style={styles.gridItem}>
-                      <SpotMediaCard
-                        spot={spot}
-                        size="small"
-                        distance={distance || undefined}
-                        onPress={() => handleSpotPress(spot)}
-                      />
-                    </View>
-                  );
-                }}
-              />
+              {shouldShowSkeleton(isLoading, suggestedSpots.length > 0) ? (
+                <SkeletonList
+                  count={6}
+                  layout="grid"
+                  variant="card"
+                  cardProps={{ size: 'small' }}
+                  style={styles.gridContent}
+                />
+              ) : (
+                <FlatList
+                  data={suggestedSpots}
+                  numColumns={2}
+                  keyExtractor={(item) => item.id}
+                  columnWrapperStyle={styles.gridRow}
+                  contentContainerStyle={styles.gridContent}
+                  scrollEnabled={false}
+                  windowSize={10}
+                  initialNumToRender={6}
+                  maxToRenderPerBatch={6}
+                  removeClippedSubviews={true}
+                  renderItem={({ item: spot }) => {
+                    const distance = calculateDistanceToSpot(userLocation, spot.location);
+                    return (
+                      <View style={styles.gridItem}>
+                        <SpotMediaCard
+                          spot={spot}
+                          size="small"
+                          distance={distance || undefined}
+                          onPress={() => handleSpotPress(spot)}
+                        />
+                      </View>
+                    );
+                  }}
+                />
+              )}
             </View>
           )}
 

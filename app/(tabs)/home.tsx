@@ -20,6 +20,7 @@ import { SpotMediaCard } from '@/components/SpotMediaCard';
 import { Icon } from '@/components/ui/Icon';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { SkeletonCard } from '@/components/ui/SkeletonCard';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
@@ -34,6 +35,7 @@ import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
 import { calculateDistanceToSpot } from '@/utils/distance';
 import { isFlowComplete } from '@/utils/flowValidation';
 import { getFeaturedSpots, getRecentSpots } from '@/utils/gemsLogic';
+import { renderContentSkeletonOrEmpty, shouldShowSkeleton } from '@/utils/loadingHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(SCREEN_WIDTH * 0.75, 400); // 75% of screen width, max 400px for desktop
@@ -51,11 +53,14 @@ export default function HomeScreen() {
     threshold: 24 
   });
 
-  const { spots, refreshSpots } = useSpot();
-  const { paths, refreshFlows } = usePath();
+  const { spots, isLoading: isLoadingSpots, refreshSpots } = useSpot();
+  const { paths, isLoading: isLoadingPaths, refreshFlows } = usePath();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { likedSpots, savedSpots } = useSaved();
   const [selectedLocation, setSelectedLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Combinar estados de carga
+  const isLoading = isLoadingSpots || isLoadingPaths;
 
   // Enable LayoutAnimation on Android
   useEffect(() => {
@@ -231,116 +236,165 @@ export default function HomeScreen() {
       .map((item) => item.path);
   };
 
+  // Render skeleton para slider horizontal de spots
+  const renderSpotSliderSkeleton = () => {
+    return (
+      <View style={styles.sliderContent}>
+        {Array.from({ length: 3 }).map((_, index) => (
+          <View key={index} style={[styles.sliderCard, { width: CARD_WIDTH }]}>
+            <SkeletonCard size="large" />
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   // Render horizontal slider of spots (full card - variant="large")
   const renderSpotSlider = (title: string, spots: Spot[]) => {
-    if (spots.length === 0) return null;
-
+    // Durante refresh con datos existentes, mostrar contenido (no skeleton)
+    const showSkeleton = shouldShowSkeleton(isLoading && !isRefreshing, spots.length > 0);
     return (
       <View style={styles.section}>
         <SectionHeader title={title} variant="large" />
-        <FlatList
-          data={spots}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.sliderContent}
-          keyExtractor={(item) => item.id}
-          windowSize={5}
-          initialNumToRender={3}
-          maxToRenderPerBatch={3}
-          removeClippedSubviews={true}
-          renderItem={({ item: spot }) => {
-            const distance = calculateDistanceToSpot(currentLocation, spot.location);
-            return (
-              <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-                <SpotMediaCard
-                  spot={spot}
-                  size="large"
-                  distance={distance || undefined}
-                  onPress={() => handleSpotPress(spot)}
-                />
-              </View>
-            );
-          }}
-          snapToInterval={CARD_WIDTH + spacing.sm}
-          decelerationRate="fast"
-          pagingEnabled={false}
-        />
+        {showSkeleton ? (
+          renderSpotSliderSkeleton()
+        ) : spots.length > 0 ? (
+          <FlatList
+            data={spots}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.sliderContent}
+            keyExtractor={(item) => item.id}
+            windowSize={5}
+            initialNumToRender={3}
+            maxToRenderPerBatch={3}
+            removeClippedSubviews={true}
+            renderItem={({ item: spot }) => {
+              const distance = calculateDistanceToSpot(currentLocation, spot.location);
+              return (
+                <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
+                  <SpotMediaCard
+                    spot={spot}
+                    size="large"
+                    distance={distance || undefined}
+                    onPress={() => handleSpotPress(spot)}
+                  />
+                </View>
+              );
+            }}
+            snapToInterval={CARD_WIDTH + spacing.sm}
+            decelerationRate="fast"
+            pagingEnabled={false}
+          />
+        ) : null}
+      </View>
+    );
+  };
+
+  // Render skeleton para slider compacto de spots
+  const renderSpotSliderCompactSkeleton = () => {
+    return (
+      <View style={styles.sliderContent}>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <View key={index} style={{ width: 160, marginRight: spacing.sm }}>
+            <SkeletonCard size="small" />
+          </View>
+        ))}
       </View>
     );
   };
 
   // Render horizontal slider of compact spots (small card - variant="small")
   const renderSpotSliderCompact = (title: string, spots: Spot[]) => {
-    if (spots.length === 0) return null;
-
+    // Durante refresh con datos existentes, mostrar contenido (no skeleton)
+    const showSkeleton = shouldShowSkeleton(isLoading && !isRefreshing, spots.length > 0);
     return (
       <View style={styles.section}>
         <SectionHeader title={title} variant="small" />
-        <FlatList
-          data={spots}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.sliderContent}
-          keyExtractor={(item) => item.id}
-          windowSize={5}
-          initialNumToRender={4}
-          maxToRenderPerBatch={4}
-          removeClippedSubviews={true}
-          renderItem={({ item: spot }) => {
-            const distance = calculateDistanceToSpot(currentLocation, spot.location);
-            return (
-              <View style={{ width: 160, marginRight: spacing.sm }}>
-                <SpotMediaCard
-                  spot={spot}
-                  size="small"
-                  distance={distance || undefined}
-                  onPress={() => handleSpotPress(spot)}
-                />
-              </View>
-            );
-          }}
-          snapToInterval={160 + spacing.sm}
-          decelerationRate="fast"
-          pagingEnabled={false}
-        />
+        {showSkeleton ? (
+          renderSpotSliderCompactSkeleton()
+        ) : spots.length > 0 ? (
+          <FlatList
+            data={spots}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.sliderContent}
+            keyExtractor={(item) => item.id}
+            windowSize={5}
+            initialNumToRender={4}
+            maxToRenderPerBatch={4}
+            removeClippedSubviews={true}
+            renderItem={({ item: spot }) => {
+              const distance = calculateDistanceToSpot(currentLocation, spot.location);
+              return (
+                <View style={{ width: 160, marginRight: spacing.sm }}>
+                  <SpotMediaCard
+                    spot={spot}
+                    size="small"
+                    distance={distance || undefined}
+                    onPress={() => handleSpotPress(spot)}
+                  />
+                </View>
+              );
+            }}
+            snapToInterval={160 + spacing.sm}
+            decelerationRate="fast"
+            pagingEnabled={false}
+          />
+        ) : null}
+      </View>
+    );
+  };
+
+  // Render skeleton para lista de flows
+  const renderPathsListSkeleton = () => {
+    return (
+      <View style={styles.pathsList}>
+        {Array.from({ length: 3 }).map((_, index) => (
+          <SkeletonCard key={index} size="medium" showImage={false} />
+        ))}
       </View>
     );
   };
 
   // Render flows list
   const renderPathsList = (title: string, paths: Flow[]) => {
-    if (paths.length === 0) return null;
-
+    // Durante refresh con datos existentes, mostrar contenido (no skeleton)
+    const showSkeleton = shouldShowSkeleton(isLoading && !isRefreshing, paths.length > 0);
     return (
       <View style={styles.section}>
         <SectionHeader title={title} variant="large" />
         <Text style={[textStyles.caption, { color: colors.icon, marginTop: 0, marginBottom: spacing.md, paddingHorizontal: spacing.md }]}>
           Curated flows connecting multiple spots
         </Text>
-        <View style={styles.pathsList}>
-          {paths.map((path) => {
-            const distance = calculateDistanceToSpot(
-              currentLocation,
-              spots.find((s) => s.id === path.spots[0])?.location || { latitude: 0, longitude: 0 }
-            );
-            return (
-              <FlowCard.Display
-                key={path.id}
-                flow={path}
-                spots={spots}
-                distance={distance || undefined}
-                onPress={() => {
-                  router.push(`/flow-detail?id=${path.id}`);
-                }}
-              />
-            );
-          })}
-        </View>
+        {showSkeleton ? (
+          renderPathsListSkeleton()
+        ) : paths.length > 0 ? (
+          <View style={styles.pathsList}>
+            {paths.map((path) => {
+              const distance = calculateDistanceToSpot(
+                currentLocation,
+                spots.find((s) => s.id === path.spots[0])?.location || { latitude: 0, longitude: 0 }
+              );
+              return (
+                <FlowCard.Display
+                  key={path.id}
+                  flow={path}
+                  spots={spots}
+                  distance={distance || undefined}
+                  onPress={() => {
+                    router.push(`/flow-detail?id=${path.id}`);
+                  }}
+                />
+              );
+            })}
+          </View>
+        ) : null}
       </View>
     );
   };
 
-  // Render Explore content
+  // Render Explore content con skeleton
   const renderExplore = () => {
     const filteredSpots = getFilteredSpotsByPriority();
     const nearbySpots = filteredSpots.nearby;
@@ -359,8 +413,45 @@ export default function HomeScreen() {
       newSpots.length > 0 ||
       nearbyPaths.length > 0;
 
-    if (!hasContent) {
-      return (
+    // Durante refresh, mantener contenido visible si hay datos (no mostrar skeleton)
+    const effectiveIsLoading = isLoading && !isRefreshing;
+    return renderContentSkeletonOrEmpty(
+      effectiveIsLoading,
+      hasContent,
+      () => (
+        <View style={styles.exploreContent}>
+          {/* Sliders de spots (card completa) */}
+          {nearbySpots.length > 0 && renderSpotSlider('Nearby - Spots', nearbySpots)}
+          {forYouSpots.length > 0 && renderSpotSlider('For You - Spots', forYouSpots)}
+          {recommendedSpots.length > 0 && renderSpotSlider('Recommended - Spots', recommendedSpots)}
+
+          {/* Sliders de spots compactos (card pequeña - menor jerarquía) */}
+          {maybeYouLikeSpots.length > 0 && renderSpotSliderCompact('Maybe You Like - Spots', maybeYouLikeSpots)}
+          {newSpots.length > 0 && renderSpotSliderCompact('New - Spots', newSpots)}
+
+          {/* Listados de flows */}
+          {nearbyPaths.length > 0 && renderPathsList('Nearby - Flows', nearbyPaths)}
+        </View>
+      ),
+      () => (
+        <View style={styles.exploreContent}>
+          {/* Skeleton para sliders principales */}
+          <View style={styles.section}>
+            <SectionHeader title="Nearby - Spots" variant="large" />
+            {renderSpotSliderSkeleton()}
+          </View>
+          <View style={styles.section}>
+            <SectionHeader title="For You - Spots" variant="large" />
+            {renderSpotSliderSkeleton()}
+          </View>
+          {/* Skeleton para lista de flows */}
+          <View style={styles.section}>
+            <SectionHeader title="Nearby - Flows" variant="large" />
+            {renderPathsListSkeleton()}
+          </View>
+        </View>
+      ),
+      () => (
         <View style={styles.emptyState}>
           <Icon name="map" size={48} color={colors.icon + '60'} />
           <Text style={[textStyles.heading4, { color: colors.text, textAlign: 'center', marginTop: spacing.md, marginBottom: spacing.xs }]}>
@@ -379,23 +470,7 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-      );
-    }
-
-    return (
-      <View style={styles.exploreContent}>
-        {/* Sliders de spots (card completa) */}
-        {nearbySpots.length > 0 && renderSpotSlider('Nearby - Spots', nearbySpots)}
-        {forYouSpots.length > 0 && renderSpotSlider('For You - Spots', forYouSpots)}
-        {recommendedSpots.length > 0 && renderSpotSlider('Recommended - Spots', recommendedSpots)}
-
-        {/* Sliders de spots compactos (card pequeña - menor jerarquía) */}
-        {maybeYouLikeSpots.length > 0 && renderSpotSliderCompact('Maybe You Like - Spots', maybeYouLikeSpots)}
-        {newSpots.length > 0 && renderSpotSliderCompact('New - Spots', newSpots)}
-
-        {/* Listados de flows */}
-        {nearbyPaths.length > 0 && renderPathsList('Nearby - Flows', nearbyPaths)}
-      </View>
+      )
     );
   };
 

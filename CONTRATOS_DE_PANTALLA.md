@@ -37,7 +37,7 @@ Exploración de spots y flows cercanos organizados por proximidad y relevancia. 
 - ✅ `SpotCardCompact`
 - ✅ `FlowCard`
 - ✅ `Icon` (botones de header)
-- ✅ `SkeletonLoader` (estados de carga)
+- ✅ `SkeletonCard`, `SkeletonList` (estados de carga)
 
 ### Componentes Design System prohibidos
 - ❌ `ContentHeader` (usa header custom)
@@ -76,7 +76,7 @@ Búsqueda contextual de spots y flows por texto, categoría o ubicación. Result
 - ✅ `SpotCard` (state="default")
 - ✅ `FlowCard`
 - ✅ `Icon` (botones de header)
-- ✅ `SkeletonLoader` (estados de carga)
+- ✅ `SkeletonCard`, `SkeletonList` (estados de carga)
 - ✅ `Chip` (filtros de categoría, si se usa)
 
 ### Componentes Design System prohibidos
