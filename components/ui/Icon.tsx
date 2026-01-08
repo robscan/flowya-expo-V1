@@ -40,6 +40,8 @@ export const iconMap = {
   add: 'add',
   star: 'star',
   'chevron-down': 'keyboard-arrow-down',
+  'arrow-up': 'keyboard-arrow-up',
+  'arrow-down': 'keyboard-arrow-down',
   sun: 'wb-sunny',
   camera: 'camera-alt',
   money: 'attach-money',
@@ -63,6 +65,17 @@ export const iconMap = {
   'weather-fog': 'blur',
   'weather-drizzle': 'grain',
   'weather-moon': 'nightlight-round',
+  'arrow-left': 'arrow-back',
+  mail: 'mail',
+  info: 'info',
+  refresh: 'refresh',
+  check: 'check',
+  'check-circle': 'check-circle',
+  'alert-circle': 'error',
+  'add-circle': 'add-circle',
+  'plus-circle': 'add-circle', // Alias para add-circle
+  fullscreen: 'fullscreen',
+  'fullscreen-exit': 'fullscreen-exit',
 } as const;
 
 export type IconName = keyof typeof iconMap;
@@ -86,7 +99,11 @@ export function Icon({ name, size = 24, color = '#000', style }: IconProps) {
     return null;
   }
 
-  return <MaterialIcons name={iconName} size={size} color={color} style={style} />;
+  // MaterialIcons type for strictness, fallback to 'help-outline' if not in type
+  type MaterialIconsName = React.ComponentProps<typeof MaterialIcons>['name'];
+  const safeIconName = iconName as MaterialIconsName;
+
+  return <MaterialIcons name={safeIconName ?? 'help-outline'} size={size} color={color} style={style} />;
 }
 
 /**

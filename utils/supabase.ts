@@ -7,6 +7,11 @@
  * Variables de entorno necesarias:
  * - EXPO_PUBLIC_SUPABASE_URL
  * - EXPO_PUBLIC_SUPABASE_ANON_KEY
+ * 
+ * IMPORTANTE: Para Vercel deployment, estas variables deben estar configuradas
+ * en Vercel Environment Variables (Settings > Environment Variables), no en el .env del repo.
+ * El código busca primero en process.env (funciona en desarrollo y Vercel) y luego
+ * en Constants.expoConfig.extra (para builds nativos).
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';

@@ -4,36 +4,34 @@
  * Converted from CreateSpotModal to full screen navigation
  */
 
-import React, { useState, useEffect } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
-  StyleSheet,
-  Text,
-  View,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
+  ActivityIndicator,
   Alert,
   Image,
-  ActivityIndicator,
+  ScrollView,
   StatusBar,
-  Dimensions,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import * as Location from 'expo-location';
-import * as ImagePicker from 'expo-image-picker';
 
-import { Spot, SpotType } from '@/data/spots';
-import { Colors } from '@/constants/theme';
-import { spacing } from '@/constants/spacing';
-import { textStyles } from '@/constants/typography';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useSpot } from '@/contexts/SpotContext';
-import { GlassView } from '@/components/ui/GlassView';
-import { generateSpotContent } from '@/utils/aiContentGenerator';
-import { isAIConfigured } from '@/utils/aiConfig';
-import { Icon } from '@/components/ui/Icon';
-import { iconTouchableContainer } from '@/components/ui/Icon';
 import { FlowyaMapView } from '@/components/MapView';
+import { GlassView } from '@/components/ui/GlassView';
+import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
+import { spacing } from '@/constants/spacing';
+import { Colors } from '@/constants/theme';
+import { textStyles } from '@/constants/typography';
+import { useSpot } from '@/contexts/SpotContext';
+import { Spot, SpotType } from '@/data/spots';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { isAIConfigured } from '@/utils/aiConfig';
+import { generateSpotContent } from '@/utils/aiContentGenerator';
 
 const SPOT_TYPES: SpotType[] = [
   'beach',
@@ -229,19 +227,6 @@ export default function CreateSpotScreen() {
 
   // Validación en tiempo real
   const isFormValid = currentLocation && photo;
-  const [validationErrors, setValidationErrors] = useState<{ location?: string; photo?: string }>({});
-
-  // Validar en tiempo real
-  useEffect(() => {
-    const errors: { location?: string; photo?: string } = {};
-    if (!currentLocation) {
-      errors.location = 'Location required';
-    }
-    if (!photo) {
-      errors.photo = 'Photo required';
-    }
-    setValidationErrors(errors);
-  }, [currentLocation, photo]);
 
   // Handle send (create spot)
   const handleSend = () => {
@@ -419,29 +404,29 @@ export default function CreateSpotScreen() {
           {/* Map */}
           {currentLocation && (
             <>
-                    <View style={styles.mapContainer}>
+              <View style={styles.mapContainer}>
                       <FlowyaMapView
-                        spots={[{
-                          id: 'temp-spot',
-                          name: 'New Spot',
-                          location: currentLocation,
-                          photos: [],
-                          type: 'other',
-                          createdAt: new Date(),
-                          updatedAt: new Date(),
-                        }]}
-                        onSpotPress={() => {}}
-                        onLongPress={handleLocationChange}
-                        initialRegion={{
-                          latitude: currentLocation.latitude,
-                          longitude: currentLocation.longitude,
-                          latitudeDelta: 0.01,
-                          longitudeDelta: 0.01,
-                        }}
-                        userLocation={userLocation}
+                  spots={[{
+                    id: 'temp-spot',
+                    name: 'New Spot',
+                    location: currentLocation,
+                    photos: [],
+                    type: 'other',
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                  }]}
+                  onSpotPress={() => {}}
+                  onLongPress={handleLocationChange}
+                  initialRegion={{
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
+                    latitudeDelta: 0.01,
+                    longitudeDelta: 0.01,
+                  }}
+                  userLocation={userLocation}
                         showUserLocation={!!userLocation}
-                      />
-                    </View>
+                />
+              </View>
               <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
                 {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
               </Text>
@@ -524,7 +509,7 @@ export default function CreateSpotScreen() {
         
         {/* Generate with AI button - only show if AI is configured and location is available */}
         {isAIConfigured() && currentLocation && (
-          <Tooltip text="Generate name and description with AI">
+          <View style={{ marginRight: spacing.sm }}>
             <TouchableOpacity
               style={[
                 styles.aiButton,
@@ -548,7 +533,7 @@ export default function CreateSpotScreen() {
                 </>
               )}
             </TouchableOpacity>
-          </Tooltip>
+          </View>
         )}
         
         <TouchableOpacity

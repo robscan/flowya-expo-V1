@@ -1,62 +1,36 @@
 /**
- * Search Screen
- * Scope 10: Search Screen - Búsqueda contextual de Spots y Paths
+ * Search Screen - CANONICAL IMPLEMENTATION
  * 
- * Principios de diseño:
- * - Layout: Columna única, scroll natural, mobile-first
- * - Header con barra de búsqueda prominente (inspiración Apple Music)
- * - Barra de búsqueda con estilo glass, placeholder claro
- * - Sugerencias mientras el usuario escribe
- * - Resultados organizados por relevancia y cercanía
- * - Opción de crear Spot si no se encuentra
+ * Rules:
+ * - Minimal, fast, content-focused
+ * - Search input replaces header title
+ * - Single vertical scroll, no tabs, no map
+ * - Suggested content when input is empty (same layout as results)
+ * - Spots: 2-column grid, Flows: single-column list
+ * - Add New Spot: secondary button after results
  */
 
-import { useState, useMemo, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Keyboard, FlatList, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
+import { FlatList, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { spacing } from '@/constants/spacing';
-import { textStyles, fontSize, lineHeight, fontFamilyMedium, fontFamily } from '@/constants/typography';
-import { borderRadius } from '@/constants/borders';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { GlassView } from '@/components/ui/GlassView';
-import { SearchBar } from '@/components/SearchBar';
-import { SearchSuggestion } from '@/components/SearchSuggestion';
-import { SearchResultCard } from '@/components/SearchResultCard';
-import { useSpot } from '@/contexts/SpotContext';
-import { usePath } from '@/contexts/PathContext';
-import { useFlow } from '@/contexts/FlowContext';
-import { searchAll, getSuggestions, SearchResult } from '@/utils/searchLogic';
-import { calculateDistanceToSpot } from '@/utils/distance';
-import { Spot, SpotType } from '@/data/spots';
-import { Flow } from '@/data/flows';
-import { SpotCard } from '@/components/SpotCard';
 import { FlowCard } from '@/components/FlowCard';
-import { SearchCategoryCard } from '@/components/SearchCategoryCard';
-import { SimpleMapView } from '@/components/SimpleMapView';
-import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
+import { SpotMediaCard } from '@/components/SpotMediaCard';
+import { Icon } from '@/components/ui/Icon';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
+import { spacing } from '@/constants/spacing';
+import { Colors } from '@/constants/theme';
+import { fontFamilyMedium, textStyles } from '@/constants/typography';
+import { useFlow } from '@/contexts/FlowContext';
+import { usePath } from '@/contexts/PathContext';
+import { useSpot } from '@/contexts/SpotContext';
+import { Spot, SpotType } from '@/data/spots';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { calculateDistanceToSpot } from '@/utils/distance';
+import { searchAll } from '@/utils/searchLogic';
 
-// Helper to get readable type name (same as in SpotCard)
-function getSpotTypeLabel(type: SpotType): string {
-  const labels: Record<SpotType, string> = {
-    beach: 'Beach',
-    cafe: 'Café',
-    viewpoint: 'Viewpoint',
-    museum: 'Museum',
-    restaurant: 'Restaurant',
-    park: 'Park',
-    monument: 'Monument',
-    market: 'Market',
-    other: 'Other',
-  };
-  return labels[type] || 'Other';
-}
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = Math.min(SCREEN_WIDTH * 0.75, 400); // 75% of screen width, max 400px for desktop
 
 export default function SearchScreen() {
   const colorScheme = useColorScheme();
@@ -64,16 +38,10 @@ export default function SearchScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [activeTab, setActiveTab] = useState<'results' | 'map'>('results');
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<SpotType | null>(null);
-  const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<'relevance' | 'distance' | 'recent' | 'alphabetical'>('relevance');
-  const SEARCH_HISTORY_KEY = '@flowya_search_history';
 
-  const { spots, isLoading: spotsLoading, getSpotById } = useSpot();
-  const { paths, isLoading: pathsLoading, getPathById } = usePath();
+  const { spots, isLoading: spotsLoading } = useSpot();
+  const { paths, isLoading: pathsLoading } = usePath();
   const { startFlow } = useFlow();
   const isLoading = spotsLoading || pathsLoading;
 
@@ -98,38 +66,19 @@ export default function SearchScreen() {
     })();
   }, []);
 
-  // Calcular sugerencias mientras escribe con distancia
-  const suggestions = useMemo(() => {
-    if (!isSearchFocused || searchQuery.length < 2) {
-      return [];
-    }
-    const baseSuggestions = getSuggestions(spots, paths, searchQuery, 5);
-    // Agregar distancia a las sugerencias si hay ubicación
-    if (userLocation) {
-      return baseSuggestions.map((suggestion) => {
-        if (suggestion.type === 'spot') {
-          const spot = spots.find((s) => s.id === suggestion.id);
-          if (spot) {
-            const distance = calculateDistanceToSpot(userLocation, spot.location);
-            return { ...suggestion, distance: distance || undefined };
-          }
-        }
-        return suggestion;
-      });
-    }
-    return baseSuggestions;
-  }, [searchQuery, spots, paths, isSearchFocused, userLocation]);
 
-  // Obtener spots destacados para estado inicial
-  const featuredSpots = useMemo(() => {
-    if (searchQuery.trim().length > 0 || isSearchFocused) {
+
+  // CANONICAL: Suggested/Nearby spots when input is empty (same layout as results)
+  const suggestedSpots = useMemo(() => {
+    // Show suggested spots when query is empty
+    if (searchQuery.trim().length > 0) {
       return [];
     }
     
-    let featured: Spot[] = [];
+    let suggested: Spot[] = [];
     
     if (userLocation) {
-      // Priorizar cercanía y variedad
+      // Prioritize proximity and variety
       const spotsWithDistance = spots
         .map((spot) => ({
           spot,
@@ -137,76 +86,52 @@ export default function SearchScreen() {
         }))
         .sort((a, b) => a.distance - b.distance);
       
-      // Seleccionar spots variados (diferentes tipos)
+      // Select varied spots (different types)
       const usedTypes = new Set<SpotType>();
       for (const { spot } of spotsWithDistance) {
-        if (featured.length >= 6) break;
-        if (!usedTypes.has(spot.type) || featured.length < 3) {
-          featured.push(spot);
+        if (suggested.length >= 6) break;
+        if (!usedTypes.has(spot.type) || suggested.length < 3) {
+          suggested.push(spot);
           usedTypes.add(spot.type);
         }
       }
       
-      // Si no hay suficientes, agregar más cercanos
-      if (featured.length < 6) {
+      // If not enough, add more nearby
+      if (suggested.length < 6) {
         for (const { spot } of spotsWithDistance) {
-          if (featured.length >= 6) break;
-          if (!featured.find((s) => s.id === spot.id)) {
-            featured.push(spot);
+          if (suggested.length >= 6) break;
+          if (!suggested.find((s) => s.id === spot.id)) {
+            suggested.push(spot);
           }
         }
       }
     } else {
-      // Sin ubicación: mostrar spots variados
+      // No location: show varied spots
       const usedTypes = new Set<SpotType>();
       for (const spot of spots) {
-        if (featured.length >= 6) break;
-        if (!usedTypes.has(spot.type) || featured.length < 3) {
-          featured.push(spot);
+        if (suggested.length >= 6) break;
+        if (!usedTypes.has(spot.type) || suggested.length < 3) {
+          suggested.push(spot);
           usedTypes.add(spot.type);
         }
       }
     }
     
-    return featured;
-  }, [spots, userLocation, searchQuery, isSearchFocused]);
+    return suggested;
+  }, [spots, userLocation, searchQuery]);
 
-  // Calcular resultados de búsqueda con distancia y filtro de categoría
+  // CANONICAL: Search results (only when query has 2+ characters)
   const searchResults = useMemo(() => {
-    // Si hay categoría seleccionada, mostrar todos los spots de esa categoría
-    // Si hay query, buscar dentro de los spots filtrados
-    if (!selectedCategory && searchQuery.trim().length < 2) {
+    if (searchQuery.trim().length < 2) {
       return { spots: [], paths: [] };
     }
     
-    // Filtrar spots por categoría si está seleccionada
-    let filteredSpots = spots;
-    if (selectedCategory) {
-      filteredSpots = spots.filter((spot) => spot.type === selectedCategory);
-    }
+    const results = searchAll(spots, paths, searchQuery, {
+      spotLimit: 20,
+      pathLimit: 10,
+    });
     
-    // Si hay query, buscar; si solo hay categoría, mostrar todos los spots de esa categoría
-    const query = searchQuery.trim().length >= 2 ? searchQuery : '';
-    let results;
-    
-    if (query) {
-      results = searchAll(filteredSpots, paths, query, {
-        spotLimit: 20,
-        pathLimit: 10,
-      });
-    } else {
-      // Si solo hay categoría sin query, mostrar todos los spots de esa categoría
-      results = {
-        spots: filteredSpots.map((spot) => ({
-          type: 'spot' as const,
-          spot,
-          relevanceScore: 100, // Todos tienen misma relevancia
-        })),
-        paths: [], // No mostrar paths sin query
-      };
-    }
-    
-    // Ordenar spots por relevancia + cercanía si hay ubicación
+    // Add distance and sort by relevance + proximity
     if (userLocation) {
       results.spots = results.spots
         .map((result) => {
@@ -217,106 +142,29 @@ export default function SearchScreen() {
           return result;
         })
         .sort((a, b) => {
-          // Si hay query, priorizar por relevancia primero, luego por distancia
-          // Si solo hay categoría, ordenar solo por distancia
-          if (query && a.relevanceScore !== b.relevanceScore) {
+          // Prioritize relevance first, then distance as tie-breaker
+          if (Math.abs(a.relevanceScore - b.relevanceScore) > 10) {
             return b.relevanceScore - a.relevanceScore;
           }
           const distA = a.distance || Infinity;
           const distB = b.distance || Infinity;
           return distA - distB;
         });
-    } else if (!query) {
-      // Sin ubicación y sin query: ordenar por relevancia (todos tienen 100, así que mantiene orden original)
+    } else {
+      // No location: sort by relevance only
       results.spots.sort((a, b) => b.relevanceScore - a.relevanceScore);
     }
     
     return results;
-  }, [searchQuery, spots, paths, userLocation, selectedCategory]);
+  }, [searchQuery, spots, paths, userLocation]);
 
-  // Apply sorting to results
-  const sortedResults = useMemo(() => {
-    const sorted = { ...searchResults };
-    
-    if (sortBy === 'distance' && userLocation) {
-      sorted.spots.sort((a, b) => {
-        const distA = a.distance || Infinity;
-        const distB = b.distance || Infinity;
-        return distA - distB;
-      });
-    } else if (sortBy === 'recent') {
-      sorted.spots.sort((a, b) => {
-        if (!a.spot || !b.spot) return 0;
-        return new Date(b.spot.createdAt).getTime() - new Date(a.spot.createdAt).getTime();
-      });
-    } else if (sortBy === 'alphabetical') {
-      sorted.spots.sort((a, b) => {
-        const nameA = a.spot?.name || '';
-        const nameB = b.spot?.name || '';
-        return nameA.localeCompare(nameB);
-      });
-    }
-    // 'relevance' is already sorted in searchResults
-    
-    return sorted;
-  }, [searchResults, sortBy, userLocation]);
+  // CANONICAL: Determine what to show
+  const hasQuery = searchQuery.trim().length >= 2;
+  const hasResults = searchResults.spots.length > 0 || searchResults.paths.length > 0;
+  const showResults = hasQuery && hasResults;
+  const showNoResults = hasQuery && !hasResults;
+  const showSuggested = !hasQuery && suggestedSpots.length > 0;
 
-  const hasResults = sortedResults.spots.length > 0 || sortedResults.paths.length > 0;
-  const showSuggestions = isSearchFocused && (suggestions.length > 0 || searchHistory.length > 0) && !hasResults;
-  const showResults = (searchQuery.trim().length >= 2 || selectedCategory) && hasResults;
-  const showNoResults = (searchQuery.trim().length >= 2 || selectedCategory) && !hasResults && !isSearchFocused;
-  const showEmpty = searchQuery.trim().length === 0 && !isSearchFocused && !selectedCategory;
-
-  // Spots para mostrar en el mapa
-  const mapSpots = useMemo(() => {
-    if (selectedCategory) {
-      return spots.filter((spot) => spot.type === selectedCategory);
-    }
-    if (searchQuery.trim().length >= 2) {
-      return searchResults.spots.map((result) => result.spot).filter((spot): spot is Spot => spot !== undefined);
-    }
-    // Estado inicial: mostrar spots destacados
-    return featuredSpots;
-  }, [selectedCategory, searchQuery, searchResults.spots, featuredSpots, spots]);
-
-  // Categorías presentes en los resultados actuales (solo si hay más de una)
-  const resultCategories = useMemo(() => {
-    if (!showResults || searchResults.spots.length === 0) {
-      return [];
-    }
-    
-    // Obtener categorías únicas de los resultados
-    const categories = new Set<SpotType>();
-    searchResults.spots.forEach((result) => {
-      if (result.spot?.type) {
-        categories.add(result.spot.type);
-      }
-    });
-    
-    const categoryArray = Array.from(categories);
-    
-    // Solo mostrar chips si hay más de una categoría
-    return categoryArray.length > 1 ? categoryArray : [];
-  }, [showResults, searchResults.spots]);
-
-  // Manejar selección de sugerencia
-  const handleSuggestionPress = (suggestion: typeof suggestions[0]) => {
-    setSearchQuery(suggestion.name);
-    setIsSearchFocused(false);
-    Keyboard.dismiss();
-  };
-
-  // Manejar selección de categoría
-  const handleCategoryPress = (type: SpotType) => {
-    setSelectedCategory(type);
-    setIsSearchFocused(false);
-    Keyboard.dismiss();
-  };
-
-  // Limpiar filtro de categoría
-  const handleClearCategory = () => {
-    setSelectedCategory(null);
-  };
 
   // Manejar selección de Spot desde resultados o mapa
   const handleSpotPress = (spotOrId: Spot | string) => {
@@ -329,23 +177,9 @@ export default function SearchScreen() {
     startFlow(pathId);
   };
 
-  // Handle search query change and save to history
+  // CANONICAL: Handle search input
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
-  };
-
-  // Handle search submit
-  const handleSearchSubmit = () => {
-    if (searchQuery.trim().length >= 2) {
-      saveToHistory(searchQuery);
-    }
-  };
-
-  // Handle selecting from history
-  const handleHistorySelect = (query: string) => {
-    setSearchQuery(query);
-    saveToHistory(query);
-    Keyboard.dismiss();
   };
 
   // Manejar creación de Spot desde búsqueda
@@ -365,235 +199,104 @@ export default function SearchScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
       {/* Contenido */}
       {isLoading ? (
-        <View style={styles.loadingState}>
-          <Text style={[textStyles.body, { color: colors.icon }]}>Loading...</Text>
-        </View>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}>
+          {/* Search header skeleton */}
+          <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+            <SkeletonLoader width="100%" height={48} borderRadius={12} />
+          </View>
+
+          
+          {/* Results skeleton */}
+          <View style={styles.resultsContainer}>
+            {[1, 2, 3].map((i) => (
+              <View key={i} style={styles.resultSkeletonCard}>
+                <SkeletonLoader width="100%" height={120} borderRadius={12} />
+                <View style={{ padding: spacing.md }}>
+                  <SkeletonLoader width="70%" height={20} borderRadius={8} style={{ marginTop: spacing.sm }} />
+                  <SkeletonLoader width="50%" height={16} borderRadius={8} style={{ marginTop: spacing.xs }} />
+                  <SkeletonLoader width="40%" height={16} borderRadius={8} style={{ marginTop: spacing.xs }} />
+                </View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       ) : (
         <ScrollView
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled">
-          {/* Header inside ScrollView (scrolls) */}
-          <View
-            style={[
-              styles.header,
-              {
-                borderBottomColor:
-                  colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-              },
-            ]}>
-            <View style={styles.headerContent}>
-              <Text style={[textStyles.heading3, { color: colors.text }]}>Search</Text>
-              <TouchableOpacity
-                onPress={handleCreateSpotFromSearch}
-                style={iconTouchableContainer.base}
-                activeOpacity={0.7}>
-                <Icon name="add" size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <SearchBar
-              value={searchQuery}
-              onChangeText={handleSearchChange}
-              placeholder="Search places..."
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => setIsSearchFocused(false)}
-              onSubmitEditing={handleSearchSubmit}
-            />
-          </View>
-
-          {/* Category Chips - Solo mostrar si hay resultados con más de una categoría */}
-          {resultCategories.length > 0 && (
-            <View style={styles.categoriesContainer}>
-              {resultCategories.map((type) => (
-                <SearchCategoryCard
-                  key={type}
-                  type={type}
-                  onPress={() => handleCategoryPress(type)}
-                />
-              ))}
-            </View>
-          )}
-
-          {/* Internal tabs */}
-          {(showResults || selectedCategory || searchQuery.trim().length >= 2) && (
-            <View
-              style={[
-                styles.tabsContainer,
-                {
-                  borderBottomColor:
-                    colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                },
-              ]}>
-              <TouchableOpacity
-                style={[
-                  styles.tab,
-                  activeTab === 'results' && styles.tabActive,
-                  activeTab === 'results' && { borderBottomColor: colors.tint },
-                ]}
-                onPress={() => setActiveTab('results')}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    textStyles.bodyMedium,
-                    { color: activeTab === 'results' ? colors.tint : colors.icon },
-                  ]}>
-                  Results
+          {/* CANONICAL: Search header with integrated input */}
+          <SectionHeader
+            variant="search"
+            searchValue={searchQuery}
+            onSearchChange={handleSearchChange}
+            searchPlaceholder="Search places..."
+            autoFocus={Platform.OS !== 'web'}
+          />
+          
+          {/* CANONICAL: Search results header with count */}
+          {showResults && (
+            <View style={styles.searchResultsHeader}>
+              <Text style={[textStyles.caption, { color: colors.icon, flex: 1, marginRight: spacing.sm }]}>
+                {`Search results for "${searchQuery.trim()}"`}
+              </Text>
+              <View style={[styles.resultsBadge, { backgroundColor: colors.tint + '20' }]}>
+                <Text style={[textStyles.caption, { color: colors.tint, fontFamily: fontFamilyMedium }]}>
+                  {searchResults.spots.length + searchResults.paths.length} {searchResults.spots.length + searchResults.paths.length === 1 ? 'result' : 'results'}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.tab,
-                  activeTab === 'map' && styles.tabActive,
-                  activeTab === 'map' && { borderBottomColor: colors.tint },
-                ]}
-                onPress={() => setActiveTab('map')}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    textStyles.bodyMedium,
-                    { color: activeTab === 'map' ? colors.tint : colors.icon },
-                  ]}>
-                  Map
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Suggestions and History */}
-          {showSuggestions && (
-            <View style={styles.suggestionsContainer}>
-              {/* Search History */}
-              {searchHistory.length > 0 && searchQuery.trim().length === 0 && (
-                <>
-                  <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.sm }]}>
-                    Recent searches
-                  </Text>
-                  {searchHistory.slice(0, 5).map((query, index) => (
-                    <TouchableOpacity
-                      key={`history-${index}`}
-                      style={[styles.historyItem, { backgroundColor: colors.background + '80' }]}
-                      onPress={() => handleHistorySelect(query)}
-                      activeOpacity={0.7}>
-                      <Icon name="clock" size={16} color={colors.icon} />
-                      <Text style={[textStyles.body, { color: colors.text, marginLeft: spacing.sm, flex: 1 }]}>
-                        {query}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                  {suggestions.length > 0 && (
-                    <Text style={[textStyles.bodyMedium, { color: colors.icon, marginTop: spacing.md, marginBottom: spacing.sm }]}>
-                      Suggestions
-                    </Text>
-                  )}
-                </>
-              )}
-              {/* Suggestions */}
-              {suggestions.map((suggestion) => (
-                <SearchSuggestion
-                  key={`${suggestion.type}-${suggestion.id}`}
-                  name={suggestion.name}
-                  type={suggestion.type}
-                  distance={suggestion.distance}
-                  onPress={() => handleSuggestionPress(suggestion)}
-                />
-              ))}
-            </View>
-          )}
-
-          {/* Badge de filtro activo */}
-          {selectedCategory && (
-            <View style={styles.filterBadge}>
-              <View
-                style={[
-                  styles.filterBadgeContent,
-                  {
-                    backgroundColor: colorScheme === 'dark' ? '#000' : '#fff',
-                  },
-                ]}>
-                <Text
-                  style={[
-                    styles.filterBadgeText,
-                    {
-                      color: colorScheme === 'dark' ? '#fff' : colors.text,
-                      marginRight: spacing.xs,
-                    },
-                  ]}>
-                  {getSpotTypeLabel(selectedCategory).toUpperCase()}
-                </Text>
-                <TouchableOpacity
-                  onPress={handleClearCategory}
-                  style={styles.filterBadgeClose}
-                  activeOpacity={0.7}>
-                  <Icon
-                    name="close"
-                    size={14}
-                    color={colorScheme === 'dark' ? '#fff' : colors.text}
-                  />
-                </TouchableOpacity>
               </View>
             </View>
           )}
 
-          {/* Tab Content */}
-          {activeTab === 'results' ? (
+          {/* CANONICAL: Search Results */}
+          {showResults && (
             <>
-              {/* Resultados */}
-              {showResults && (
-            <>
-              {/* Spots - Results (Slider horizontal) */}
-              {sortedResults.spots.length > 0 && (
+              {/* Spots - 2-column grid */}
+              {searchResults.spots.length > 0 && (
                 <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Places ({sortedResults.spots.length})
-                  </Text>
                   <FlatList
-                    data={sortedResults.spots}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.sliderContent}
+                    data={searchResults.spots as { type: 'spot'; spot: Spot; relevanceScore: number; distance?: number }[]}
+                    numColumns={2}
                     keyExtractor={(item) => `spot-${item.spot!.id}`}
+                    columnWrapperStyle={styles.gridRow}
+                    contentContainerStyle={styles.gridContent}
+                    scrollEnabled={false}
                     renderItem={({ item: result }) => {
                       if (!result.spot) return null;
                       const distance = result.distance || calculateDistanceToSpot(userLocation, result.spot.location);
                       return (
-                        <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-                          <SpotCard
+                        <View style={styles.gridItem}>
+                          <SpotMediaCard
                             spot={result.spot}
-                            distance={distance || undefined}
-                            onPress={() => handleSpotPress(result.spot!.id)}
-                            inSlider={true}
+                            size="small"
+                            distance={distance === null ? undefined : distance}
+                            onPress={() => handleSpotPress(result.spot!)}
                           />
                         </View>
                       );
                     }}
-                    snapToInterval={CARD_WIDTH + spacing.sm}
-                    decelerationRate="fast"
-                    pagingEnabled={false}
                   />
                 </View>
               )}
 
-              {/* Paths - Results (Lista vertical) */}
-              {sortedResults.paths.length > 0 && (
+              {/* Flows - Single column list */}
+              {searchResults.paths.length > 0 && (
                 <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: spacing.xs / 2 }]}>
-                    Flows ({sortedResults.paths.length})
-                  </Text>
-                  <Text style={[textStyles.caption, { color: colors.icon, marginTop: 0, marginBottom: spacing.md, paddingHorizontal: spacing.md }]}>
-                    Suggested paths
-                  </Text>
                   <View style={styles.pathsList}>
-                    {sortedResults.paths.map((result) => {
+                    {searchResults.paths.map((result) => {
                       if (!result.path) return null;
                       const pathSpots = result.path.spots
                         .map((spotId) => spots.find((s) => s.id === spotId))
                         .filter((s): s is Spot => s !== undefined);
-                      const distance = pathSpots.length > 0 && userLocation
+                      const distance = (pathSpots.length > 0 && userLocation)
                         ? calculateDistanceToSpot(userLocation, pathSpots[0].location)
                         : undefined;
                       return (
-                        <FlowCard
+                        <FlowCard.Display
                           key={`path-${result.path.id}`}
                           flow={result.path}
                           spots={spots}
@@ -605,79 +308,74 @@ export default function SearchScreen() {
                   </View>
                 </View>
               )}
+
+              {/* CANONICAL: Add New Spot - Secondary button after results */}
+              <View style={styles.addSpotContainer}>
+                <TouchableOpacity
+                  style={[styles.addSpotButton, { borderColor: colors.icon + '30' }]}
+                  onPress={handleCreateSpotFromSearch}
+                  activeOpacity={0.7}>
+                  <Text style={[textStyles.bodyMedium, { color: colors.text }]}>+ Add a new spot</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
 
-              {/* Sin resultados - opción de crear Spot */}
+          {/* CANONICAL: No results */}
           {showNoResults && (
             <View style={styles.noResultsContainer}>
               <Icon name="search" size={48} color={colors.icon + '60'} />
-              <Text style={[textStyles.heading4, { color: colors.text, marginTop: spacing.md, marginBottom: spacing.xs }]}>
+              <Text style={[textStyles.heading3, { color: colors.text, marginTop: spacing.md, marginBottom: spacing.xs }]}>
                 Nothing found
               </Text>
               <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg, textAlign: 'center' }]}>
-                No places or flows match "{searchQuery}"
-              </Text>
-              <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.md, textAlign: 'center' }]}>
-                Try different words or mark a new place
+                No places or flows match &quot;{searchQuery}&quot;
               </Text>
               <TouchableOpacity
-                style={[styles.createButton, { backgroundColor: colors.tint }]}
+                style={[styles.addSpotButton, { borderColor: colors.icon + '30', marginTop: spacing.md }]}
                 onPress={handleCreateSpotFromSearch}
                 activeOpacity={0.7}>
-                <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>
-                  Mark place
-                </Text>
+                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>+ Add a new spot</Text>
               </TouchableOpacity>
             </View>
           )}
 
-              {/* Estado inicial: Featured Spots y Categorías */}
-              {showEmpty && (
-            <>
-              {/* Featured Spots */}
-              {featuredSpots.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    {userLocation ? 'Nearby Spots' : 'Featured Spots'}
-                  </Text>
-                  <FlatList
-                    data={featuredSpots}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.sliderContent}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item: spot }) => {
-                      const distance = calculateDistanceToSpot(userLocation, spot.location);
-                      return (
-                        <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-                          <SpotCard
-                            spot={spot}
-                            distance={distance || undefined}
-                            onPress={() => handleSpotPress(spot.id)}
-                            inSlider={true}
-                          />
-                        </View>
-                      );
-                    }}
-                    snapToInterval={CARD_WIDTH + spacing.sm}
-                    decelerationRate="fast"
-                    pagingEnabled={false}
-                  />
-                </View>
-              )}
-
-            </>
-          )}
-            </>
-          ) : (
-            /* Tab Map */
-            <View style={styles.mapContainer}>
-              <SimpleMapView
-                spots={mapSpots}
-                onSpotPress={handleSpotPress}
-                userLocation={userLocation}
+          {/* CANONICAL: Suggested/Nearby spots when input is empty (same layout as results) */}
+          {showSuggested && (
+            <View style={styles.section}>
+              <FlatList
+                data={suggestedSpots}
+                numColumns={2}
+                keyExtractor={(item) => item.id}
+                columnWrapperStyle={styles.gridRow}
+                contentContainerStyle={styles.gridContent}
+                scrollEnabled={false}
+                renderItem={({ item: spot }) => {
+                  const distance = calculateDistanceToSpot(userLocation, spot.location);
+                  return (
+                    <View style={styles.gridItem}>
+                      <SpotMediaCard
+                        spot={spot}
+                        size="small"
+                        distance={distance || undefined}
+                        onPress={() => handleSpotPress(spot)}
+                      />
+                    </View>
+                  );
+                }}
               />
+            </View>
+          )}
+
+          {/* CANONICAL: Add New Spot - Secondary button after suggested content */}
+          {showSuggested && (
+            <View style={styles.addSpotContainer}>
+              <TouchableOpacity
+                style={[styles.addSpotButton, { borderColor: colors.icon + '30' }]}
+                onPress={handleCreateSpotFromSearch}
+                activeOpacity={0.7}>
+                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>+ Add a new spot</Text>
+              </TouchableOpacity>
             </View>
           )}
         </ScrollView>
@@ -692,158 +390,75 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderBottomWidth: 1,
-    marginBottom: spacing.sm,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   content: {
     flex: 1,
   },
   contentContainer: {
     paddingBottom: spacing['2xl'],
   },
-  suggestionsContainer: {
-    marginBottom: spacing.md,
+  searchResultsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  resultsBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: 12,
   },
   section: {
     marginBottom: spacing.xl,
   },
-  sectionTitle: {
-    fontFamily: fontFamilyMedium,
-    fontSize: fontSize.lg,
-    lineHeight: lineHeight.lg,
-    fontWeight: '600',
-    marginBottom: spacing.md,
+  gridContent: {
     paddingHorizontal: spacing.md,
+    gap: spacing.sm,
   },
-  sliderContent: {
-    paddingHorizontal: spacing.md,
+  gridRow: {
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
-  sliderCard: {
-    marginRight: spacing.sm,
+  gridItem: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '50%',
   },
   pathsList: {
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
-  },
-  resultsSection: {
-    marginBottom: spacing.xl,
-  },
-  categoriesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-  filterBadge: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  filterBadgeContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm, // 16px - igual que chip del card
-    paddingVertical: spacing.xs / 2, // 4px - igual que chip del card
-    borderRadius: borderRadius.sm, // 8px - igual que chip del card
-    alignSelf: 'flex-start',
-  },
-  filterBadgeText: {
-    fontFamily: fontFamilyMedium,
-    fontSize: fontSize.xs, // 12px - igual que chip del card
-    lineHeight: lineHeight.xs, // 16px - igual que chip del card
-    fontWeight: '500',
-  },
-  filterBadgeClose: {
-    marginLeft: spacing.xs / 2,
-    padding: 0,
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-  },
-  tab: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-    marginRight: spacing.md,
-  },
-  tabActive: {
-    // Additional styles applied inline
-  },
-  mapContainer: {
-    flex: 1,
-    minHeight: 400,
   },
   noResultsContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
+    minHeight: 300,
   },
-  createButton: {
+  addSpotContainer: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  addSpotButton: {
+    width: '100%',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: 8,
-    minHeight: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyState: {
-    flex: 1,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing['2xl'],
-    paddingHorizontal: spacing.lg,
+    minHeight: 44,
   },
-  emptyStateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+  resultsContainer: {
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  resultSkeletonCard: {
+    marginBottom: spacing.md,
     borderRadius: 12,
-  },
-  loadingState: {
-    flex: 1,
-    paddingVertical: spacing.md,
-  },
-  skeletonContainer: {
-    paddingTop: spacing.md,
-  },
-  historyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 8,
-    marginBottom: spacing.xs,
-  },
-  sortContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  sortOptions: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  sortOption: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs / 2,
-    borderRadius: 8,
+    overflow: 'hidden',
   },
 });

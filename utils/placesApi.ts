@@ -21,8 +21,9 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GOOGLE_PLACES_API_KEY } from './mapsConfig';
 
+// Google Places API has been removed - these functions now return null/empty results
+// TODO: Replace with Mapbox Geocoding API or another service if needed
 const PLACES_API_BASE_URL = 'https://maps.googleapis.com/maps/api/place';
 const GEOCODING_API_BASE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 
@@ -133,50 +134,8 @@ export async function searchPlaces(
     return [];
   }
 
-  if (!GOOGLE_PLACES_API_KEY) {
-    console.warn('Google Places API key not configured');
-    return [];
-  }
-
-  const cacheKey = `autocomplete_${query}_${location ? `${location.latitude},${location.longitude}` : ''}_${radius || ''}`;
-  const cached = await getCached<PlacePrediction[]>(PLACES_CACHE_KEY, cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  try {
-    let url = `${PLACES_API_BASE_URL}/autocomplete/json?input=${encodeURIComponent(query)}&language=es&key=${GOOGLE_PLACES_API_KEY}`;
-    
-    if (location) {
-      url += `&location=${location.latitude},${location.longitude}&radius=${radius || 5000}`;
-    }
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`Places API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      throw new Error(`Places API error: ${data.status}`);
-    }
-
-    const predictions: PlacePrediction[] = (data.predictions || []).map((prediction: any) => ({
-      placeId: prediction.place_id,
-      description: prediction.description,
-      mainText: prediction.structured_formatting?.main_text,
-      secondaryText: prediction.structured_formatting?.secondary_text,
-      types: prediction.types || [],
-    }));
-
-    await setCached(PLACES_CACHE_KEY, cacheKey, predictions);
-    return predictions;
-  } catch (error) {
-    console.error('Error searching places:', error);
-    return [];
-  }
+  // Google Places API has been removed - returning empty results
+  return [];
 }
 
 /**
@@ -188,85 +147,8 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | n
     return null;
   }
 
-  if (!GOOGLE_PLACES_API_KEY) {
-    console.warn('Google Places API key not configured');
-    return null;
-  }
-
-  const cacheKey = `details_${placeId}`;
-  const cached = await getCached<PlaceDetails>(PLACE_DETAILS_CACHE_KEY, cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  try {
-    const fields = [
-      'place_id',
-      'name',
-      'formatted_address',
-      'geometry',
-      'types',
-      'photos',
-      'rating',
-      'user_ratings_total',
-      'formatted_phone_number',
-      'website',
-      'opening_hours',
-      'price_level',
-      'address_components',
-    ].join(',');
-
-    const response = await fetch(
-      `${PLACES_API_BASE_URL}/details/json?place_id=${placeId}&fields=${fields}&language=es&key=${GOOGLE_PLACES_API_KEY}`
-    );
-
-    if (!response.ok) {
-      throw new Error(`Place Details API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.status !== 'OK') {
-      throw new Error(`Place Details API error: ${data.status}`);
-    }
-
-    const result = data.result;
-    const placeDetails: PlaceDetails = {
-      placeId: result.place_id || placeId,
-      name: result.name || '',
-      formattedAddress: result.formatted_address || '',
-      location: {
-        latitude: result.geometry?.location?.lat || 0,
-        longitude: result.geometry?.location?.lng || 0,
-      },
-      types: result.types || [],
-      photos: result.photos?.slice(0, 5).map((photo: any) => 
-        `${PLACES_API_BASE_URL}/photo?maxwidth=800&photoreference=${photo.photo_reference}&key=${GOOGLE_PLACES_API_KEY}`
-      ) || [],
-      rating: result.rating,
-      userRatingCount: result.user_ratings_total,
-      phoneNumber: result.formatted_phone_number,
-      website: result.website,
-      openingHours: result.opening_hours
-        ? {
-            openNow: result.opening_hours.open_now,
-            weekdayText: result.opening_hours.weekday_text,
-          }
-        : undefined,
-      priceLevel: result.price_level,
-      addressComponents: result.address_components?.map((comp: any) => ({
-        longName: comp.long_name,
-        shortName: comp.short_name,
-        types: comp.types || [],
-      })),
-    };
-
-    await setCached(PLACE_DETAILS_CACHE_KEY, cacheKey, placeDetails);
-    return placeDetails;
-  } catch (error) {
-    console.error('Error getting place details:', error);
-    return null;
-  }
+  // Google Places API has been removed - returning null
+  return null;
 }
 
 /**
@@ -277,52 +159,9 @@ export async function reverseGeocode(
   latitude: number,
   longitude: number
 ): Promise<GeocodeResult | null> {
-  if (!GOOGLE_PLACES_API_KEY) {
-    console.warn('Google Places API key not configured');
-    return null;
-  }
-
-  const cacheKey = `reverse_${latitude}_${longitude}`;
-  const cached = await getCached<GeocodeResult>(GEOCODE_CACHE_KEY, cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  try {
-    const response = await fetch(
-      `${GEOCODING_API_BASE_URL}?latlng=${latitude},${longitude}&language=en&key=${GOOGLE_PLACES_API_KEY}`
-    );
-
-    if (!response.ok) {
-      throw new Error(`Geocoding API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.status !== 'OK' || !data.results || data.results.length === 0) {
-      return null;
-    }
-
-    const result = data.results[0];
-    const geocodeResult: GeocodeResult = {
-      formattedAddress: result.formatted_address,
-      location: {
-        latitude,
-        longitude,
-      },
-      addressComponents: result.address_components?.map((comp: any) => ({
-        longName: comp.long_name,
-        shortName: comp.short_name,
-        types: comp.types || [],
-      })),
-    };
-
-    await setCached(GEOCODE_CACHE_KEY, cacheKey, geocodeResult);
-    return geocodeResult;
-  } catch (error) {
-    console.error('Error reverse geocoding:', error);
-    return null;
-  }
+  // Google Places API has been removed - returning null
+  // TODO: Replace with Mapbox Geocoding API if reverse geocoding is needed
+  return null;
 }
 
 /**
@@ -334,56 +173,6 @@ export async function searchNearby(
   radius: number = 5000,
   type?: string
 ): Promise<PlaceDetails[]> {
-  if (!GOOGLE_PLACES_API_KEY) {
-    console.warn('Google Places API key not configured');
-    return [];
-  }
-
-  const cacheKey = `nearby_${location.latitude}_${location.longitude}_${radius}_${type || ''}`;
-  const cached = await getCached<PlaceDetails[]>(PLACES_CACHE_KEY, cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  try {
-    let url = `${PLACES_API_BASE_URL}/nearbysearch/json?location=${location.latitude},${location.longitude}&radius=${radius}&language=es&key=${GOOGLE_PLACES_API_KEY}`;
-    
-    if (type) {
-      url += `&type=${type}`;
-    }
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`Nearby Search API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      throw new Error(`Nearby Search API error: ${data.status}`);
-    }
-
-    const places: PlaceDetails[] = (data.results || []).map((result: any) => ({
-      placeId: result.place_id,
-      name: result.name || '',
-      formattedAddress: result.vicinity || result.formatted_address || '',
-      location: {
-        latitude: result.geometry?.location?.lat || 0,
-        longitude: result.geometry?.location?.lng || 0,
-      },
-      types: result.types || [],
-      rating: result.rating,
-      userRatingCount: result.user_ratings_total,
-      photos: result.photos?.slice(0, 1).map((photo: any) => 
-        `${PLACES_API_BASE_URL}/photo?maxwidth=800&photoreference=${photo.photo_reference}&key=${GOOGLE_PLACES_API_KEY}`
-      ) || [],
-    }));
-
-    await setCached(PLACES_CACHE_KEY, cacheKey, places);
-    return places;
-  } catch (error) {
-    console.error('Error searching nearby places:', error);
-    return [];
-  }
+  // Google Places API has been removed - returning empty results
+  return [];
 }

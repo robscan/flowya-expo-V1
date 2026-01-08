@@ -1,18 +1,18 @@
+import { useOverlay } from '@/contexts/OverlayContext';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
-import { useOverlay } from '@/contexts/OverlayContext';
 
 import { Icon } from '@/components/ui/Icon';
-import { Colors } from '@/constants/theme';
 import { spacing } from '@/constants/spacing';
+import { Colors } from '@/constants/theme';
 import { fontFamily, fontSize } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { glassColors, glowColors, shadows } from '@/utils/glassStyles';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  const { tabBarHeight: contextTabBarHeight, isTabBarLabelsVisible } = useOverlay();
+  const { tabBarHeight: contextTabBarHeight, isTabBarLabelsVisible, isTabBarVisible } = useOverlay();
 
   // Tab bar background con efecto glass (BlurView en iOS/Android, transparencia en web)
   // Fondo gris sutil con blur
@@ -59,6 +59,7 @@ export default function TabLayout() {
     borderTopLeftRadius: 20, // Bordes redondeados superiores para efecto flotante
     borderTopRightRadius: 20,
     ...shadow, // Sombra media para elevación
+    ...(isTabBarVisible ? {} : { display: 'none' }), // Ocultar TabBar completo cuando isTabBarVisible es false
   };
 
   return (
@@ -79,12 +80,6 @@ export default function TabLayout() {
             },
             tabBarItemStyle: {
               gap: spacing.xs / 2, // 4px - Espacio adicional entre icono y label (valor mínimo necesario)
-            },
-            tabBarIndicatorStyle: {
-              backgroundColor: Colors[colorScheme ?? 'light'].tint, // Color del indicador (mismo que tab activo)
-              height: 3, // Altura de la línea indicadora
-              top: 0, // Posición en la parte superior
-              borderRadius: 1.5, // Bordes ligeramente redondeados
             },
           }}>
           <Tabs.Screen

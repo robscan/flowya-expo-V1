@@ -5,7 +5,7 @@
  */
 
 import { useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import {
   ScrollView,
   StatusBar,
@@ -17,7 +17,7 @@ import {
 
 import { FlowPlayerControls } from '@/components/FlowPlayerControls';
 import { FlowSpotCard } from '@/components/FlowSpotCard';
-import { SpotCard } from '@/components/SpotCard';
+import { SpotInlineCard } from '@/components/SpotInlineCard';
 import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
@@ -25,8 +25,8 @@ import { textStyles } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
 import { useNarration } from '@/contexts/NarrationContext';
 import { usePath } from '@/contexts/PathContext';
-import { useSpot } from '@/contexts/SpotContext';
 import { useSaved } from '@/contexts/SavedContext';
+import { useSpot } from '@/contexts/SpotContext';
 import { getFlowSpots } from '@/data/flows';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -37,7 +37,7 @@ export default function FlowFullPlayerScreen() {
   const { flowState, currentSpotId, progress } = useFlow();
   const { getFlowById } = usePath();
   const { spots, getSpotById } = useSpot();
-  const { isSpotLikedFromPlayer, toggleLikeSpotFromPlayer } = useSaved();
+  const { isSpotLikedFromPlayer, toggleLikeSpotFromPlayer, toggleNotMyVibeSpot, notMyVibeSpots } = useSaved();
   const narration = useNarration();
 
   const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
@@ -135,7 +135,7 @@ export default function FlowFullPlayerScreen() {
                 />
               </TouchableOpacity>
             </View>
-            <SpotCard spot={currentSpot} />
+            <SpotInlineCard spot={currentSpot} state="active" />
           </View>
         )}
 
@@ -167,7 +167,14 @@ export default function FlowFullPlayerScreen() {
           showPrevious={true}
           showNext={true}
           showMute={true}
-          showMore={false}
+          showAffinity={true}
+          currentSpotId={currentSpotId}
+          onLike={(spotId) => {
+            toggleLikeSpotFromPlayer(spotId);
+          }}
+          onNotMyVibe={(spotId) => {
+            toggleNotMyVibeSpot(spotId);
+          }}
         />
       </ScrollView>
     </View>
@@ -183,7 +190,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: spacing.md,
-    paddingBottom: 160, // FlowMiniPlayer height (~70px) + tab bar height (88px max) + spacing
+    paddingBottom: 160, // FlowMiniBar height (~56px) + tab bar height (88px max) + spacing
   },
   header: {
     marginBottom: spacing.md,

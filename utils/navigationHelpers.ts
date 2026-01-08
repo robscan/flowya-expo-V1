@@ -1,10 +1,10 @@
 /**
  * Navigation Helpers
- * Utilities for opening external navigation apps (Google Maps, Apple Maps)
+ * Utilities for opening external navigation apps (Apple Maps, Google Maps, etc.)
  * 
  * Funcionalidades:
  * - Detectar plataforma (iOS, Android, Web)
- * - Construir URLs para Google Maps y Apple Maps
+ * - Construir URLs para apps de navegación externas
  * - Abrir la app correcta según plataforma
  * - Fallback si la app no está instalada
  */
@@ -191,7 +191,7 @@ export async function openNavigationApp(
     console.error('Error opening navigation app:', error);
     Alert.alert(
       'Error',
-      'Could not open navigation app. Please try again or use Google Maps in your browser.'
+      'Could not open navigation app. Please try again.'
     );
     return false;
   }

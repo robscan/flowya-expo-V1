@@ -28,7 +28,9 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 
 import { FlowyaMapView } from '@/components/MapView';
+import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
 import { GlassView } from '@/components/ui/GlassView';
+import { InfoMeta } from '@/components/ui/InfoMeta';
 import { Icon } from '@/components/ui/Icon';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { Toast } from '@/components/ui/Toast';
@@ -58,7 +60,7 @@ const SPOT_TYPES: SpotType[] = [
   'other',
 ];
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { calculateDistanceToSpot, formatDistance } from '@/utils/distance';
+import { calculateDistanceToSpot } from '@/utils/distance';
 import { hasValidImage, getValidImage } from '@/utils/imageHelpers';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -107,7 +109,6 @@ export default function SpotDetailScreen() {
   const { startFlow } = useFlow();
   const { user, isAuthenticated } = useAuth();
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [useMiles, setUseMiles] = useState(false);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showToast, setShowToast] = useState(false);
@@ -180,7 +181,6 @@ export default function SpotDetailScreen() {
   const hoursText = formatHours(isEditMode ? editHours : spot.hours);
   const costText = formatCost(isEditMode ? editCost : spot.cost);
   const distance = userLocation ? calculateDistanceToSpot(userLocation, spot.location) : null;
-  const distanceText = formatDistance(distance || undefined, useMiles);
 
   const handleBack = () => {
     if (isEditMode) {
@@ -403,9 +403,6 @@ export default function SpotDetailScreen() {
     setIsDeleteConfirmVisible(false);
   };
 
-  const handleDistancePress = () => {
-    setUseMiles(!useMiles);
-  };
 
   const handlePickImage = async () => {
     try {
@@ -462,48 +459,14 @@ export default function SpotDetailScreen() {
     );
     
     // Start the flow with this temporary path
+    // La navegación se maneja en FlowContext.startFlow
     startFlow(tempPath.id);
-    
-    // Navigate back to allow FlowScreen to show
-    router.back();
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       
-      {/* Sticky header controls */}
-      <View style={styles.stickyHeader}>
-        <TouchableOpacity
-          onPress={handleBack}
-          style={[styles.headerButton, { backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)' }]}>
-          <Icon name={isEditMode ? "close" : "back"} size={24} color={colorScheme === 'dark' ? '#fff' : colors.text} />
-        </TouchableOpacity>
-        {!isEditMode && (
-        <View style={styles.headerButtonsRight}>
-          <Tooltip text={isSaved ? "Guardado - Toca para quitar" : "Guardar este lugar"}>
-            <Animated.View style={{ transform: [{ scale: saveButtonScale }] }}>
-              <TouchableOpacity
-                onPress={handleSave}
-                style={[styles.headerButton, { backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)' }]}
-                activeOpacity={0.7}>
-                <Icon name="bookmark" size={24} color={isSaved ? colors.tint : (colorScheme === 'dark' ? '#fff' : colors.text)} />
-              </TouchableOpacity>
-            </Animated.View>
-          </Tooltip>
-          <TouchableOpacity
-            onPress={handleShare}
-            style={[styles.headerButton, { backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)' }]}>
-            <Icon name="share" size={24} color={colorScheme === 'dark' ? '#fff' : colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleMenuPress}
-            style={[styles.headerButton, { backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)' }]}>
-            <Icon name="menu" size={24} color={colorScheme === 'dark' ? '#fff' : colors.text} />
-          </TouchableOpacity>
-        </View>
-        )}
-      </View>
 
       {/* Scrollable content */}
       <ScrollView
@@ -511,37 +474,77 @@ export default function SpotDetailScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
         
-        {/* Header with large image - now scrolls with content */}
+        {/* ContentHeader with image hero */}
         {(() => {
           const validImage = isEditMode ? editPhoto : getValidImage(spot.photos);
-          if (validImage) {
+          const heroImage = validImage ? { uri: validImage } : null;
+          
+          // Left actions
+          const leftActions: ContentHeaderAction[] = [
+            {
+              icon: isEditMode ? 'close' : 'back',
+              onPress: handleBack,
+              tooltip: isEditMode ? 'Cancel edit' : undefined,
+            },
+          ];
+          
+          // Right actions (solo si no está en modo edición)
+          const rightActions: ContentHeaderAction[] = !isEditMode
+            ? [
+                {
+                  icon: 'bookmark',
+                  onPress: handleSave,
+                  tooltip: isSaved ? 'Guardado - Toca para quitar' : 'Guardar este lugar',
+                  isActive: isSaved,
+                  activeColor: isSaved ? colors.tint : undefined,
+                },
+                {
+                  icon: 'share',
+                  onPress: handleShare,
+                },
+                {
+                  icon: 'menu',
+                  onPress: handleMenuPress,
+                },
+              ]
+            : [];
+          
+          return (
+            <ContentHeader
+              heroType="image"
+              heroImage={heroImage}
+              heroHeight={IMAGE_HEIGHT}
+              leftActions={leftActions}
+              rightActions={rightActions}
+              showOverlay={true}
+              sticky={false}
+            />
+          );
+        })()}
+        
+        {/* Edit mode image picker button */}
+        {isEditMode && (() => {
+          const validImage = editPhoto || getValidImage(spot.photos);
+          if (!validImage) {
             return (
-              <View style={styles.imageHeader}>
-                <Image source={{ uri: validImage }} style={styles.headerImage} resizeMode="cover" />
-                <View style={styles.imageOverlay} />
-                {isEditMode && (
-                  <TouchableOpacity
-                    onPress={handlePickImage}
-                    style={[styles.editImageButton, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}
-                    activeOpacity={0.7}>
-                    <Icon name="edit" size={20} color="#fff" />
-                  </TouchableOpacity>
-                )}
+              <View style={[styles.imagePlaceholder, { backgroundColor: colors.icon + '10', height: IMAGE_HEIGHT }]}>
+                <TouchableOpacity
+                  onPress={handlePickImage}
+                  style={styles.imagePlaceholderButton}
+                  activeOpacity={0.7}>
+                  <Icon name="upload" size={48} color={colors.icon} />
+                  <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>Add photo</Text>
+                </TouchableOpacity>
               </View>
             );
           }
-          // Fallback: mostrar icono de subir imagen
           return (
-            <View style={[styles.imageHeader, styles.imagePlaceholder, { backgroundColor: colors.icon + '10' }]}>
+            <View style={[styles.editImageButtonContainer, { height: IMAGE_HEIGHT }]}>
               <TouchableOpacity
-                onPress={isEditMode ? handlePickImage : undefined}
-                style={styles.imagePlaceholderButton}
-                activeOpacity={isEditMode ? 0.7 : 1}
-                disabled={!isEditMode}>
-                <Icon name="upload" size={48} color={colors.icon} />
-                {isEditMode && (
-                  <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>Add photo</Text>
-                )}
+                onPress={handlePickImage}
+                style={[styles.editImageButton, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}
+                activeOpacity={0.7}>
+                <Icon name="edit" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
           );
@@ -567,9 +570,8 @@ export default function SpotDetailScreen() {
           )}
 
           {/* Metadata Row: Chip | Distance | Rating */}
-          <View style={styles.metadataRow}>
-            {/* Chip de taxonomía */}
-            {isEditMode ? (
+          {isEditMode ? (
+            <View style={{ marginTop: spacing.sm, marginBottom: spacing.md }}>
               <FlatList
                 data={SPOT_TYPES}
                 horizontal
@@ -593,40 +595,15 @@ export default function SpotDetailScreen() {
                   </TouchableOpacity>
                 )}
               />
-            ) : (
-            <View style={[styles.typeTag, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-              <Text style={[styles.chipText, { color: colorScheme === 'dark' ? '#fff' : colors.text }]}>
-                {getSpotTypeLabel(spot.type).toUpperCase()}
-              </Text>
             </View>
-            )}
-            
-            {/* Separador vertical */}
-            {distanceText && (
-              <>
-                <View style={[styles.divider, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]} />
-                
-                {/* Distancia con icono */}
-                <TouchableOpacity onPress={handleDistancePress} activeOpacity={0.7} style={styles.metadataItem}>
-                  <Icon name="map" size={14} color={colors.icon} />
-                  <Text style={[styles.metadataText, { color: colors.icon, marginLeft: spacing.xs / 2 }]}>
-                    {distanceText}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-            
-            {/* Separador vertical */}
-            <View style={[styles.divider, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]} />
-            
-            {/* Calificación */}
-            <View style={styles.metadataItem}>
-              <Icon name="star" size={14} color="#FFD700" />
-              <Text style={[styles.metadataText, { color: colors.text, marginLeft: spacing.xs / 2 }]}>
-                4.8 (128)
-              </Text>
-            </View>
-          </View>
+          ) : (
+            <InfoMeta
+              chip={{ label: getSpotTypeLabel(spot.type) }}
+              distance={distance || undefined}
+              rating={{ value: 4.8, count: 128 }}
+              size="large"
+            />
+          )}
 
           {/* Primary Action Button - ocultar en modo edición */}
           {!isEditMode && (
@@ -1140,45 +1117,6 @@ export default function SpotDetailScreen() {
         </Pressable>
       </Modal>
 
-      {/* Delete Confirmation Modal */}
-      <Modal
-        visible={isDeleteConfirmVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={handleCancelDelete}>
-        <Pressable style={styles.menuOverlay} onPress={handleCancelDelete}>
-          <GlassView
-            style={styles.deleteConfirmModal}
-            intensity="medium"
-            opacity="strong"
-            shadowLevel="medium"
-            enableGlow={true}>
-            <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.sm }]}>
-              Delete place
-            </Text>
-            <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
-              Are you sure you want to delete "{spot?.name || 'this place'}"?
-              {'\n\n'}
-              This action cannot be undone. The place will be permanently deleted.
-            </Text>
-            <View style={styles.deleteConfirmButtons}>
-              <TouchableOpacity
-                style={[styles.deleteConfirmButton, styles.deleteConfirmButtonCancel, { borderColor: colors.icon + '30' }]}
-                onPress={handleCancelDelete}
-                activeOpacity={0.7}>
-                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.deleteConfirmButton, styles.deleteConfirmButtonDelete, { backgroundColor: colors.error }]}
-                onPress={handleConfirmDelete}
-                activeOpacity={0.7}>
-                <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Delete</Text>
-              </TouchableOpacity>
-            </View>
-          </GlassView>
-        </Pressable>
-      </Modal>
-
       {/* Icon Selector Modal */}
       <Modal
         visible={showIconSelector !== null}
@@ -1267,42 +1205,35 @@ const styles = StyleSheet.create({
   backButton: {
     marginTop: spacing.md,
   },
-  stickyHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    zIndex: 10,
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20, // 50% para círculo perfecto
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerButtonsRight: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  imageHeader: {
-    width: SCREEN_WIDTH,
-    height: IMAGE_HEIGHT,
-    position: 'relative',
-  },
-  headerImage: {
-    width: '100%',
-    height: '100%',
-  },
   imageOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  imagePlaceholder: {
+    width: SCREEN_WIDTH,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imagePlaceholderButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editImageButtonContainer: {
+    width: SCREEN_WIDTH,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editImageButton: {
+    position: 'absolute',
+    bottom: spacing.md,
+    right: spacing.md,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollView: {
     flex: 1,
@@ -1314,38 +1245,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing['2xl'],
-  },
-  metadataRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  metadataItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  metadataText: {
-    fontFamily: fontFamilyMedium,
-    fontSize: fontSize.sm,
-    lineHeight: lineHeight.sm,
-    fontWeight: '500',
-  },
-  divider: {
-    width: 1,
-    height: 16,
-    marginHorizontal: spacing.sm,
-  },
-  typeTag: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs / 2,
-    borderRadius: borderRadius.sm,
-  },
-  chipText: {
-    fontFamily: fontFamilyMedium,
-    fontSize: fontSize.xs,
-    lineHeight: lineHeight.xs,
-    fontWeight: '500',
   },
   primaryButton: {
     flexDirection: 'row',

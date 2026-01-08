@@ -1,13 +1,15 @@
 /**
- * Profile Screen
- * Scope 11: Profile Screen - Preferencias y ajustes
+ * Profile Screen - Configuration Screen
+ * CANONICAL: Profile is a configuration screen, not a content or exploration surface
  * 
- * Principios de diseño:
- * - Modal/overlay con efecto glass
- * - Background blur detrás del modal
- * - Preferencias generales
- * - Secciones: "GENERAL", "DATA & PERMISSIONS"
- * - Cards con estilo glass para cada sección
+ * Rules:
+ * - No BottomTabBar
+ * - Stack navigation (push)
+ * - Simple header with back action
+ * - Vertical list layout, single column
+ * - No cards, hero images, map, media
+ * - Use existing Design System components only
+ * - No auto-save, toasts, modals, experimental UI
  */
 
 import { useState, useEffect } from 'react';
@@ -19,13 +21,12 @@ import { Colors } from '@/constants/theme';
 import { spacing } from '@/constants/spacing';
 import { textStyles } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
 import { iconTouchableContainer } from '@/components/ui/Icon';
 import { SettingsToggle } from '@/components/SettingsToggle';
 import { clearAllStorage } from '@/utils/clearStorage';
-import { useNarration } from '@/contexts/NarrationContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOverlay } from '@/contexts/OverlayContext';
 
 const PREFERENCES_KEY = '@flowya_preferences';
 
@@ -45,10 +46,18 @@ export default function ProfileScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const colors = Colors[colorScheme ?? 'light'];
-  const narration = useNarration();
   const { user, isAuthenticated, signOut } = useAuth();
+  const { setIsTabBarVisible } = useOverlay();
   
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPreferences);
+
+  // CANONICAL: Hide BottomTabBar for Profile
+  useEffect(() => {
+    setIsTabBarVisible(false);
+    return () => {
+      setIsTabBarVisible(true);
+    };
+  }, [setIsTabBarVisible]);
 
   // Cargar preferencias
   useEffect(() => {
@@ -165,192 +174,172 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* CANONICAL: Simple header with back action, no sticky behavior */}
+      <View
+        style={[
+          styles.header,
+          {
+            borderBottomColor:
+              colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+          },
+        ]}>
+        <View style={styles.headerContent}>
+          <TouchableOpacity
+            onPress={handleBackPress}
+            style={iconTouchableContainer.base}
+            activeOpacity={0.7}>
+            <Icon name="back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[textStyles.heading3, { color: colors.text }]}>Profile</Text>
+          <View style={iconTouchableContainer.base} />
+        </View>
+      </View>
+
+      {/* CANONICAL: Vertical list layout, single column, no cards */}
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}>
-        {/* Header inside ScrollView (scrolls) */}
-        <View
-          style={[
-            styles.header,
-            {
-              borderBottomColor:
-                colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-            },
-          ]}>
-          <View style={styles.headerContent}>
-            <TouchableOpacity
-              onPress={handleBackPress}
-              style={iconTouchableContainer.base}
-              activeOpacity={0.7}>
-              <Icon name="back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={[textStyles.heading3, { color: colors.text }]}>Profile</Text>
-            <View style={iconTouchableContainer.base} />
+
+        {/* User Info - Simple row, no card */}
+        <View style={styles.section}>
+          <View style={styles.userRow}>
+            <View style={[styles.avatar, { backgroundColor: colors.tint + '40' }]}>
+              <Icon name="profile" size={32} color={colors.tint} />
+            </View>
+            <View style={styles.userInfo}>
+              <Text style={[textStyles.heading4, { color: colors.text }]}>
+                {isAuthenticated && user
+                  ? user.email?.split('@')[0] || 'Usuario'
+                  : 'Guest'}
+              </Text>
+              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
+                {isAuthenticated && user
+                  ? user.email || 'usuario@ejemplo.com'
+                  : 'Sign in to save preferences'}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* User Profile Card */}
-        <View style={styles.section}>
-          <GlassView style={styles.card} intensity="medium" opacity="medium">
-            {isAuthenticated && user ? (
-              <View style={styles.userCard}>
-                <View style={[styles.avatar, { backgroundColor: colors.tint + '40' }]}>
-                  <Icon name="profile" size={32} color={colors.tint} />
-                </View>
-                <View style={styles.userInfo}>
-                  <Text style={[textStyles.heading4, { color: colors.text }]}>
-                    {user.email?.split('@')[0] || 'Usuario'}
-                  </Text>
-                  <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                    {user.email || 'usuario@ejemplo.com'}
-                  </Text>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.userCard}>
-                <View style={[styles.avatar, { backgroundColor: colors.icon + '20' }]}>
-                  <Icon name="profile" size={32} color={colors.icon} />
-                </View>
-                <View style={styles.userInfo}>
-                  <Text style={[textStyles.heading4, { color: colors.text }]}>Guest</Text>
-                  <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                    Sign in to save preferences
-                  </Text>
-                </View>
-              </View>
-            )}
-          </GlassView>
-        </View>
-
-        {/* Login/Signup Section (solo si no está autenticado) */}
+        {/* Login/Signup Section - Simple list items, no cards */}
         {!isAuthenticated && (
           <View style={styles.section}>
             <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
               ACCOUNT
             </Text>
-            <GlassView style={styles.card} intensity="medium" opacity="medium">
-              <TouchableOpacity
-                style={styles.actionItem}
-                onPress={handleLogin}
-                activeOpacity={0.7}>
-                <View style={styles.actionContent}>
-                  <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Sign in</Text>
-                  <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                    Access your account
-                  </Text>
-                </View>
-                <Icon name="profile" size={20} color={colors.icon} />
-              </TouchableOpacity>
-              <View style={[styles.divider, { backgroundColor: colors.icon + '20' }]} />
-              <TouchableOpacity
-                style={styles.actionItem}
-                onPress={handleSignup}
-                activeOpacity={0.7}>
-                <View style={styles.actionContent}>
-                  <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Create account</Text>
-                  <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                    Create an account to start
-                  </Text>
-                </View>
-                <Icon name="add" size={20} color={colors.icon} />
-              </TouchableOpacity>
-            </GlassView>
+            <TouchableOpacity
+              style={styles.listItem}
+              onPress={handleLogin}
+              activeOpacity={0.7}>
+              <View style={styles.listItemContent}>
+                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Sign in</Text>
+                <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
+                  Access your account
+                </Text>
+              </View>
+              <Icon name="next" size={20} color={colors.icon} />
+            </TouchableOpacity>
+            <View style={[styles.divider, { backgroundColor: colors.icon + '20' }]} />
+            <TouchableOpacity
+              style={styles.listItem}
+              onPress={handleSignup}
+              activeOpacity={0.7}>
+              <View style={styles.listItemContent}>
+                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Create account</Text>
+                <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
+                  Create an account to start
+                </Text>
+              </View>
+              <Icon name="next" size={20} color={colors.icon} />
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* GENERAL Section */}
+        {/* GENERAL Section - Simple list, no cards */}
         <View style={styles.section}>
-            <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
-              General
-            </Text>
-          <GlassView style={styles.card} intensity="medium" opacity="medium">
-            <SettingsToggle
-              label="Narration"
-              value={preferences.narrationEnabled}
-              onValueChange={(value) => handlePreferenceChange('narrationEnabled', value)}
-              description="Audio narrations during flow"
-            />
-            <View style={[styles.divider, { backgroundColor: colors.icon + '20' }]} />
-            <SettingsToggle
-              label="Location"
-              value={preferences.locationEnabled}
-              onValueChange={(value) => handlePreferenceChange('locationEnabled', value)}
-              description="Use location for nearby places"
-            />
-            <View style={[styles.divider, { backgroundColor: colors.icon + '20' }]} />
-            <SettingsToggle
-              label="Notifications"
-              value={preferences.notificationsEnabled}
-              onValueChange={(value) => handlePreferenceChange('notificationsEnabled', value)}
-              description="Notifications about new places and flows"
-            />
-          </GlassView>
+          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
+            General
+          </Text>
+          <SettingsToggle
+            label="Narration"
+            value={preferences.narrationEnabled}
+            onValueChange={(value) => handlePreferenceChange('narrationEnabled', value)}
+            description="Audio narrations during flow"
+          />
+          <View style={[styles.divider, { backgroundColor: colors.icon + '20' }]} />
+          <SettingsToggle
+            label="Location"
+            value={preferences.locationEnabled}
+            onValueChange={(value) => handlePreferenceChange('locationEnabled', value)}
+            description="Use location for nearby places"
+          />
+          <View style={[styles.divider, { backgroundColor: colors.icon + '20' }]} />
+          <SettingsToggle
+            label="Notifications"
+            value={preferences.notificationsEnabled}
+            onValueChange={(value) => handlePreferenceChange('notificationsEnabled', value)}
+            description="Notifications about new places and flows"
+          />
         </View>
 
-        {/* LIKED SPOTS Section */}
+        {/* My Content Section - Simple list item */}
         <View style={styles.section}>
-            <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
-              My content
-            </Text>
-          <GlassView style={styles.card} intensity="medium" opacity="medium">
-            <TouchableOpacity
-              style={styles.actionItem}
-              onPress={() => router.push('/liked-spots')}
-              activeOpacity={0.7}>
-              <View style={styles.actionContent}>
-                    <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Liked places</Text>
-                    <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                      Places you liked while moving
-                    </Text>
-              </View>
-              <Icon name="like" size={20} color={colors.icon} />
-            </TouchableOpacity>
-          </GlassView>
+          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
+            My content
+          </Text>
+          <TouchableOpacity
+            style={styles.listItem}
+            onPress={() => router.push('/liked-spots')}
+            activeOpacity={0.7}>
+            <View style={styles.listItemContent}>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Liked places</Text>
+              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
+                Places you liked while moving
+              </Text>
+            </View>
+            <Icon name="chevron-right" size={20} color={colors.icon} />
+          </TouchableOpacity>
         </View>
 
-        {/* ACCOUNT Section (solo si está autenticado) */}
+        {/* ACCOUNT Section - Simple list item */}
         {isAuthenticated && (
           <View style={styles.section}>
             <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
               ACCOUNT
             </Text>
-            <GlassView style={styles.card} intensity="medium" opacity="medium">
-              <TouchableOpacity
-                style={styles.actionItem}
-                onPress={handleLogout}
-                activeOpacity={0.7}>
-                <View style={styles.actionContent}>
-                    <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Sign out</Text>
-                  <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                    Salir de tu cuenta
-                  </Text>
-                </View>
-                <Icon name="close" size={20} color={colors.icon} />
-              </TouchableOpacity>
-            </GlassView>
+            <TouchableOpacity
+              style={styles.listItem}
+              onPress={handleLogout}
+              activeOpacity={0.7}>
+              <View style={styles.listItemContent}>
+                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Sign out</Text>
+                <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
+                  Sign out of your account
+                </Text>
+              </View>
+              <Icon name="next" size={20} color={colors.icon} />
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* DATA & PERMISSIONS Section */}
+        {/* DATA & PERMISSIONS Section - Simple list item */}
         <View style={styles.section}>
           <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
             DATA & PERMISSIONS
           </Text>
-          <GlassView style={styles.card} intensity="medium" opacity="medium">
-            <TouchableOpacity
-              style={styles.actionItem}
-              onPress={handleClearStorage}
-              activeOpacity={0.7}>
-              <View style={styles.actionContent}>
-                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Limpiar todos los datos</Text>
-                <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                  Eliminar spots, paths y datos guardados
-                </Text>
-              </View>
-              <Icon name="edit" size={20} color={colors.icon} />
-            </TouchableOpacity>
-          </GlassView>
+          <TouchableOpacity
+            style={styles.listItem}
+            onPress={handleClearStorage}
+            activeOpacity={0.7}>
+            <View style={styles.listItemContent}>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Clear all data</Text>
+              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
+                Delete spots, flows and saved data
+              </Text>
+            </View>
+            <Icon name="chevron-right" size={20} color={colors.icon} />
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -366,7 +355,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     paddingHorizontal: spacing.md,
     borderBottomWidth: 1,
-    marginBottom: spacing.md,
   },
   headerContent: {
     flexDirection: 'row',
@@ -383,13 +371,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     paddingHorizontal: spacing.md,
   },
-  card: {
-    borderRadius: 16,
-    padding: spacing.md,
-  },
-  userCard: {
+  userRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: spacing.sm,
   },
   avatar: {
     width: 56,
@@ -406,13 +391,13 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: spacing.sm,
   },
-  actionItem: {
+  listItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.md,
   },
-  actionContent: {
+  listItemContent: {
     flex: 1,
     marginRight: spacing.md,
   },

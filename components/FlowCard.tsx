@@ -1,49 +1,37 @@
 /**
  * FlowCard Component
- * Card to display Flows in horizontal format (Tour List)
+ * CANONICAL: Flow card variants for different contexts
  * 
- * Design principles:
- * - Compact horizontal layout
- * - Title (bodyMedium/bold) with movement mode chip below
- * - Right metadata: duration, distance, and spots count
- * - Glass style consistent with SpotCard
- * - Full width (100%)
+ * Variants:
+ * - Display: For listings, search, saved (not editable, responsive)
+ * - Editable: For FlowScreen or editing contexts (supports delete, doesn't break on small screens)
  */
 
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, Pressable, TouchableOpacity } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Flow } from '@/data/flows';
-import { spacing } from '@/constants/spacing';
-import { fontSize, lineHeight, fontFamily, fontFamilyMedium } from '@/constants/typography';
-import { Colors } from '@/constants/theme';
-import { borderRadius } from '@/constants/borders';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { GlassView } from '@/components/ui/GlassView';
-import { calculatePathDistance } from '@/utils/distance';
-import { getFlowSpots } from '@/data/flows';
-import { Spot } from '@/data/spots';
-import { getMovementModeTextColor, getMovementModeBackgroundColor, getMovementModeLabel } from '@/constants/movementMode';
 import { Icon } from '@/components/ui/Icon';
+import { InfoMeta } from '@/components/ui/InfoMeta';
+import { borderRadius } from '@/constants/borders';
+import { getMovementModeLabel } from '@/constants/movementMode';
+import { spacing } from '@/constants/spacing';
+import { Colors } from '@/constants/theme';
+import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
+import { Flow, getFlowSpots } from '@/data/flows';
+import { Spot } from '@/data/spots';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { calculatePathDistance } from '@/utils/distance';
+import { isFlowComplete } from '@/utils/flowValidation';
 
-interface FlowCardProps {
+interface FlowCardDisplayProps {
   flow: Flow;
   spots: Spot[]; // Array completo de spots para calcular distancia
   onPress?: () => void;
   distance?: number; // Distancia opcional (si ya está calculada)
+  customName?: string; // Nombre personalizado para el flow (opcional)
 }
 
-// Helper to format duration
-function formatDuration(minutes: number): string {
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-}
-
-export function FlowCard({ flow, spots, onPress, distance }: FlowCardProps) {
+function FlowCardDisplay({ flow, spots, onPress, distance, customName }: FlowCardDisplayProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
@@ -51,16 +39,16 @@ export function FlowCard({ flow, spots, onPress, distance }: FlowCardProps) {
   const flowSpots = getFlowSpots(flow, spots);
   const calculatedDistance = distance !== undefined ? distance : (flowSpots.length > 0 ? calculatePathDistance(flow, spots) : undefined);
 
-  // Formatear distancia
-  const distanceText = calculatedDistance
-    ? calculatedDistance < 1000
-      ? `${Math.round(calculatedDistance)}m`
-      : `${(calculatedDistance / 1000).toFixed(1)} km`
-    : null;
-
   const movementModeLabel = getMovementModeLabel(flow.movementMode);
-  const movementModeTextColor = getMovementModeTextColor(flow.movementMode, colorScheme);
-  const movementModeBgColor = getMovementModeBackgroundColor(flow.movementMode, colorScheme);
+
+  // Usar nombre personalizado si está disponible, sino el título del flow
+  const displayName = customName || flow.title;
+
+  // Verificar si el flow está completo
+  const flowIsComplete = isFlowComplete(flow, spots);
+
+  // Formatear spots count
+  const spotsCountText = `${flow.spots.length} ${flow.spots.length === 1 ? 'spot' : 'spots'} added`;
 
   return (
     <Pressable onPress={onPress} style={styles.cardContainer}>
@@ -73,40 +61,31 @@ export function FlowCard({ flow, spots, onPress, distance }: FlowCardProps) {
         useGrayBackground={true}
       >
         <View style={styles.content}>
-          {/* Left: Title and movement mode */}
+          {/* Left: Title and InfoMeta */}
           <View style={styles.leftContent}>
-            <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
-              {flow.title}
-            </Text>
-            <View style={[styles.movementChip, { backgroundColor: movementModeBgColor }]}>
-              <Text style={[styles.movementText, { color: movementModeTextColor }]}>
-                {movementModeLabel}
+            <View style={styles.titleRow}>
+              <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+                {displayName}
               </Text>
+              {flowIsComplete && (
+                <View style={[styles.completeBadge, { backgroundColor: colors.tint + '20' }]}>
+                  <Icon name="check" size={12} color={colors.tint} />
+                </View>
+              )}
             </View>
+            <InfoMeta
+              chip={{ label: movementModeLabel }}
+              distance={calculatedDistance}
+              duration={flow.estimatedDuration}
+              size="large"
+            />
           </View>
 
-          {/* Right: Metadata */}
+          {/* Right: Spots count */}
           <View style={styles.rightContent}>
-            {distanceText && (
-              <View style={styles.metadataItem}>
-                <Icon name="map" size={14} color={colors.icon} />
-                <Text style={[styles.metadataText, { color: colors.icon }]}>
-                  {distanceText}
-                </Text>
-              </View>
-            )}
-            <View style={styles.metadataItem}>
-              <Icon name="clock" size={14} color={colors.icon} />
-              <Text style={[styles.metadataText, { color: colors.icon }]}>
-                {formatDuration(flow.estimatedDuration)}
-              </Text>
-            </View>
-            <View style={styles.metadataItem}>
-              <Icon name="map" size={14} color={colors.icon} />
-              <Text style={[styles.metadataText, { color: colors.icon }]}>
-                {flow.spots.length} {flow.spots.length === 1 ? 'spot' : 'spots'}
-              </Text>
-            </View>
+            <Text style={[styles.spotsCountText, { color: colors.icon }]}>
+              {spotsCountText}
+            </Text>
           </View>
         </View>
       </GlassView>
@@ -134,6 +113,12 @@ const styles = StyleSheet.create({
     gap: spacing.xs / 2,
     minWidth: 0, // Permite que el texto se trunque correctamente
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs / 2,
+    flexShrink: 1,
+  },
   title: {
     fontFamily: fontFamilyMedium,
     fontSize: fontSize.base,
@@ -141,36 +126,33 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flexShrink: 1, // Permite que el texto se trunque cuando sea necesario
   },
-  movementChip: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xs / 2,
-    borderRadius: borderRadius.sm,
-  },
-  movementText: {
-    fontFamily: fontFamilyMedium,
-    fontSize: fontSize.xs,
-    lineHeight: lineHeight.xs,
-    fontWeight: '500',
+  completeBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   rightContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
     flexShrink: 0,
-    flexWrap: 'wrap', // Permite que los elementos se envuelvan si es necesario
-    justifyContent: 'flex-end',
+    paddingTop: 2, // Alinear con título
   },
-  metadataItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs / 2,
-  },
-  metadataText: {
+  spotsCountText: {
     fontFamily,
     fontSize: fontSize.xs,
     lineHeight: lineHeight.xs,
     fontWeight: '400',
+    textAlign: 'right',
   },
 });
 
+// CANONICAL: Export FlowCard as namespace with Display variant
+export const FlowCard = {
+  Display: FlowCardDisplay,
+};
+
+// Legacy export for backward compatibility during migration
+export { FlowCardDisplay as FlowCardLegacy };

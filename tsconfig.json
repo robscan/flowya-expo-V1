@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "strict": true,
-    "jsx": "react-native",
+    "jsx": "react-jsx",
     "target": "esnext",
     "module": "esnext",
     "moduleResolution": "bundler",
@@ -15,20 +15,20 @@
       "@/*": [
         "./*"
       ]
-    },
-    "types": [
-      "react-native",
-      "expo"
-    ]
+    }
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.ts",
-    "expo-env.d.ts"
+    "expo-env.d.ts",
+    "types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "**/node_modules/@types/node",
+    "node_modules/@types/node/**/*",
+    "**/node_modules/@types/node/**/*.d.ts"
   ],
   "extends": "expo/tsconfig.base"
 }

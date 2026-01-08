@@ -6,8 +6,15 @@
  * También incluye ciudades predefinidas de Riviera Maya
  */
 
-import { reverseGeocode, GeocodeResult } from './placesApi';
+import { Spot } from '@/data/spots';
 import { calculateDistance } from './distance';
+import { reverseGeocode } from './placesApi';
+
+// Cache para resultados de geocoding (coordenadas -> nombre de ciudad)
+const geocodingCache = new Map<string, string | null>();
+
+// Cache para ubicaciones extraídas de spots (spots hash -> ubicaciones)
+const locationsCache = new Map<string, PredefinedCity[]>();
 
 // Ciudades predefinidas de Riviera Maya
 export interface PredefinedCity {
@@ -230,4 +237,155 @@ export function findNearestPredefinedCity(
 
   return nearestCity;
 }
+
+/**
+ * Obtener ciudad y región desde coordenadas
+ * CANONICAL: Resuelve ciudad (prioridad) o región (fallback)
+ * 
+ * Reglas de agrupación:
+ * - Prioridad 1: Ciudad (locality, sublocality, neighborhood)
+ * - Prioridad 2: Región (administrative_area_level_1 - estado/provincia)
+ * 
+ * Nunca retorna coordenadas ni identificadores numéricos
+ * Usa getCityNameFromCoordinates que ya implementa la lógica completa
+ */
+async function getCityOrRegionFromCoordinates(
+  latitude: number,
+  longitude: number
+): Promise<{ city: string | null; region: string | null }> {
+  const cacheKey = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+  
+  // Verificar cache
+  const cached = geocodingCache.get(cacheKey);
+  if (cached) {
+    // Cache almacena city name si existe
+    return { city: cached, region: null };
+  }
+
+  try {
+    const result = await reverseGeocode(latitude, longitude);
+    if (!result || !result.addressComponents) {
+      return { city: null, region: null };
+    }
+
+    // Prioridad 1: Buscar ciudad (locality, sublocality, neighborhood)
+    const cityComponent = result.addressComponents.find((comp) =>
+      comp.types.includes('locality') ||
+      comp.types.some(type => type.includes('sublocality')) ||
+      comp.types.includes('neighborhood')
+    );
+    const city = cityComponent ? cityComponent.longName : null;
+
+    // Prioridad 2: Buscar región (administrative_area_level_1 - estado/provincia) como fallback
+    const regionComponent = result.addressComponents.find((comp) =>
+      comp.types.includes('administrative_area_level_1')
+    );
+    const region = regionComponent ? regionComponent.longName : null;
+
+    // Guardar ciudad en cache (si existe)
+    if (city) {
+      geocodingCache.set(cacheKey, city);
+    }
+
+    return { city, region };
+  } catch (error) {
+    console.error(`Error getting city/region for ${latitude}, ${longitude}:`, error);
+    geocodingCache.set(cacheKey, null);
+    return { city: null, region: null };
+  }
+}
+
+/**
+ * Obtener todas las ubicaciones únicas desde spots
+ * CANONICAL: Extrae destinos únicos agrupados por ciudad/región
+ * 
+ * Agrupación:
+ * - Agrupa spots por nombre de ciudad (primary)
+ * - Si no hay ciudad, agrupa por región (fallback)
+ * - Elimina duplicados por nombre
+ * - Nunca muestra coordenadas ni identificadores numéricos
+ * 
+ * Cada grupo usa coordenadas representativas (primer spot del grupo)
+ */
+export async function getAllLocationsFromSpots(spots: Spot[]): Promise<PredefinedCity[]> {
+  if (spots.length === 0) {
+    return [];
+  }
+
+  // Crear hash de spots para cache
+  const spotsHash = spots.map(s => s.id).sort().join(',');
+  
+  // Verificar cache
+  if (locationsCache.has(spotsHash)) {
+    const cached = locationsCache.get(spotsHash);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  // Mapa para agrupar por nombre de destino (ciudad o región)
+  // Key: nombre del destino (ciudad o región)
+  // Value: { name, coordinates, spots[] }
+  const destinationsMap = new Map<string, {
+    name: string;
+    coordinates: { latitude: number; longitude: number };
+    spots: Spot[];
+  }>();
+
+  // Procesar cada spot para obtener su ciudad/región
+  for (const spot of spots) {
+    const { latitude, longitude } = spot.location;
+    const cacheKey = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+    
+    let destinationName: string | null = null;
+    
+    // Verificar cache de geocoding
+    const cachedCity = geocodingCache.get(cacheKey);
+    if (cachedCity) {
+      destinationName = cachedCity;
+    } else {
+      // Obtener ciudad/región usando geocoding
+      const { city, region } = await getCityOrRegionFromCoordinates(latitude, longitude);
+      destinationName = city || region || null;
+      
+      // Guardar en cache si hay ciudad
+      if (city) {
+        geocodingCache.set(cacheKey, city);
+      }
+    }
+
+    // Si no se pudo obtener destino, saltar este spot (no mostrar coordenadas)
+    if (!destinationName) {
+      continue;
+    }
+
+    // Agrupar por nombre de destino
+    if (destinationsMap.has(destinationName)) {
+      // Agregar spot al grupo existente
+      const group = destinationsMap.get(destinationName)!;
+      group.spots.push(spot);
+    } else {
+      // Crear nuevo grupo con este spot
+      destinationsMap.set(destinationName, {
+        name: destinationName,
+        coordinates: { latitude, longitude }, // Usar coordenadas del primer spot del grupo
+        spots: [spot],
+      });
+    }
+  }
+
+  // Convertir mapa a array y ordenar alfabéticamente
+  const locations: PredefinedCity[] = Array.from(destinationsMap.values())
+    .map((group) => ({
+      name: group.name,
+      coordinates: group.coordinates,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Guardar en cache
+  locationsCache.set(spotsHash, locations);
+
+  return locations;
+}
+
 

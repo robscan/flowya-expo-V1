@@ -1,37 +1,81 @@
 /**
  * Flow Mini Player Component
- * Scope 7: Flow (Estado Activo) - Mini Player
  * 
- * Principios de diseño:
- * - Player minimizado con efecto glass
- * - Background blur y transparencia
- * - Imagen del spot, nombre y distancia
- * - Botón de navegación para expandir
- * - Posicionado sobre tab bar (con efecto glass también)
+ * @deprecated Este componente es legacy y ha sido reemplazado por FlowMiniBar.
+ * FlowMiniBar representa estado de movimiento activo, no reproductor de audio.
+ * 
+ * Este archivo se mantiene temporalmente para referencia.
+ * Se eliminará después de confirmar que la migración está completa.
+ * 
+ * Componente minimizado que muestra el estado del flow activo y permite controlar la reproducción.
+ * Se posiciona sobre el tab bar cuando un flow está activo o pausado.
+ * 
+ * @component
+ * 
+ * ## Responsabilidades
+ * 
+ * ### SÍ tiene:
+ * - Renderizar UI del mini player (imagen, nombre, distancia, controles)
+ * - Reflejar estado del flow desde FlowContext
+ * - Controlar reproducción básica (play/pause, previous/next, mute)
+ * - Calcular y mostrar distancia al spot (si userLocation está disponible)
+ * - Toggle entre millas/km (estado interno)
+ * - Posicionarse sobre el tab bar con animación
+ * - Ocultarse cuando FlowScreen está abierto
+ * 
+ * ### NO tiene:
+ * - Navegación (usa callback onExpand, el padre decide navegar)
+ * - Gestión de ubicación (recibe userLocation como prop opcional)
+ * - Edición de spots o modificación del flow
+ * - Decisión de layout de pantalla (eso es responsabilidad del padre)
+ * 
+ * ## Props
+ * 
+ * @param {() => void} [onExpand] - Callback cuando se expande el player (toca el player o botón expand).
+ *                                  El componente llama expandFlow() del contexto y luego onExpand().
+ * @param {{ latitude: number; longitude: number } | null} [userLocation] - Ubicación opcional del usuario
+ *                                                                          para calcular distancia al spot.
+ *                                                                          Si no se proporciona, no se muestra distancia.
+ * 
+ * ## Ejemplo de uso
+ * 
+ * ```tsx
+ * // Uso básico (sin ubicación)
+ * <FlowMiniPlayer onExpand={() => router.push('/flow-screen')} />
+ * 
+ * // Con ubicación
+ * const [location, setLocation] = useState(null);
+ * <FlowMiniPlayer 
+ *   userLocation={location}
+ *   onExpand={() => router.push('/flow-screen')} 
+ * />
+ * ```
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Pressable, StyleSheet, Text, TouchableOpacity, View, Image, Animated } from 'react-native';
-import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
+import { usePathname } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Image, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { FlowPlayerControls } from '@/components/FlowPlayerControls';
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
+import { borderRadius } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
-import { textStyles, fontSize, lineHeight, fontFamily, fontFamilyMedium } from '@/constants/typography';
-import { borderRadius } from '@/constants/borders';
+import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
+import { useOverlay } from '@/contexts/OverlayContext';
 import { usePath } from '@/contexts/PathContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { useOverlay } from '@/contexts/OverlayContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { calculateDistanceToSpot } from '@/utils/distance';
-import { hasValidImage, getValidImage } from '@/utils/imageHelpers';
+import { getValidImage, hasValidImage } from '@/utils/imageHelpers';
 
 interface FlowMiniPlayerProps {
+  /** Callback cuando se expande el player (toca el player o botón expand) */
   onExpand?: () => void;
+  /** Ubicación opcional del usuario para calcular distancia al spot. Si no se proporciona, no se muestra distancia. */
+  userLocation?: { latitude: number; longitude: number } | null;
 }
 
 // Helper para formatear distancia
@@ -56,57 +100,41 @@ function formatDistance(distance?: number, useMiles: boolean = false): string | 
   return `${(distance / 1000).toFixed(1)} km`;
 }
 
-export function FlowMiniPlayer({ onExpand }: FlowMiniPlayerProps) {
-  const router = useRouter();
+export function FlowMiniPlayer({ onExpand, userLocation: propUserLocation }: FlowMiniPlayerProps) {
+  const pathname = usePathname();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { flowState, currentSpotId, expandFlow } = useFlow();
   const { getFlowById } = usePath();
   const { getSpotById } = useSpot();
-  const { tabBarHeight } = useOverlay(); // Obtener altura dinámica del tab bar
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const { tabBarHeight } = useOverlay();
   const [useMiles, setUseMiles] = useState(false);
-  const bottomAnim = useRef(new Animated.Value(tabBarHeight)).current; // Animación para bottom
+  const bottomAnim = useRef(new Animated.Value(tabBarHeight)).current;
 
+  // Determinar visibilidad: solo visible cuando flow está activo o pausado
   const isVisible = flowState.status === 'active' || flowState.status === 'paused';
   const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
   const currentSpot = currentSpotId ? getSpotById(currentSpotId) : null;
 
-  // Obtener ubicación del usuario
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          return;
-        }
-
-        const location = await Location.getCurrentPositionAsync({});
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-      } catch (error) {
-        console.error('Error obteniendo ubicación:', error);
-      }
-    })();
-  }, []);
+  // Ocultar cuando FlowScreen está abierta
+  const isFlowScreenOpen = pathname === '/flow-screen' || pathname?.includes('flow-screen');
 
   // Animar el bottom cuando cambia la altura del tab bar
   useEffect(() => {
     Animated.timing(bottomAnim, {
       toValue: tabBarHeight,
-      duration: 400, // Misma duración que LayoutAnimation
-      useNativeDriver: false, // No se puede usar native driver para position
+      duration: 400,
+      useNativeDriver: false,
     }).start();
   }, [tabBarHeight, bottomAnim]);
 
-  if (!isVisible || !flow || !currentSpot) {
+  // Early return si no debe mostrarse
+  if (!isVisible || !flow || !currentSpot || isFlowScreenOpen) {
     return null;
   }
 
-  // Calcular distancia al spot
-  const distance = calculateDistanceToSpot(userLocation, currentSpot.location);
+  // Calcular distancia al spot si userLocation está disponible
+  const distance = propUserLocation ? calculateDistanceToSpot(propUserLocation, currentSpot.location) : null;
   const distanceText = formatDistance(distance || undefined, useMiles);
 
   const hasImage = hasValidImage(currentSpot.photos);
@@ -119,10 +147,8 @@ export function FlowMiniPlayer({ onExpand }: FlowMiniPlayerProps) {
     }
   };
 
-  // handlePlayPause, handlePrevious, handleNext ahora están en FlowPlayerControls
-
   const handleExpand = () => {
-    // Expandir FlowScreen desde minimizado
+    // Expandir flow desde contexto y notificar al padre
     expandFlow();
     onExpand?.();
   };

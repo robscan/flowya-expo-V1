@@ -10,12 +10,12 @@
  * - Historial ligero (timeline)
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 
 const STORAGE_KEY = '@flowya_saved';
 
-export type AffinityAction = 'like' | 'not_my_vibe' | 'saved' | 'visited';
+export type AffinityAction = 'like' | 'not_my_vibe' | 'saved';
 
 export interface TimelineEntry {
   id: string;
@@ -31,11 +31,10 @@ interface SavedData {
   notMyVibeSpots: string[]; // Spot IDs
   savedSpots: string[]; // Spot IDs
   savedFlows: string[]; // Flow IDs (anteriormente savedPaths)
-  visitedFlows: string[]; // Flow IDs (anteriormente visitedPaths)
+  savedFlowNames: Record<string, string>; // Map de flowId a nombre personalizado
   timeline: TimelineEntry[];
   // Aliases para compatibilidad temporal
   savedPaths: string[];
-  visitedPaths: string[];
 }
 
 interface SavedContextType {
@@ -46,10 +45,9 @@ interface SavedContextType {
   savedSpots: string[];
   // Flows (anteriormente Paths)
   savedFlows: string[];
-  visitedFlows: string[];
+  savedFlowNames: Record<string, string>; // Map de flowId a nombre personalizado
   // Aliases para compatibilidad temporal
   savedPaths: string[];
-  visitedPaths: string[];
   // Timeline
   timeline: TimelineEntry[];
   // Actions
@@ -57,20 +55,18 @@ interface SavedContextType {
   toggleLikeSpotFromPlayer: (spotId: string) => void; // Like desde el player
   toggleNotMyVibeSpot: (spotId: string) => void;
   toggleSaveSpot: (spotId: string) => void;
-  toggleSaveFlow: (flowId: string) => void;
-  markFlowVisited: (flowId: string) => void;
+  toggleSaveFlow: (flowId: string, customName?: string) => void; // Legacy - use saveFlow instead
+  saveFlow: (flowId: string, customName: string) => void; // CANONICAL: Create if draft, Update if saved
+  getFlowCustomName: (flowId: string) => string | undefined;
   // Aliases para compatibilidad temporal
   toggleSavePath: (pathId: string) => void;
-  markPathVisited: (pathId: string) => void;
   isSpotLiked: (spotId: string) => boolean;
   isSpotLikedFromPlayer: (spotId: string) => boolean; // Verificar si está liked desde player
   isSpotNotMyVibe: (spotId: string) => boolean;
   isSpotSaved: (spotId: string) => boolean;
   isFlowSaved: (flowId: string) => boolean;
-  isFlowVisited: (flowId: string) => boolean;
   // Aliases para compatibilidad temporal
   isPathSaved: (pathId: string) => boolean;
-  isPathVisited: (pathId: string) => boolean;
   // Loading
   isLoading: boolean;
 }
@@ -83,11 +79,10 @@ const defaultData: SavedData = {
   notMyVibeSpots: [],
   savedSpots: [],
   savedFlows: [],
-  visitedFlows: [],
+  savedFlowNames: {},
   timeline: [],
   // Aliases para compatibilidad
   savedPaths: [],
-  visitedPaths: [],
 };
 
 export function SavedProvider({ children }: { children: ReactNode }) {
@@ -116,19 +111,24 @@ export function SavedProvider({ children }: { children: ReactNode }) {
           ...entry,
           timestamp: new Date(entry.timestamp),
         }));
-        // Migración: si tiene savedPaths/visitedPaths pero no savedFlows/visitedFlows, copiar
+        // Migración: si tiene savedPaths pero no savedFlows, copiar
         if (parsed.savedPaths && !parsed.savedFlows) {
           parsed.savedFlows = parsed.savedPaths;
         }
-        if (parsed.visitedPaths && !parsed.visitedFlows) {
-          parsed.visitedFlows = parsed.visitedPaths;
+        // Inicializar savedFlowNames si no existe
+        if (!parsed.savedFlowNames) {
+          parsed.savedFlowNames = {};
         }
         // Asegurar que los aliases estén sincronizados
         if (parsed.savedFlows) {
           parsed.savedPaths = parsed.savedFlows;
         }
+        // Remover campos legacy de visited
         if (parsed.visitedFlows) {
-          parsed.visitedPaths = parsed.visitedFlows;
+          delete parsed.visitedFlows;
+        }
+        if (parsed.visitedPaths) {
+          delete parsed.visitedPaths;
         }
         setData(parsed);
       }
@@ -243,51 +243,87 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const toggleSaveFlow = (flowId: string) => {
+  /**
+   * Legacy toggleSaveFlow - toggles save state
+   * @deprecated Use saveFlow() instead for canonical create/update behavior
+   */
+  const toggleSaveFlow = (flowId: string, customName?: string) => {
     setData((prev) => {
       const isSaved = prev.savedFlows.includes(flowId);
       const newSavedFlows = isSaved
         ? prev.savedFlows.filter((id) => id !== flowId)
         : [...prev.savedFlows, flowId];
 
+      // Si se proporciona un nombre personalizado, guardarlo
+      const newSavedFlowNames = { ...prev.savedFlowNames };
+      if (customName && !isSaved) {
+        // Solo guardar nombre si se está guardando (no al desguardar)
+        newSavedFlowNames[flowId] = customName;
+      } else if (isSaved) {
+        // Al desguardar, eliminar el nombre personalizado
+        delete newSavedFlowNames[flowId];
+      }
+
       addToTimeline('path', 'saved', flowId);
 
       return {
         ...prev,
         savedFlows: newSavedFlows,
+        savedFlowNames: newSavedFlowNames,
         savedPaths: newSavedFlows, // Sincronizar con alias
       };
     });
   };
 
-  const markFlowVisited = (flowId: string) => {
+  /**
+   * CANONICAL saveFlow - Create if draft, Update if saved
+   * Follows standard content-entity model:
+   * - Save means: Create if draft, Update if already saved
+   * - Save must never create duplicates
+   * - Save must never delete or replace an existing Flow
+   * - Saving with the same name is a normal update, not a conflict
+   */
+  const saveFlow = (flowId: string, customName: string) => {
     setData((prev) => {
-      if (!prev.visitedFlows.includes(flowId)) {
-        addToTimeline('path', 'visited', flowId);
-        const newVisitedFlows = [...prev.visitedFlows, flowId];
-        return {
-          ...prev,
-          visitedFlows: newVisitedFlows,
-          visitedPaths: newVisitedFlows, // Sincronizar con alias
-        };
+      const isSaved = prev.savedFlows.includes(flowId);
+      
+      // Create if draft (not saved), Update if already saved
+      const newSavedFlows = isSaved
+        ? prev.savedFlows // Already saved, keep it (update, not toggle)
+        : [...prev.savedFlows, flowId]; // Not saved, add it (create)
+
+      // Always update the custom name (create or update)
+      const newSavedFlowNames = { ...prev.savedFlowNames };
+      newSavedFlowNames[flowId] = customName;
+
+      // Add to timeline only if creating (not updating)
+      if (!isSaved) {
+        addToTimeline('path', 'saved', flowId);
       }
-      return prev;
+
+      return {
+        ...prev,
+        savedFlows: newSavedFlows,
+        savedFlowNames: newSavedFlowNames,
+        savedPaths: newSavedFlows, // Sincronizar con alias
+      };
     });
+  };
+
+  const getFlowCustomName = (flowId: string): string | undefined => {
+    return data.savedFlowNames[flowId];
   };
 
   // Aliases para compatibilidad temporal
   const toggleSavePath = toggleSaveFlow;
-  const markPathVisited = markFlowVisited;
 
   const isSpotLiked = (spotId: string) => data.likedSpots.includes(spotId);
   const isSpotLikedFromPlayer = (spotId: string) => data.likedSpotsFromPlayer.includes(spotId);
   const isSpotNotMyVibe = (spotId: string) => data.notMyVibeSpots.includes(spotId);
   const isSpotSaved = (spotId: string) => data.savedSpots.includes(spotId);
   const isFlowSaved = (flowId: string) => data.savedFlows.includes(flowId);
-  const isFlowVisited = (flowId: string) => data.visitedFlows.includes(flowId);
   // Aliases para compatibilidad
   const isPathSaved = isFlowSaved;
-  const isPathVisited = isFlowVisited;
 
   const value: SavedContextType = {
     likedSpots: data.likedSpots,
@@ -295,29 +331,26 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     notMyVibeSpots: data.notMyVibeSpots,
     savedSpots: data.savedSpots,
     savedFlows: data.savedFlows,
-    visitedFlows: data.visitedFlows,
+    savedFlowNames: data.savedFlowNames,
     timeline: data.timeline,
     // Aliases para compatibilidad
     savedPaths: data.savedFlows,
-    visitedPaths: data.visitedFlows,
     toggleLikeSpot,
     toggleLikeSpotFromPlayer,
     toggleNotMyVibeSpot,
     toggleSaveSpot,
     toggleSaveFlow,
-    markFlowVisited,
+    saveFlow,
+    getFlowCustomName,
     // Aliases para compatibilidad
     toggleSavePath,
-    markPathVisited,
     isSpotLiked,
     isSpotLikedFromPlayer,
     isSpotNotMyVibe,
     isSpotSaved,
     isFlowSaved,
-    isFlowVisited,
     // Aliases para compatibilidad
     isPathSaved,
-    isPathVisited,
     isLoading,
   };
 

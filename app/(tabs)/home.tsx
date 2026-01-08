@@ -4,36 +4,36 @@
  * 
  * Home · Explore: "What can I do here and now?"
  * - Horizontal sliders of spots: Nearby, For You, Recommended
- * - Horizontal sliders of compact spots: Recently Viewed, Maybe You Like (Global), New (Global)
+ * - Horizontal sliders of compact spots: Maybe You Like (Global), New (Global)
  * - Path lists with clear titles
  * - Everything organized by location
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, FlatList, Dimensions, LayoutAnimation, Platform, UIManager, RefreshControl } from 'react-native';
-import { useRouter, useNavigation } from 'expo-router';
 import * as Location from 'expo-location';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import { Dimensions, FlatList, LayoutAnimation, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { spacing } from '@/constants/spacing';
-import { textStyles, fontSize, lineHeight, fontFamilyMedium } from '@/constants/typography';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Icon } from '@/components/ui/Icon';
-import { iconTouchableContainer } from '@/components/ui/Icon';
-import { SpotCard } from '@/components/SpotCard';
-import { SpotCardCompact } from '@/components/SpotCardCompact';
 import { FlowCard } from '@/components/FlowCard';
-import { SpotCardSkeleton, SkeletonLoader } from '@/components/ui/SkeletonLoader';
 import { LocationWeatherHeader } from '@/components/LocationWeatherHeader';
-import { useSpot } from '@/contexts/SpotContext';
+import { SpotMediaCard } from '@/components/SpotMediaCard';
+import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SectionHeader } from '@/components/ui/SectionHeader';
+import { SkeletonLoader, SpotCardSkeleton } from '@/components/ui/SkeletonLoader';
+import { spacing } from '@/constants/spacing';
+import { Colors } from '@/constants/theme';
+import { fontFamilyMedium, fontSize, lineHeight, textStyles } from '@/constants/typography';
+import { useOverlay } from '@/contexts/OverlayContext';
 import { usePath } from '@/contexts/PathContext';
 import { useSaved } from '@/contexts/SavedContext';
-import { useOverlay } from '@/contexts/OverlayContext';
-import { Spot } from '@/data/spots';
+import { useSpot } from '@/contexts/SpotContext';
 import { Flow } from '@/data/flows';
+import { Spot } from '@/data/spots';
+import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { calculateDistanceToSpot } from '@/utils/distance';
-import { getWeatherCondition, getWeatherGradientColor, WeatherCondition } from '@/utils/weather';
+import { isFlowComplete } from '@/utils/flowValidation';
 import { getFeaturedSpots, getRecentSpots } from '@/utils/gemsLogic';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -42,13 +42,15 @@ const CARD_WIDTH = Math.min(SCREEN_WIDTH * 0.75, 400); // 75% of screen width, m
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
-  const navigation = useNavigation();
-  const { setIsTabBarLabelsVisible } = useOverlay();
+  const { setIsTabBarVisible } = useOverlay();
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [weatherCondition, setWeatherCondition] = useState<WeatherCondition>('default');
   const colors = Colors[colorScheme ?? 'light'];
-  const lastScrollY = useRef(0);
-  const isLabelsVisible = useRef(true);
+  
+  // Centralized scroll visibility control
+  // threshold: 24px para ScreenHeader
+  const { isHeaderVisible, isBottomNavVisible, handleScroll } = useScrollVisibility({ 
+    threshold: 24 
+  });
 
   const { spots, isLoading: spotsLoading, refreshSpots } = useSpot();
   const { paths, isLoading: pathsLoading, refreshFlows } = usePath();
@@ -79,16 +81,6 @@ export default function HomeScreen() {
           longitude: location.coords.longitude,
         };
         setUserLocation(locationData);
-
-        // Obtener condición climática
-        try {
-          const condition = await getWeatherCondition(locationData.latitude, locationData.longitude);
-          setWeatherCondition(condition);
-        } catch (error) {
-          console.error('Error getting weather:', error);
-          // Fallback a condición por defecto si falla
-          setWeatherCondition('default');
-        }
       } catch (error) {
         console.error('Error getting location:', error);
       }
@@ -100,56 +92,21 @@ export default function HomeScreen() {
     router.push('/(tabs)/profile');
   };
 
-  // Navigate to testing components
-  const handleTestingPress = () => {
-    router.push('/testing-components');
-  };
-
   // Handle Spot selection (normal detail)
   const handleSpotPress = (spot: Spot) => {
     router.push(`/spot-detail?id=${spot.id}`);
   };
 
-  // Handle "View on map" (opens detail in map view)
+  // Handle "View on map" (navigates to Map tab and centers on spot)
   const handleMapPress = (spot: Spot) => {
-    router.push(`/spot-detail?id=${spot.id}`);
+    router.push(`/(tabs)/map?spotId=${spot.id}`);
   };
 
-  // Handle scroll to show/hide tab bar labels
-  const handleScroll = (event: any) => {
-    const currentScrollY = event.nativeEvent.contentOffset.y;
-    const scrollDifference = 10; // Threshold for scroll detection
-
-    if (currentScrollY > lastScrollY.current + scrollDifference && isLabelsVisible.current) {
-      // Scrolling down - hide labels
-      isLabelsVisible.current = false;
-      LayoutAnimation.configureNext({
-        duration: 300,
-        create: { type: 'easeInEaseOut', property: 'opacity' },
-        update: { type: 'easeInEaseOut', property: 'opacity' },
-        delete: { type: 'easeInEaseOut', property: 'opacity' },
-      });
-      setIsTabBarLabelsVisible(false);
-      navigation.setOptions({
-        tabBarShowLabel: false,
-      });
-    } else if (currentScrollY < lastScrollY.current - scrollDifference && !isLabelsVisible.current) {
-      // Scrolling up - show labels
-      isLabelsVisible.current = true;
-      LayoutAnimation.configureNext({
-        duration: 300,
-        create: { type: 'easeInEaseOut', property: 'opacity' },
-        update: { type: 'easeInEaseOut', property: 'opacity' },
-        delete: { type: 'easeInEaseOut', property: 'opacity' },
-      });
-      setIsTabBarLabelsVisible(true);
-      navigation.setOptions({
-        tabBarShowLabel: true,
-      });
-    }
-
-    lastScrollY.current = currentScrollY;
-  };
+  // Handle scroll to show/hide tab bar labels and header
+  // Sync bottomNav visibility with hook state
+  useEffect(() => {
+    setIsTabBarVisible(isBottomNavVisible);
+  }, [isBottomNavVisible, setIsTabBarVisible]);
 
   // Location to use for filtering (selected or user location)
   const currentLocation = selectedLocation || userLocation;
@@ -218,25 +175,6 @@ export default function HomeScreen() {
       return scored;
     };
 
-    // 4. Recently viewed spots (from timeline)
-    const getRecentlyViewedSpots = (): Spot[] => {
-      const viewedSpotIds = timeline
-        .filter((entry) => entry.type === 'spot' && entry.action === 'visited')
-        .map((entry) => entry.itemId)
-        .slice(0, 20); // Get last 20 viewed spots
-
-      const recentlyViewed = spots
-        .filter((spot) => !usedSpotIds.has(spot.id) && viewedSpotIds.includes(spot.id))
-        .sort((a, b) => {
-          const aIndex = viewedSpotIds.indexOf(a.id);
-          const bIndex = viewedSpotIds.indexOf(b.id);
-          return aIndex - bIndex; // Most recent first
-        })
-        .slice(0, 10);
-      
-      recentlyViewed.forEach((spot) => usedSpotIds.add(spot.id));
-      return recentlyViewed;
-    };
 
     // 5. Maybe You Like (global featured spots)
     const getMaybeYouLikeSpots = (): Spot[] => {
@@ -268,7 +206,6 @@ export default function HomeScreen() {
       nearby: getNearbySpots(),
       forYou: getForYouSpots(),
       recommended: getRecommendedSpots(),
-      recentlyViewed: getRecentlyViewedSpots(),
       maybeYouLike: getMaybeYouLikeSpots(),
       new: getNewSpots(),
     };
@@ -277,31 +214,36 @@ export default function HomeScreen() {
   // Organize flows by proximity
   const getNearbyPaths = (): Flow[] => {
     const location = currentLocation;
-    if (!location) return paths;
+    if (!location) {
+      // Sin ubicación: filtrar solo flows completos
+      return paths.filter((path) => isFlowComplete(path, spots));
+    }
     
-    // Sort flows by distance to first spot
+    // Sort flows by distance to first spot, filtrando flows incompletos
     return paths
       .map((path) => {
         const pathSpots = path.spots
           .map((spotId) => spots.find((s) => s.id === spotId))
           .filter((s): s is Spot => s !== undefined);
         
-        if (pathSpots.length === 0) return { path, distance: Infinity };
+        if (pathSpots.length === 0) return { path, distance: Infinity, isComplete: false };
         
         const firstSpotDistance = calculateDistanceToSpot(location, pathSpots[0].location) || Infinity;
-        return { path, distance: firstSpotDistance };
+        const isComplete = isFlowComplete(path, spots);
+        return { path, distance: firstSpotDistance, isComplete };
       })
+      .filter((item) => item.isComplete) // Solo flows completos
       .sort((a, b) => a.distance - b.distance)
       .map((item) => item.path);
   };
 
-  // Render horizontal slider of spots (full card)
+  // Render horizontal slider of spots (full card - variant="large")
   const renderSpotSlider = (title: string, spots: Spot[]) => {
     if (spots.length === 0) return null;
 
     return (
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+        <SectionHeader title={title} variant="large" />
         <FlatList
           data={spots}
           horizontal
@@ -312,12 +254,11 @@ export default function HomeScreen() {
             const distance = calculateDistanceToSpot(currentLocation, spot.location);
             return (
               <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-                <SpotCard
+                <SpotMediaCard
                   spot={spot}
+                  size="large"
                   distance={distance || undefined}
                   onPress={() => handleSpotPress(spot)}
-                  onMapPress={() => handleMapPress(spot)}
-                  inSlider={true}
                 />
               </View>
             );
@@ -330,13 +271,13 @@ export default function HomeScreen() {
     );
   };
 
-  // Render horizontal slider of compact spots (small card)
+  // Render horizontal slider of compact spots (small card - variant="small")
   const renderSpotSliderCompact = (title: string, spots: Spot[]) => {
     if (spots.length === 0) return null;
 
     return (
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+        <SectionHeader title={title} variant="small" />
         <FlatList
           data={spots}
           horizontal
@@ -346,12 +287,12 @@ export default function HomeScreen() {
           renderItem={({ item: spot }) => {
             const distance = calculateDistanceToSpot(currentLocation, spot.location);
             return (
-              <View style={styles.sliderCardCompact}>
-                <SpotCardCompact
+              <View style={{ width: 160, marginRight: spacing.sm }}>
+                <SpotMediaCard
                   spot={spot}
+                  size="small"
                   distance={distance || undefined}
                   onPress={() => handleSpotPress(spot)}
-                  onMapPress={() => handleMapPress(spot)}
                 />
               </View>
             );
@@ -370,7 +311,7 @@ export default function HomeScreen() {
 
     return (
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: spacing.xs }]}>{title}</Text>
+        <SectionHeader title={title} variant="large" />
         <Text style={[textStyles.caption, { color: colors.icon, marginTop: 0, marginBottom: spacing.md, paddingHorizontal: spacing.md }]}>
           Curated flows connecting multiple spots
         </Text>
@@ -381,7 +322,7 @@ export default function HomeScreen() {
               spots.find((s) => s.id === path.spots[0])?.location || { latitude: 0, longitude: 0 }
             );
             return (
-              <FlowCard
+              <FlowCard.Display
                 key={path.id}
                 flow={path}
                 spots={spots}
@@ -442,7 +383,6 @@ export default function HomeScreen() {
     const nearbySpots = filteredSpots.nearby;
     const forYouSpots = filteredSpots.forYou;
     const recommendedSpots = filteredSpots.recommended;
-    const recentlyViewedSpots = filteredSpots.recentlyViewed;
     const maybeYouLikeSpots = filteredSpots.maybeYouLike;
     const newSpots = filteredSpots.new;
     const nearbyPaths = getNearbyPaths();
@@ -452,7 +392,6 @@ export default function HomeScreen() {
       nearbySpots.length > 0 ||
       recommendedSpots.length > 0 ||
       forYouSpots.length > 0 ||
-      recentlyViewedSpots.length > 0 ||
       maybeYouLikeSpots.length > 0 ||
       newSpots.length > 0 ||
       nearbyPaths.length > 0;
@@ -488,7 +427,6 @@ export default function HomeScreen() {
         {recommendedSpots.length > 0 && renderSpotSlider('Recommended - Spots', recommendedSpots)}
 
         {/* Sliders de spots compactos (card pequeña - menor jerarquía) */}
-        {recentlyViewedSpots.length > 0 && renderSpotSliderCompact('Recently Viewed - Spots', recentlyViewedSpots)}
         {maybeYouLikeSpots.length > 0 && renderSpotSliderCompact('Maybe You Like - Spots', maybeYouLikeSpots)}
         {newSpots.length > 0 && renderSpotSliderCompact('New - Spots', newSpots)}
 
@@ -498,19 +436,8 @@ export default function HomeScreen() {
     );
   };
 
-  const gradientColor = getWeatherGradientColor(weatherCondition, colorScheme);
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Degradado de clima sutil en la parte superior */}
-      {gradientColor !== 'transparent' && (
-        <LinearGradient
-          colors={[gradientColor, 'transparent']}
-          locations={[0, 0.5]}
-          style={styles.weatherGradient}
-          pointerEvents="none"
-        />
-      )}
       {/* Content */}
       <ScrollView
         style={styles.content}
@@ -534,25 +461,15 @@ export default function HomeScreen() {
             tintColor={colors.tint}
           />
         }>
-        {/* Header inside ScrollView (scrolls) */}
-        <View
-          style={[
-            styles.header,
-            {
-              borderBottomColor:
-                colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-            },
-          ]}>
-          <View style={styles.headerContent}>
-            <Text style={[textStyles.heading3, { color: colors.text }]}>FLOWYA - Home</Text>
-            <TouchableOpacity
-              onPress={handleProfilePress}
-              style={iconTouchableContainer.base}
-              activeOpacity={0.7}>
-              <Icon name="profile" size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* Header inside ScrollView (hides/shows with scroll) */}
+        <ScreenHeader
+          title="FLOWYA - Home"
+          rightAction={{
+            icon: 'profile',
+            onPress: handleProfilePress,
+          }}
+          visible={isHeaderVisible}
+        />
 
         {/* Location and Weather Header */}
         <LocationWeatherHeader
@@ -565,22 +482,6 @@ export default function HomeScreen() {
         {/* Explore content */}
         {renderExplore()}
       </ScrollView>
-
-      {/* Testing Components button - Hidden by default, show only when needed for component/token work */}
-      {false && (
-      <TouchableOpacity
-        style={styles.floatingButton}
-        onPress={handleTestingPress}
-        activeOpacity={0.8}>
-        <View
-          style={[
-            styles.floatingButtonContent,
-            { backgroundColor: colors.background, borderColor: colors.icon + '20' },
-          ]}>
-          <Text style={[textStyles.label, { color: colors.text }]}>Testing Components</Text>
-        </View>
-      </TouchableOpacity>
-      )}
     </View>
   );
 }
@@ -590,15 +491,6 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
-  weatherGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 300, // Degradado en los primeros 300px
-    zIndex: 0,
-    pointerEvents: 'none',
-  },
   content: {
     flex: 1,
     zIndex: 1,
@@ -606,31 +498,11 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingBottom: spacing['2xl'],
   },
-  header: {
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderBottomWidth: 1,
-    marginBottom: spacing.sm,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   exploreContent: {
     paddingTop: spacing.md,
   },
   section: {
     marginBottom: spacing.xl,
-  },
-  sectionTitle: {
-    fontFamily: fontFamilyMedium,
-    fontSize: fontSize.lg,
-    lineHeight: lineHeight.lg,
-    fontWeight: '600',
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
   },
   sliderContent: {
     paddingHorizontal: spacing.md,
@@ -638,10 +510,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs, // 8px - Allow shadows to show on cards
   },
   sliderCard: {
-    marginRight: spacing.sm, // 16px
-  },
-  sliderCardCompact: {
-    width: 160, // Fixed width for compact cards
     marginRight: spacing.sm, // 16px
   },
   pathsList: {
@@ -661,18 +529,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderRadius: 12,
-  },
-  floatingButton: {
-    position: 'absolute',
-    top: spacing.lg, // Movido más arriba (de bottom a top)
-    right: spacing.md,
-    zIndex: 1000,
-  },
-  floatingButtonContent: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 24,
-    borderWidth: 1,
   },
   scrollIndicator: {
     position: 'absolute',

@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, Platform } from 'react-native';
+import { View, Text, StyleSheet, Animated, Platform, TouchableOpacity } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { spacing } from '@/constants/spacing';
 import { textStyles, fontSize } from '@/constants/typography';
@@ -18,9 +18,11 @@ interface ToastProps {
   visible: boolean;
   duration?: number;
   onHide?: () => void;
+  onUndo?: () => void; // Callback para deshacer acción
+  undoLabel?: string; // Texto del botón deshacer (default: "Deshacer")
 }
 
-export function Toast({ message, type = 'success', icon, visible, duration = 2000, onHide }: ToastProps) {
+export function Toast({ message, type = 'success', icon, visible, duration = 2000, onHide, onUndo, undoLabel = 'Deshacer' }: ToastProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const opacity = React.useRef(new Animated.Value(0)).current;
@@ -94,7 +96,7 @@ export function Toast({ message, type = 'success', icon, visible, duration = 200
           transform: [{ translateY }],
         },
       ]}
-      pointerEvents="none">
+      pointerEvents={onUndo ? 'auto' : 'none'}>
       <View
         style={[
           styles.toast,
@@ -110,6 +112,17 @@ export function Toast({ message, type = 'success', icon, visible, duration = 200
           <Icon name={defaultIcons[type] as any} size={20} color={typeColors[type]} style={{ marginRight: spacing.xs }} />
         )}
         <Text style={[textStyles.bodyMedium, { color: colors.text, flex: 1 }]}>{message}</Text>
+        {onUndo && (
+          <TouchableOpacity
+            onPress={() => {
+              onUndo();
+              hideToast();
+            }}
+            style={styles.undoButton}
+            activeOpacity={0.7}>
+            <Text style={[styles.undoText, { color: typeColors[type] }]}>{undoLabel}</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </Animated.View>
   );
@@ -138,6 +151,16 @@ const styles = StyleSheet.create({
     elevation: 5,
     minHeight: 48,
     maxWidth: '100%',
+  },
+  undoButton: {
+    marginLeft: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+  },
+  undoText: {
+    fontFamily: 'System',
+    fontSize: fontSize.sm,
+    fontWeight: '600',
   },
 });
 

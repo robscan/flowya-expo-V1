@@ -13,7 +13,7 @@
  * - Border radius igual a FlowCard (borderRadius.lg = 16px)
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
@@ -32,6 +32,14 @@ interface FlowSpotCardProps {
   distance?: number; // En metros (opcional)
   estimatedTime?: number; // En minutos (opcional)
   isActive?: boolean; // Estado activo/inactivo del número
+  isSuggested?: boolean; // Indica si es un spot sugerido (no parte del flow aún)
+  onAdd?: () => void; // Callback para agregar el spot al flow (solo para suggested spots)
+  isEditMode?: boolean; // Modo edición activo
+  isFirst?: boolean; // Para deshabilitar "move up"
+  isLast?: boolean; // Para deshabilitar "move down"
+  onMoveUp?: () => void; // Callback para mover spot arriba
+  onMoveDown?: () => void; // Callback para mover spot abajo
+  onRemove?: () => void; // Callback para remover spot del flow
 }
 
 // Helper para formatear distancia
@@ -53,7 +61,7 @@ function formatDistance(distance?: number, useMiles: boolean = false): string | 
   return `${(distance / 1000).toFixed(1)} km`;
 }
 
-export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, isActive = false }: FlowSpotCardProps) {
+export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, isActive = false, isSuggested = false, onAdd, isEditMode = false, isFirst = false, isLast = false, onMoveUp, onMoveDown, onRemove }: FlowSpotCardProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const [useMiles, setUseMiles] = useState(false);
@@ -67,10 +75,19 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
     }
   };
 
+  // Prevenir que el Pressable padre ejecute onPress cuando está en modo edición
+  const handleCardPress = () => {
+    if (!isEditMode && onPress) {
+      onPress();
+    }
+  };
+
   return (
-    <Pressable onPress={onPress} style={styles.cardContainer}>
+    <Pressable 
+      onPress={handleCardPress}
+      style={isSuggested ? [styles.cardContainer, styles.suggestedCardContainer] : [styles.cardContainer]}>
       <GlassView
-        style={styles.card}
+        style={StyleSheet.flatten(isSuggested ? [styles.card, styles.suggestedCard] : [styles.card])}
         intensity="light"
         opacity="medium"
         shadowLevel="subtle"
@@ -78,12 +95,14 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
         useGrayBackground={true}
       >
         <View style={styles.content}>
-          {/* Drag handle (left) */}
-          <View style={styles.dragHandle}>
-            <Icon name="menu" size={16} color={colors.icon + '60'} />
+          {/* Number badge o badge "Suggested" */}
+          {isSuggested ? (
+            <View style={[styles.suggestedBadge, { backgroundColor: colors.tint + '20' }]}>
+              <Text style={[styles.suggestedBadgeText, { color: colors.tint }]}>
+                Suggested
+              </Text>
           </View>
-
-          {/* Number badge */}
+          ) : (
           <View
             style={[
               styles.numberBadge,
@@ -101,12 +120,15 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
               {index + 1}
             </Text>
           </View>
+          )}
 
           {/* Spot info */}
           <View style={styles.spotInfo}>
+            <View style={styles.spotInfoHeader}>
             <Text style={[styles.spotTitle, { color: colors.text }]} numberOfLines={1}>
               {spot.name || 'Unnamed spot'}
             </Text>
+            </View>
             {spot.description && (
               <Text style={[styles.spotDescription, { color: colors.icon }]} numberOfLines={1}>
                 {spot.description}
@@ -114,8 +136,85 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
             )}
           </View>
 
-          {/* Distance and Time (right) */}
+          {/* Distance and Time (right) o Botón Add o Controles de Edición */}
+          {isSuggested ? (
+            <View style={styles.suggestedActionsContainer}>
           {distanceText && (
+                <View style={styles.distanceTimeContainer}>
+                  <TouchableOpacity
+                    onPress={handleDistancePress}
+                    activeOpacity={0.7}
+                    style={styles.distanceContainer}>
+                    <Icon name="map" size={14} color={colors.icon} />
+                    <Text style={[styles.distanceText, { color: colors.icon }]}>
+                      {distanceText}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              <TouchableOpacity
+                style={[styles.addButton, { backgroundColor: colors.tint }]}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onAdd?.();
+                }}
+                activeOpacity={0.8}>
+                <Icon name="add-circle" size={16} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          ) : isEditMode ? (
+            <View style={styles.editControls}>
+              <TouchableOpacity
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  onMoveUp?.();
+                }}
+                disabled={isFirst}
+                style={[
+                  styles.editButton,
+                  { backgroundColor: colors.background + '80' },
+                  isFirst && styles.editButtonDisabled
+                ]}
+                activeOpacity={0.7}>
+                <Icon 
+                  name="arrow-up" 
+                  size={18} 
+                  color={isFirst ? colors.icon + '40' : colors.text} 
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  onMoveDown?.();
+                }}
+                disabled={isLast}
+                style={[
+                  styles.editButton,
+                  { backgroundColor: colors.background + '80' },
+                  isLast && styles.editButtonDisabled
+                ]}
+                activeOpacity={0.7}>
+                <Icon 
+                  name="arrow-down" 
+                  size={18} 
+                  color={isLast ? colors.icon + '40' : colors.text} 
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  onRemove?.();
+                }}
+                style={[
+                  styles.editButton,
+                  { backgroundColor: colors.background + '80' }
+                ]}
+                activeOpacity={0.7}>
+                <Icon name="close" size={18} color="#FF3B30" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            distanceText && (
             <View style={styles.distanceTimeContainer}>
               <TouchableOpacity
                 onPress={handleDistancePress}
@@ -135,6 +234,7 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
                 </>
               )}
             </View>
+            )
           )}
         </View>
       </GlassView>
@@ -156,11 +256,22 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     gap: spacing.sm,
   },
-  dragHandle: {
+  editControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginLeft: spacing.xs,
+    flexShrink: 0,
+  },
+  editButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 24,
-    height: 24,
+  },
+  editButtonDisabled: {
+    opacity: 0.4,
   },
   numberBadge: {
     width: 32,
@@ -180,6 +291,12 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.xs / 2,
     minWidth: 0,
+  },
+  spotInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs / 2,
+    flexWrap: 'wrap',
   },
   spotTitle: {
     fontFamily: fontFamilyMedium,
@@ -221,6 +338,39 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     lineHeight: lineHeight.xs,
     fontWeight: '400',
+  },
+  suggestedCardContainer: {
+    opacity: 0.9,
+  },
+  suggestedCard: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  suggestedBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: borderRadius.sm,
+    flexShrink: 0,
+  },
+  suggestedBadgeText: {
+    fontFamily: fontFamilyMedium,
+    fontSize: fontSize.xs,
+    lineHeight: lineHeight.xs,
+    fontWeight: '600',
+  },
+  addButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  suggestedActionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 0,
   },
 });
 

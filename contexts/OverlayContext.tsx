@@ -14,6 +14,8 @@ interface OverlayContextType {
   setTabBarHeight: (height: number) => void;
   isTabBarLabelsVisible: boolean;
   setIsTabBarLabelsVisible: (visible: boolean) => void;
+  isTabBarVisible: boolean; // Visibilidad completa del TabBar
+  setIsTabBarVisible: (visible: boolean) => void;
 }
 
 const OverlayContext = createContext<OverlayContextType | undefined>(undefined);
@@ -21,6 +23,7 @@ const OverlayContext = createContext<OverlayContextType | undefined>(undefined);
 export function OverlayProvider({ children }: { children: ReactNode }) {
   const [tabBarHeight, setTabBarHeight] = useState(88); // Altura inicial con labels
   const [isTabBarLabelsVisible, setIsTabBarLabelsVisible] = useState(true);
+  const [isTabBarVisible, setIsTabBarVisible] = useState(true); // TabBar visible por defecto
 
   // Función para actualizar altura del tab bar
   const handleSetTabBarHeight = useCallback((height: number) => {
@@ -34,6 +37,11 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     setTabBarHeight(visible ? 88 : 58);
   }, []);
 
+  // Función para actualizar visibilidad completa del TabBar
+  const handleSetTabBarVisible = useCallback((visible: boolean) => {
+    setIsTabBarVisible(visible);
+  }, []);
+
   return (
     <OverlayContext.Provider
       value={{
@@ -41,6 +49,8 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
         setTabBarHeight: handleSetTabBarHeight,
         isTabBarLabelsVisible,
         setIsTabBarLabelsVisible: handleSetTabBarLabelsVisible,
+        isTabBarVisible,
+        setIsTabBarVisible: handleSetTabBarVisible,
       }}>
       {children}
     </OverlayContext.Provider>

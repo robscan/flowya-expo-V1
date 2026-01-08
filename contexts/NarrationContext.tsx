@@ -58,9 +58,9 @@ function narrationToAudioSource(narration: Narration): AudioSource {
     return {
       type: 'tts',
       source: narration.text,
-      language: 'es', // TODO: Obtener del sistema o configuración
-      rate: 1.0,
-      pitch: 1.0,
+      language: 'en-US', // English for all narration texts
+      rate: 0.85, // More natural speed
+      pitch: 0.95, // Slightly lower pitch for better quality
     };
   }
 }
@@ -148,11 +148,31 @@ export function NarrationProvider({ children }: { children: ReactNode }) {
 
   /**
    * Detener narration actual
+   * SAFE: Idempotent - safe to call multiple times or when no narration is active
+   * Always resets state reliably, even if errors occur
    */
   const stopNarration = useCallback(async (): Promise<void> => {
-    await audioManager.stop();
+    try {
+      // CRITICAL: Stop audio first (includes Speech.stop() for TTS)
+      // audioManager.stop() is already safe and idempotent
+      await audioManager.stop();
+    } catch (error) {
+      // Ignore audio stop errors - we'll still reset state
+      // This ensures stopNarration is always safe to call
+    }
+
+    try {
+      // Clear narration engine state (safe even if already cleared)
+      narrationEngine.markNarrationAsCancelled();
+      // Clear any queued narrations to prevent them from starting after stop
+      narrationEngine.clearQueue();
+    } catch (error) {
+      // Ignore engine errors - state will still be reset below
+    }
+
+    // Always reset React state, regardless of errors above
+    // This ensures stopNarration is idempotent and always safe
     setStatus('stopped');
-    narrationEngine.markNarrationAsCancelled();
     setCurrentNarration(null);
   }, []);
 

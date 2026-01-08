@@ -9,13 +9,13 @@
  * - Manejo de errores
  */
 
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as Speech from 'expo-speech';
 
 export type AudioSource = {
   type: 'url' | 'tts';
   source: string; // URL para audio pre-grabado, texto para TTS
-  language?: string; // Idioma para TTS (opcional, default: 'es')
+  language?: string; // Idioma para TTS (opcional, default: 'en-US')
   rate?: number; // Velocidad de TTS (0.5 - 2.0, default: 1.0)
   pitch?: number; // Tono de TTS (0.5 - 2.0, default: 1.0)
 };
@@ -39,10 +39,14 @@ class AudioManager {
 
   constructor() {
     // Configurar modo de audio para interrupciones
+    // Usar DuckOthers para permitir mezclar con otras apps como Apple Music
     Audio.setAudioModeAsync({
       playsInSilentModeIOS: true,
       staysActiveInBackground: false,
       shouldDuckAndroid: true,
+      interruptionModeIOS: InterruptionModeIOS.DuckOthers, // Permite mezclar con otras apps
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers, // Permite mezclar con otras apps
+      allowsRecordingIOS: false,
     }).catch((error) => {
       console.warn('Error configuring audio mode:', error);
     });
@@ -109,9 +113,9 @@ class AudioManager {
   private async playTTS(source: AudioSource): Promise<void> {
     return new Promise((resolve, reject) => {
       const options: Speech.SpeechOptions = {
-        language: source.language || 'es',
-        pitch: source.pitch || 1.0,
-        rate: source.rate || 1.0,
+        language: source.language || 'en-US',
+        pitch: source.pitch || 0.95,
+        rate: source.rate || 0.85,
         onStart: () => {
           this.status = 'playing';
           this.callbacks.onPlay?.();
@@ -148,17 +152,31 @@ class AudioManager {
 
   /**
    * Pausar reproducción
+   * SAFE: Handles errors gracefully
    */
   async pause(): Promise<void> {
     if (this.status === 'playing') {
-      if (this.currentSource?.type === 'tts') {
-        Speech.stop();
+      try {
+        if (this.currentSource?.type === 'tts') {
+          try {
+            Speech.stop();
+          } catch (error) {
+            // Ignore TTS errors
+          }
+          this.status = 'paused';
+          this.callbacks.onPause?.();
+        } else if (this.sound) {
+          try {
+            await this.sound.pauseAsync();
+          } catch (error) {
+            // Ignore pause errors
+          }
+          this.status = 'paused';
+          this.callbacks.onPause?.();
+        }
+      } catch (error) {
+        // Ensure state is updated even if pause fails
         this.status = 'paused';
-        this.callbacks.onPause?.();
-      } else if (this.sound) {
-        await this.sound.pauseAsync();
-        this.status = 'paused';
-        this.callbacks.onPause?.();
       }
     }
   }
@@ -185,21 +203,42 @@ class AudioManager {
 
   /**
    * Detener reproducción
+   * SAFE: Idempotent - safe to call multiple times or when already stopped
+   * Always resets state reliably, even if errors occur or nothing is playing
    */
   async stop(): Promise<void> {
-    if (this.status === 'playing' || this.status === 'paused') {
-      if (this.currentSource?.type === 'tts') {
+    try {
+      // Always try to stop TTS first (safe even if no TTS is active)
+      try {
         Speech.stop();
-      } else if (this.sound) {
-        await this.sound.stopAsync();
-        await this.sound.unloadAsync();
-        this.sound = null;
+      } catch (error) {
+        // Ignore TTS errors - Speech.stop() is safe to call even if nothing is playing
+        // Some platforms may throw errors, but we can safely ignore them
       }
 
-      this.status = 'stopped';
-      this.currentSource = null;
-      this.callbacks.onStop?.();
+      // Stop audio if present
+      if (this.sound) {
+        try {
+          await this.sound.stopAsync();
+        } catch (error) {
+          // Ignore stop errors - continue to unload
+        }
+        try {
+          await this.sound.unloadAsync();
+        } catch (error) {
+          // Ignore unload errors - sound may already be unloaded
+        }
+        this.sound = null;
+      }
+    } catch (error) {
+      // Ignore any errors during stop - we'll still reset state
     }
+
+    // Always reset state, regardless of errors or previous state
+    // This makes stop() idempotent - safe to call multiple times
+    this.status = 'stopped';
+    this.currentSource = null;
+    this.callbacks.onStop?.();
   }
 
   /**

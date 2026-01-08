@@ -1,32 +1,24 @@
 /**
  * Maps Configuration
- * Configuración de API keys para Google Maps
+ * Configuración de Mapbox Access Token
  * 
- * Para obtener las API keys:
- * 1. Ve a https://console.cloud.google.com/
- * 2. Crea un nuevo proyecto o selecciona uno existente
- * 3. Habilita las siguientes APIs:
- *    - Maps SDK for Android
- *    - Maps SDK for iOS
- *    - Maps JavaScript API (para web)
- *    - Places API
- *    - Geocoding API
- * 4. Crea credenciales (API keys) para Android, iOS y Web
- * 5. Configura las restricciones de las API keys según tu app
+ * Para obtener el Access Token:
+ * 1. Ve a https://account.mapbox.com/
+ * 2. Crea una cuenta o inicia sesión
+ * 3. Navega a Access Tokens
+ * 4. Crea un nuevo token o usa el token por defecto
+ * 5. Configura las restricciones del token según tu app
  * 
  * Variables de entorno necesarias:
- * - EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY
- * - EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY
- * - EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY
+ * - EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN
  */
 
 import Constants from 'expo-constants';
 
 /**
- * Feature flag para desactivar Google Maps temporalmente
- * Cambiar a true cuando las API keys estén disponibles y configuradas
+ * Feature flag para usar Mapbox como servicio de mapas
  */
-export const USE_GOOGLE_MAPS = true;
+export const USE_MAPBOX = true;
 
 // Helper para obtener variables de entorno (similar a supabase.ts)
 // En Expo, las variables de entorno pueden estar en process.env o en Constants.expoConfig.extra
@@ -42,42 +34,33 @@ const getEnvVar = (key: string): string => {
   return '';
 };
 
-// API keys desde variables de entorno
-export const GOOGLE_MAPS_ANDROID_API_KEY = getEnvVar('EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY');
-export const GOOGLE_MAPS_IOS_API_KEY = getEnvVar('EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY');
-export const GOOGLE_MAPS_WEB_API_KEY = getEnvVar('EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY');
-export const GOOGLE_PLACES_API_KEY = getEnvVar('EXPO_PUBLIC_GOOGLE_PLACES_API_KEY') || GOOGLE_MAPS_ANDROID_API_KEY || GOOGLE_MAPS_IOS_API_KEY || GOOGLE_MAPS_WEB_API_KEY || '';
+// Mapbox Access Token
+export const MAPBOX_ACCESS_TOKEN = getEnvVar('EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN');
 
 /**
- * Verifica si las API keys están configuradas
- * Útil para mostrar advertencias en desarrollo
+ * Verifica si Mapbox está configurado
  */
-export function areMapsApiKeysConfigured(): boolean {
-  if (__DEV__) {
-    const hasAndroidKey = !!GOOGLE_MAPS_ANDROID_API_KEY;
-    const hasIosKey = !!GOOGLE_MAPS_IOS_API_KEY;
-    const hasWebKey = !!GOOGLE_MAPS_WEB_API_KEY;
-    
-    if (!hasAndroidKey || !hasIosKey || !hasWebKey) {
-      console.warn(
-        '⚠️ Google Maps API keys not configured. ' +
-        'Set EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY, EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY, and EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY in your .env file'
-      );
-      // Debug: mostrar qué variables están disponibles
-      console.log('Available env vars:', {
-        hasAndroidKey: !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY,
-        hasIosKey: !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY,
-        hasWebKey: !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY,
-        androidKeyLength: GOOGLE_MAPS_ANDROID_API_KEY.length,
-        iosKeyLength: GOOGLE_MAPS_IOS_API_KEY.length,
-        webKeyLength: GOOGLE_MAPS_WEB_API_KEY.length,
-      });
-    }
-    
-    return hasAndroidKey && hasIosKey && hasWebKey;
+export function isMapboxConfigured(): boolean {
+  const hasToken = !!MAPBOX_ACCESS_TOKEN;
+  
+  if (__DEV__ && !hasToken) {
+    console.warn(
+      '⚠️ Mapbox Access Token not configured. ' +
+      'Set EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN in your .env file'
+    );
   }
   
-  // En producción, asumimos que están configuradas
-  return true;
+  return hasToken;
+}
+
+/**
+ * Obtiene información sobre el estado de configuración de Mapbox
+ */
+export function getMapsConfigStatus(): {
+  mapbox: boolean;
+} {
+  return {
+    mapbox: isMapboxConfigured(),
+  };
 }
 

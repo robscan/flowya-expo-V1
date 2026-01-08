@@ -18,49 +18,49 @@ import { NarrationType } from '@/data/narrations';
 function getGenericNarration(type: SpotType, narrationType: NarrationType): string {
   const genericNarrations: Record<SpotType, Record<NarrationType, string>> = {
     beach: {
-      anticipation: 'Una playa te espera. El sonido del mar se acerca.',
-      presence: 'Estás aquí. El océano respira contigo.',
-      transition: 'El mar queda atrás. El camino continúa.',
+      anticipation: 'A beach awaits you. The sound of the sea draws near.',
+      presence: 'You are here. The ocean breathes with you.',
+      transition: 'The sea remains behind. The journey continues.',
     },
     cafe: {
-      anticipation: 'Un lugar para pausar. El aroma del café se acerca.',
-      presence: 'Tómate un momento. Este lugar invita a la calma.',
-      transition: 'Con energía renovada, el viaje continúa.',
+      anticipation: 'A place to pause. The aroma of coffee approaches.',
+      presence: 'Take a moment. This place invites calm.',
+      transition: 'With renewed energy, the journey continues.',
     },
     viewpoint: {
-      anticipation: 'Una vista se acerca. Prepárate para contemplar.',
-      presence: 'Mira alrededor. Este lugar ofrece perspectiva.',
-      transition: 'Con la vista en el corazón, sigues adelante.',
+      anticipation: 'A view approaches. Prepare to contemplate.',
+      presence: 'Look around. This place offers perspective.',
+      transition: 'With the view in your heart, you move forward.',
     },
     museum: {
-      anticipation: 'Un espacio de cultura te espera. La historia se acerca.',
-      presence: 'Estás aquí. Cada objeto cuenta una historia.',
-      transition: 'Con conocimiento nuevo, el camino continúa.',
+      anticipation: 'A space of culture awaits you. History approaches.',
+      presence: 'You are here. Each object tells a story.',
+      transition: 'With new knowledge, the journey continues.',
     },
     restaurant: {
-      anticipation: 'Un lugar para saborear. Los aromas se acercan.',
-      presence: 'Disfruta este momento. La comida conecta culturas.',
-      transition: 'Con el estómago contento, sigues adelante.',
+      anticipation: 'A place to savor. The aromas draw near.',
+      presence: 'Enjoy this moment. Food connects cultures.',
+      transition: 'With a satisfied stomach, you move forward.',
     },
     park: {
-      anticipation: 'Un espacio verde se acerca. La naturaleza te espera.',
-      presence: 'Respira. Este lugar invita a la tranquilidad.',
-      transition: 'Con calma renovada, el viaje continúa.',
+      anticipation: 'A green space approaches. Nature awaits you.',
+      presence: 'Breathe. This place invites tranquility.',
+      transition: 'With renewed calm, the journey continues.',
     },
     monument: {
-      anticipation: 'Un monumento histórico se acerca. La memoria te espera.',
-      presence: 'Estás aquí. Este lugar guarda historias importantes.',
-      transition: 'Con respeto por el pasado, sigues adelante.',
+      anticipation: 'A historical monument approaches. Memory awaits you.',
+      presence: 'You are here. This place holds important stories.',
+      transition: 'With respect for the past, you move forward.',
     },
     market: {
-      anticipation: 'Un mercado vibrante se acerca. La vida local te espera.',
-      presence: 'Observa. Este lugar late con energía local.',
-      transition: 'Con experiencias nuevas, el camino continúa.',
+      anticipation: 'A vibrant market approaches. Local life awaits you.',
+      presence: 'Observe. This place pulses with local energy.',
+      transition: 'With new experiences, the journey continues.',
     },
     other: {
-      anticipation: 'Un lugar especial se acerca.',
-      presence: 'Estás aquí. Observa y siente este momento.',
-      transition: 'Con esta experiencia, el viaje continúa.',
+      anticipation: 'A special place approaches.',
+      presence: 'You are here. Observe and feel this moment.',
+      transition: 'With this experience, the journey continues.',
     },
   };
 
@@ -76,7 +76,7 @@ function adaptContextToNarrationType(
 ): string {
   // Para anticipation, agregar prefijo de acercamiento
   if (narrationType === 'anticipation') {
-    return `Mientras te acercas: ${culturalContext}`;
+    return `As you approach: ${culturalContext}`;
   }
   
   // Para presence, usar directamente
@@ -86,7 +86,7 @@ function adaptContextToNarrationType(
   
   // Para transition, agregar prefijo de despedida
   if (narrationType === 'transition') {
-    return `Al partir: ${culturalContext}`;
+    return `As you leave: ${culturalContext}`;
   }
   
   return culturalContext;
@@ -101,7 +101,7 @@ function adaptDescriptionToNarrationType(
 ): string {
   // Para anticipation, crear expectativa
   if (narrationType === 'anticipation') {
-    return `Pronto estarás en: ${description}`;
+    return `Soon you will be at: ${description}`;
   }
   
   // Para presence, usar directamente
@@ -111,7 +111,7 @@ function adaptDescriptionToNarrationType(
   
   // Para transition, crear despedida
   if (narrationType === 'transition') {
-    return `Dejando atrás: ${description}`;
+    return `Leaving behind: ${description}`;
   }
   
   return description;

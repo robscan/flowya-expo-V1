@@ -1,0 +1,167 @@
+---
+name: Corrección de Conflictos y Problemas en Plan de Corrección
+overview: Plan para identificar y corregir conflictos, inconsistencias y problemas de implementación en el código relacionado con el plan de corrección de errores y mejoras.
+todos:
+  - id: fix-duplicate-useeffect
+    content: Eliminar useEffect duplicado para sugerencias de spots en FlowScreen.tsx (líneas 142-192)
+    status: completed
+  - id: fix-missing-spot-import
+    content: Verificar e importar tipo Spot en FlowScreen.tsx si falta
+    status: completed
+  - id: verify-spot-suggestion-integration
+    content: Verificar que la integración de sugerencias funcione correctamente con tipos correctos
+    status: completed
+  - id: fix-flatlist-import
+    content: Verificar que FlatList esté importado en FlowScreen.tsx
+    status: completed
+  - id: verify-context-types
+    content: Verificar que los tipos de contexto pasados a updateSuggestionsForCurrentSpot sean correctos
+    status: completed
+  - id: update-plan-documentation
+    content: Actualizar documentación del plan con estado real de implementación y corregir referencias
+    status: completed
+---
+
+# Plan de Corrección de Conflictos y Problemas
+
+## Visión General
+
+Este plan identifica y corrige conflictos, inconsistencias y problemas de implementación detectados en el código relacionado con el plan de corrección de errores y mejoras de FLOWYA.
+
+**Problemas identificados:**
+1. useEffect duplicado en FlowScreen.tsx para calcular sugerencias
+2. Posible falta de importación del tipo Spot
+3. Verificación de tipos y estructura de datos en funciones de sugerencia
+4. Verificación de importaciones necesarias (FlatList)
+5. Actualización de documentación del plan
+
+---
+
+## Problema 1: useEffect Duplicado en FlowScreen.tsx
+
+**Problema:**
+- Hay dos useEffect idénticos (líneas 142-166 y 168-192) que calculan sugerencias de spots
+- Esto causa cálculos duplicados y posibles problemas de rendimiento
+- Ambos tienen las mismas dependencias y hacen lo mismo
+
+**Archivos afectados:**
+- `components/FlowScreen.tsx` - Líneas 142-192
+
+**Solución:**
+1. Eliminar uno de los useEffect duplicados
+2. Mantener solo uno con todas las dependencias necesarias
+3. Verificar que las dependencias sean correctas
+
+**Archivos a modificar:**
+- `components/FlowScreen.tsx` - Eliminar useEffect duplicado (líneas 168-192)
+
+---
+
+## Problema 2: Verificación de Importaciones
+
+**Problema:**
+- Necesitamos verificar que todas las importaciones necesarias estén presentes
+- Especialmente: tipo Spot, FlatList, y otros componentes
+
+**Archivos afectados:**
+- `components/FlowScreen.tsx` - Imports
+
+**Solución:**
+1. Verificar que `Spot` esté importado desde `@/data/spots`
+2. Verificar que `FlatList` esté importado desde `react-native`
+3. Agregar importaciones faltantes si es necesario
+
+**Archivos a modificar:**
+- `components/FlowScreen.tsx` - Agregar imports faltantes si es necesario
+
+---
+
+## Problema 3: Verificación de Tipos en Funciones de Sugerencia
+
+**Problema:**
+- Necesitamos verificar que los tipos pasados a `updateSuggestionsForCurrentSpot` sean correctos
+- El contexto debe tener la estructura correcta según `SuggestionContext`
+
+**Archivos afectados:**
+- `components/FlowScreen.tsx` - Líneas donde se construye el contexto
+- `utils/spotSuggestion.ts` - Definición de tipos
+
+**Solución:**
+1. Verificar que el contexto tenga la estructura correcta:
+   ```typescript
+   {
+     savedSpots: string[];
+     likedSpots: string[];
+     savedFlows: string[];
+     allFlows: Flow[];
+   }
+   ```
+2. Verificar que los valores pasados desde `useSaved()` y `usePath()` sean del tipo correcto
+3. Agregar validación de tipos si es necesario
+
+**Archivos a revisar/modificar:**
+- `components/FlowScreen.tsx` - Verificar construcción del contexto (líneas 149-154)
+- `contexts/SavedContext.tsx` - Verificar tipos exportados
+- `contexts/PathContext.tsx` - Verificar tipos exportados
+
+---
+
+## Problema 4: Verificación de FlatList
+
+**Problema:**
+- FlowScreen.tsx usa FlatList para mostrar sugerencias pero necesitamos verificar que esté importado
+
+**Archivos afectados:**
+- `components/FlowScreen.tsx` - Línea 536 donde se usa FlatList
+
+**Solución:**
+1. Verificar que FlatList esté en los imports de react-native
+2. Agregar si falta
+
+**Archivos a modificar:**
+- `components/FlowScreen.tsx` - Verificar imports (línea 21-32)
+
+---
+
+## Problema 5: Actualización de Documentación del Plan
+
+**Problema:**
+- El plan original puede tener referencias a líneas de código que han cambiado
+- Necesitamos actualizar la documentación con el estado real de implementación
+
+**Archivos afectados:**
+- `definitions/FLOWYA V1.0/correccion_errores_y_mejoras_flowya.plan`
+
+**Solución:**
+1. Revisar todas las referencias a líneas de código
+2. Actualizar con números de línea actuales o eliminar referencias específicas
+3. Agregar notas sobre problemas encontrados y corregidos
+4. Actualizar estado de todos los TODOs
+
+**Archivos a modificar:**
+- `definitions/FLOWYA V1.0/correccion_errores_y_mejoras_flowya.plan` - Actualizar referencias y estado
+
+---
+
+## Orden de Implementación
+
+### Fase 1: Correcciones Críticas (Inmediato)
+1. Eliminar useEffect duplicado (Problema 1)
+2. Verificar y agregar imports faltantes (Problema 2, 4)
+
+### Fase 2: Verificaciones de Tipos (Inmediato)
+3. Verificar tipos en funciones de sugerencia (Problema 3)
+
+### Fase 3: Documentación (Después de correcciones)
+4. Actualizar documentación del plan (Problema 5)
+
+---
+
+## Criterios de Éxito
+
+- No hay useEffect duplicados en FlowScreen.tsx
+- Todas las importaciones necesarias están presentes
+- Los tipos son correctos y no hay errores de TypeScript
+- La documentación refleja el estado real del código
+- El código funciona correctamente sin errores de runtime
+

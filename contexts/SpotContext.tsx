@@ -62,7 +62,19 @@ export function SpotProvider({ children }: { children: ReactNode }) {
           createdAt: new Date(spot.createdAt),
           updatedAt: new Date(spot.updatedAt),
         }));
-        setSpots(spotsWithDates);
+        
+        // Detectar nuevos spots en mockSpots que no están en el storage
+        const storedIds = new Set(spotsWithDates.map((s: Spot) => s.id));
+        const newSpots = mockSpots.filter(spot => !storedIds.has(spot.id));
+        
+        if (newSpots.length > 0) {
+          // Hay nuevos spots: combinar los existentes con los nuevos
+          const combinedSpots = [...spotsWithDates, ...newSpots];
+          setSpots(combinedSpots);
+          console.log(`✅ ${newSpots.length} nuevos spots agregados automáticamente`);
+        } else {
+          setSpots(spotsWithDates);
+        }
       } else {
         // Usar mock data si no hay datos guardados
         setSpots(mockSpots);

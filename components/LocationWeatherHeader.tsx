@@ -1,23 +1,21 @@
 /**
  * LocationWeatherHeader Component
- * Muestra ubicación actual, dropdown para cambiar ciudad, clima y temperatura
+ * Muestra ubicación actual y dropdown para cambiar ciudad
  * 
  * Funcionalidades:
  * - Nombre de ciudad con dropdown para seleccionar ciudad predefinida
- * - Icono de clima según condición
- * - Temperatura clickeable (toggle Celsius/Fahrenheit)
  */
 
-import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Modal, Pressable } from 'react-native';
-import { Colors } from '@/constants/theme';
-import { spacing } from '@/constants/spacing';
-import { textStyles, fontSize, fontFamilyMedium, lineHeight } from '@/constants/typography';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Icon, IconName } from '@/components/ui/Icon';
 import { GlassView } from '@/components/ui/GlassView';
-import { getCityNameFromCoordinates, getPredefinedCities, PREDEFINED_CITIES, findNearestPredefinedCity } from '@/utils/geocoding';
-import { getWeatherData, WeatherCondition, celsiusToFahrenheit, isDaytime } from '@/utils/weather';
+import { Icon } from '@/components/ui/Icon';
+import { spacing } from '@/constants/spacing';
+import { Colors } from '@/constants/theme';
+import { fontFamilyMedium, fontSize, lineHeight, textStyles } from '@/constants/typography';
+import { useSpot } from '@/contexts/SpotContext';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { findNearestPredefinedCity, getAllLocationsFromSpots, getCityNameFromCoordinates, PredefinedCity } from '@/utils/geocoding';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export interface LocationWeatherHeaderProps {
   userLocation: { latitude: number; longitude: number } | null;
@@ -34,17 +32,19 @@ export function LocationWeatherHeader({
 }: LocationWeatherHeaderProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const { spots } = useSpot(); // CANONICAL: Consumir spots desde context
   const [cityName, setCityName] = useState<string>('Detecting location...');
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
-  const [weatherCondition, setWeatherCondition] = useState<WeatherCondition>('default');
-  const [temperature, setTemperature] = useState<number>(20);
-  const [isCelsius, setIsCelsius] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [availableLocations, setAvailableLocations] = useState<PredefinedCity[]>([]);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  
+  const screenHeight = Dimensions.get('window').height;
 
   // Asegurar que currentLocation siempre use userLocation si selectedLocation es null
   const currentLocation = selectedLocation || userLocation;
 
-  // Obtener nombre de ciudad y clima cuando cambia la ubicación
+  // Obtener nombre de ciudad cuando cambia la ubicación
   useEffect(() => {
     if (!currentLocation) {
       setCityName('Detecting location...');
@@ -52,7 +52,7 @@ export function LocationWeatherHeader({
       return;
     }
 
-    const loadCityAndWeather = async () => {
+    const loadCity = async () => {
       setIsLoading(true);
       try {
         // Obtener nombre de ciudad
@@ -76,16 +76,8 @@ export function LocationWeatherHeader({
 
         // Último recurso: mostrar "Current location" solo si no hay fallback
         setCityName(city || 'Current location');
-
-        // Obtener datos del clima
-        const weatherData = await getWeatherData(
-          currentLocation.latitude,
-          currentLocation.longitude
-        );
-        setWeatherCondition(weatherData.condition);
-        setTemperature(weatherData.temperature);
       } catch (error) {
-        console.error('Error loading city and weather:', error);
+        console.error('Error loading city:', error);
         // Intentar fallback a ciudad predefinida en caso de error
         try {
           const nearestCity = findNearestPredefinedCity(
@@ -107,48 +99,33 @@ export function LocationWeatherHeader({
       }
     };
 
-    loadCityAndWeather();
+    loadCity();
   }, [currentLocation]);
 
-  // Mapear condición climática a icono (con detección día/noche)
-  const getWeatherIcon = (condition: WeatherCondition): IconName => {
-    // Detectar si es día o noche (si hay ubicación disponible)
-    const daytime = currentLocation ? isDaytime(currentLocation.latitude, currentLocation.longitude) : true;
-    
-    switch (condition) {
-      case 'clear':
-        // Mostrar sol de día, luna de noche
-        return daytime ? 'weather-sunny' : 'weather-moon';
-      case 'clouds':
-        return 'weather-cloudy';
-      case 'rain':
-        return 'weather-rain';
-      case 'snow':
-        return 'weather-snow';
-      case 'thunderstorm':
-        return 'weather-thunderstorm';
-      case 'mist':
-      case 'fog':
-        return 'weather-mist';
-      case 'drizzle':
-        return 'weather-drizzle';
-      default:
-        // Fallback: considerar día/noche también
-        return daytime ? 'weather-sunny' : 'weather-moon';
+  // CANONICAL: Cargar ubicaciones desde spots cuando se abre el modal o cuando spots cambian
+  useEffect(() => {
+    if (isDropdownVisible && spots.length > 0) {
+      const loadLocations = async () => {
+        setIsLoadingLocations(true);
+        try {
+          const locations = await getAllLocationsFromSpots(spots);
+          setAvailableLocations(locations);
+        } catch (error) {
+          console.error('Error loading locations from spots:', error);
+          setAvailableLocations([]);
+        } finally {
+          setIsLoadingLocations(false);
+        }
+      };
+      
+      loadLocations();
     }
-  };
+  }, [isDropdownVisible, spots]);
 
-  const handleCitySelect = (city: typeof PREDEFINED_CITIES[0]) => {
+  const handleCitySelect = (city: PredefinedCity) => {
     onLocationChange(city.coordinates);
     setIsDropdownVisible(false);
   };
-
-  const handleTemperatureToggle = () => {
-    setIsCelsius(!isCelsius);
-  };
-
-  const displayTemperature = isCelsius ? temperature : celsiusToFahrenheit(temperature);
-  const temperatureUnit = isCelsius ? '°C' : '°F';
 
   return (
     <View style={styles.container}>
@@ -174,27 +151,9 @@ export function LocationWeatherHeader({
             <Icon name="chevron-down" size={14} color={colors.tint} />
           </TouchableOpacity>
         </View>
-
-        {/* Weather section */}
-        <View style={styles.weatherSection}>
-          <Icon
-            name={getWeatherIcon(weatherCondition)}
-            size={14}
-            color={colors.text}
-          />
-          <TouchableOpacity
-            onPress={handleTemperatureToggle}
-            activeOpacity={0.7}
-            style={styles.temperatureButton}>
-            <Text style={[styles.temperatureText, { color: colors.text }]}>
-              {displayTemperature}{temperatureUnit}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
       </View>
 
-      {/* Dropdown modal */}
+      {/* CANONICAL: Modal scrollable con safe areas */}
       <Modal
         visible={isDropdownVisible}
         transparent
@@ -203,60 +162,106 @@ export function LocationWeatherHeader({
         <Pressable
           style={styles.modalOverlay}
           onPress={() => setIsDropdownVisible(false)}>
-          <GlassView
-            style={styles.dropdown}
-            intensity="medium"
-            opacity="strong"
-            shadowLevel="medium"
-            enableGlow={true}>
-            <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.md }]}>
-              Select Location
-            </Text>
-            {getPredefinedCities().map((city) => (
-              <TouchableOpacity
-                key={city.name}
-                style={[
-                  styles.dropdownItem,
-                  {
-                    backgroundColor:
+          <Pressable
+            style={[
+              styles.modalContent,
+              {
+                maxHeight: screenHeight * 0.85, // 85% del viewport height máximo
+              },
+            ]}
+            onPress={(e) => e.stopPropagation()}>
+            <GlassView
+              style={styles.dropdown}
+              intensity="medium"
+              opacity="strong"
+              shadowLevel="medium"
+              enableGlow={true}>
+              <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.md }]}>
+                Select Location
+              </Text>
+              
+              {/* CANONICAL: ScrollView para listas largas */}
+              <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled">
+                {/* CANONICAL: "Use my location" primero */}
+                {userLocation && (
+                  <TouchableOpacity
+                    style={[
+                      styles.dropdownItem,
+                      {
+                        backgroundColor:
+                          currentLocation &&
+                          Math.abs(currentLocation.latitude - userLocation.latitude) < 0.001 &&
+                          Math.abs(currentLocation.longitude - userLocation.longitude) < 0.001
+                            ? colors.tint + '20'
+                            : 'transparent',
+                      },
+                    ]}
+                    onPress={() => {
+                      onResetLocation();
+                      setIsDropdownVisible(false);
+                    }}
+                    activeOpacity={0.7}>
+                    <Icon name="map-pin" size={16} color={colors.tint} />
+                    <Text
+                      style={[
+                        textStyles.bodyMedium,
+                        {
+                          color: colors.tint,
+                          marginLeft: spacing.xs,
+                        },
+                      ]}>
+                      Use my location
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* CANONICAL: Loading state */}
+                {isLoadingLocations ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="small" color={colors.tint} />
+                    <Text style={[textStyles.bodyMedium, { color: colors.icon, marginLeft: spacing.sm }]}>
+                      Loading locations...
+                    </Text>
+                  </View>
+                ) : (
+                  /* CANONICAL: Destinos reconocidos en orden alfabético */
+                  availableLocations.map((city) => {
+                    const isSelected =
                       currentLocation &&
                       Math.abs(currentLocation.latitude - city.coordinates.latitude) < 0.001 &&
-                      Math.abs(currentLocation.longitude - city.coordinates.longitude) < 0.001
-                        ? colors.tint + '20'
-                        : 'transparent',
-                  },
-                ]}
-                onPress={() => handleCitySelect(city)}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    textStyles.bodyMedium,
-                    {
-                      color:
-                        currentLocation &&
-                        Math.abs(currentLocation.latitude - city.coordinates.latitude) < 0.001 &&
-                        Math.abs(currentLocation.longitude - city.coordinates.longitude) < 0.001
-                          ? colors.tint
-                          : colors.text,
-                    },
-                  ]}>
-                  {city.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => {
-                onResetLocation();
-                setIsDropdownVisible(false);
-              }}
-              activeOpacity={0.7}>
-              <Icon name="map-pin" size={16} color={colors.tint} />
-              <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
-                Use my location
-              </Text>
-            </TouchableOpacity>
-          </GlassView>
+                      Math.abs(currentLocation.longitude - city.coordinates.longitude) < 0.001;
+
+                    return (
+                      <TouchableOpacity
+                        key={city.name}
+                        style={[
+                          styles.dropdownItem,
+                          {
+                            backgroundColor: isSelected ? colors.tint + '20' : 'transparent',
+                          },
+                        ]}
+                        onPress={() => handleCitySelect(city)}
+                        activeOpacity={0.7}>
+                        <Text
+                          style={[
+                            textStyles.bodyMedium,
+                            {
+                              color: isSelected ? colors.tint : colors.text,
+                            },
+                          ]}>
+                          {city.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </GlassView>
+          </Pressable>
         </Pressable>
       </Modal>
     </View>
@@ -275,7 +280,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs, // Reducir gap principal
   },
   locationSection: {
-    flex: 1.5, // Más espacio para ubicación
+    flex: 1, // Ocupa todo el espacio disponible
     minWidth: 0, // Permite truncamiento correcto
   },
   locationButton: {
@@ -292,23 +297,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flexShrink: 1, // Permite que el texto se ajuste
   },
-  weatherSection: {
-    flex: 0.5, // Menos espacio para clima
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs / 4, // Gap mínimo entre icono y temperatura
-    paddingLeft: spacing.xs / 2, // Pequeño padding izquierdo para separación
-  },
-  temperatureButton: {
-    paddingVertical: spacing.xs / 2,
-    paddingHorizontal: 0, // Eliminar padding horizontal
-  },
-  temperatureText: {
-    fontFamily: fontFamilyMedium,
-    fontSize: fontSize.sm, // 14px - más pequeño
-    lineHeight: lineHeight.sm, // 20px
-    fontWeight: '600',
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -316,11 +304,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.lg,
   },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '90%',
+  },
   dropdown: {
     width: '100%',
-    maxWidth: 300,
     padding: spacing.md,
     borderRadius: 16,
+    maxHeight: '100%',
+  },
+  scrollView: {
+    maxHeight: 400, // Altura máxima para el scroll
+  },
+  scrollContent: {
+    paddingBottom: spacing.xs,
   },
   dropdownItem: {
     flexDirection: 'row',
@@ -329,6 +328,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     borderRadius: 8,
     marginBottom: spacing.xs,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    justifyContent: 'center',
   },
 });
 

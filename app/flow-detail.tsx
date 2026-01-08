@@ -6,36 +6,38 @@
  * Muestra información detallada de un Flow (Path) con opción de iniciar Flow
  */
 
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import {
-  Alert,
-  ScrollView,
-  Share,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  Image,
-  Dimensions,
-} from 'react-native';
 import * as Location from 'expo-location';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import {
+    Alert,
+    ScrollView,
+    Share,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 
-import { FlowSpotCard } from '@/components/FlowSpotCard';
-import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
+import { FlowyaMapView } from '@/components/MapView';
+import { SpotMediaCard } from '@/components/SpotMediaCard';
+import { Chip } from '@/components/ui/Chip';
+import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
+import { Icon } from '@/components/ui/Icon';
+import { InfoMeta } from '@/components/ui/InfoMeta';
+import { borderRadius } from '@/constants/borders';
+import { getMovementModeLabel } from '@/constants/movementMode';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
-import { textStyles, fontSize, lineHeight, fontFamilyMedium } from '@/constants/typography';
-import { borderRadius } from '@/constants/borders';
+import { fontFamilyMedium, fontSize, lineHeight, textStyles } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
 import { usePath } from '@/contexts/PathContext';
-import { useSpot } from '@/contexts/SpotContext';
 import { useSaved } from '@/contexts/SavedContext';
-import { getFlowSpots, Flow, calculateEstimatedDuration } from '@/data/flows';
+import { useSpot } from '@/contexts/SpotContext';
+import { calculateEstimatedDuration, getFlowSpots } from '@/data/flows';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { calculateDistanceToSpot, calculatePathDistance } from '@/utils/distance';
-import { getMovementModeLabel, getMovementModeBackgroundColor, getMovementModeTextColor } from '@/constants/movementMode';
 
 export default function FlowDetailScreen() {
   const router = useRouter();
@@ -81,47 +83,16 @@ export default function FlowDetailScreen() {
     }
   }, [flow, router]);
 
+  // Calcular flowSpots antes de los hooks (puede ser null)
+  const flowSpots = flow ? getFlowSpots(flow, spots) : [];
+
   if (!flow) {
     return null;
   }
 
-  const flowSpots = getFlowSpots(flow, spots);
   const isSaved = isFlowSaved(flow.id);
   const estimatedDuration = calculateEstimatedDuration(flowSpots.length, flow.movementMode);
   const totalDistance = calculatePathDistance(flow, spots);
-
-  // Obtener todas las fotos de los spots del flow
-  const getAllFlowPhotos = React.useMemo((): string[] => {
-    const allPhotos: string[] = [];
-    flowSpots.forEach((spot) => {
-      if (spot.photos && spot.photos.length > 0) {
-        allPhotos.push(...spot.photos);
-      }
-    });
-    return allPhotos;
-  }, [flowSpots]);
-
-  // Seleccionar una foto aleatoria para la portada
-  const [coverImageIndex, setCoverImageIndex] = React.useState(() => {
-    if (getAllFlowPhotos.length === 0) return -1;
-    return Math.floor(Math.random() * getAllFlowPhotos.length);
-  });
-
-  // Rotación automática de imágenes (cada 5 segundos)
-  React.useEffect(() => {
-    if (getAllFlowPhotos.length <= 1) return;
-    
-    const interval = setInterval(() => {
-      setCoverImageIndex((prev) => (prev + 1) % getAllFlowPhotos.length);
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [getAllFlowPhotos.length]);
-
-  // Calculate distance to first spot
-  const distanceToStart = userLocation && flowSpots.length > 0
-    ? calculateDistanceToSpot(userLocation, flowSpots[0].location)
-    : null;
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -179,193 +150,212 @@ export default function FlowDetailScreen() {
     router.back();
   };
 
-  // Format duration
-  const formatDuration = (minutes: number): string => {
-    if (minutes < 60) {
-      return `${minutes} min`;
-    }
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  // Render map view
+  const renderMapView = () => {
+    // Calcular región inicial que incluya todos los spots del flow
+    const calculateMapRegion = () => {
+      const allPoints: { latitude: number; longitude: number }[] = [];
+      
+      // Incluir ubicación del usuario si está disponible
+      if (userLocation) {
+        allPoints.push(userLocation);
+      }
+      
+      // Incluir todos los spots del flow
+      flowSpots.forEach(spot => {
+        allPoints.push(spot.location);
+      });
+      
+      if (allPoints.length === 0) {
+        return undefined; // Dejar que MapView calcule por defecto
+      }
+      
+      const latitudes = allPoints.map(p => p.latitude);
+      const longitudes = allPoints.map(p => p.longitude);
+      
+      const minLat = Math.min(...latitudes);
+      const maxLat = Math.max(...latitudes);
+      const minLon = Math.min(...longitudes);
+      const maxLon = Math.max(...longitudes);
+      
+      const centerLat = (minLat + maxLat) / 2;
+      const centerLon = (minLon + maxLon) / 2;
+      const latDelta = Math.max(maxLat - minLat, 0.01) * 1.5;
+      const lonDelta = Math.max(maxLon - minLon, 0.01) * 1.5;
+      
+      return {
+        latitude: centerLat,
+        longitude: centerLon,
+        latitudeDelta: latDelta,
+        longitudeDelta: lonDelta,
+      };
+    };
+
+    // Key para forzar reencuadre cuando cambien los spots o la ubicación
+    const mapKey = `map-${flowSpots.length}-${userLocation ? `${userLocation.latitude.toFixed(4)}-${userLocation.longitude.toFixed(4)}` : 'no-location'}`;
+
+    return (
+      <View style={styles.mapContainer}>
+        <FlowyaMapView
+          key={mapKey}
+          spots={flowSpots}
+          onSpotPress={(spot) => {
+            router.push(`/spot-detail?id=${spot.id}`);
+          }}
+          showRoute={false}
+          flowSpots={flowSpots}
+          showUserLocation={!!userLocation}
+          userLocation={userLocation}
+          initialRegion={calculateMapRegion()}
+          currentSpotIndex={-1}
+          flowSpotsOrder={flowSpots}
+        />
+      </View>
+    );
   };
 
-  // Format distance
-  const formatDistance = (meters: number): string => {
-    if (meters < 1000) {
-      return `${Math.round(meters)}m`;
-    }
-    return `${(meters / 1000).toFixed(1)} km`;
+  // Render spots list
+  const renderSpotsList = () => {
+    if (flowSpots.length === 0) return null;
+
+    return (
+      <View style={styles.spotsListContainer}>
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            PLACES IN THIS FLOW
+          </Text>
+        </View>
+        {flowSpots.map((spot, index) => {
+          const distance = userLocation
+            ? calculateDistanceToSpot(userLocation, spot.location) ?? undefined
+            : undefined;
+          return (
+            <SpotMediaCard
+              key={spot.id}
+              spot={spot}
+              size="large"
+              distance={distance}
+              onPress={() => {
+                router.push(`/spot-detail?id=${spot.id}`);
+              }}
+            />
+          );
+        })}
+      </View>
+    );
   };
 
-  // Format distance to start
-  const formatDistanceToStart = (meters: number | null): string | null => {
-    if (!meters) return null;
-    if (meters < 1000) {
-      return `${Math.round(meters)}m away`;
-    }
-    return `${(meters / 1000).toFixed(1)} km away`;
-  };
+  // Preparar acciones del header
+  const leftActions: ContentHeaderAction[] = [
+    {
+      icon: 'back',
+      onPress: handleBack,
+    },
+  ];
+  
+  const rightActions: ContentHeaderAction[] = [
+    {
+      icon: 'like',
+      onPress: handleLike,
+    },
+    {
+      icon: 'share',
+      onPress: handleShare,
+    },
+    {
+      icon: 'bookmark',
+      onPress: handleSave,
+      isActive: isSaved,
+      activeColor: isSaved ? colors.tint : undefined,
+    },
+  ];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
-
-      {/* Header Sticky */}
-      <View style={[styles.header, { borderBottomColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity
-            onPress={handleBack}
-            style={iconTouchableContainer.base}
-            activeOpacity={0.7}>
-            <Icon name="back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <View style={styles.headerRight}>
-            <TouchableOpacity
-              onPress={handleLike}
-              style={iconTouchableContainer.base}
-              activeOpacity={0.7}>
-              <Icon
-                name="like"
-                size={24}
-                color={colors.text}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleShare}
-              style={iconTouchableContainer.base}
-              activeOpacity={0.7}>
-              <Icon name="share" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSave}
-              style={iconTouchableContainer.base}
-              activeOpacity={0.7}>
-              <Icon
-                name="bookmark"
-                size={24}
-                color={isSaved ? colors.tint : colors.text}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
         
-        {/* Cover image */}
-        {coverImageIndex >= 0 && getAllFlowPhotos[coverImageIndex] ? (
-          <View style={styles.coverImageContainer}>
-            <Image source={{ uri: getAllFlowPhotos[coverImageIndex] }} style={styles.coverImage} resizeMode="cover" />
-          </View>
-        ) : (
-          <View style={[styles.coverImageContainer, styles.coverImagePlaceholder, { backgroundColor: colors.icon + '20' }]}>
-            <Icon name="map" size={48} color={colors.icon} />
-          </View>
-        )}
+        {/* ContentHeader con mapa hero */}
+        <ContentHeader
+          heroType="map"
+          heroMap={
+            <View style={styles.embeddedMapContainer}>
+              {renderMapView()}
+            </View>
+          }
+          leftActions={leftActions}
+          rightActions={rightActions}
+          showOverlay={false}
+          sticky={true}
+        />
 
-        {/* Tags y descripción */}
-        <View style={styles.section}>
-          <View style={styles.tagsContainer}>
-            <View
-              style={[
-                styles.movementModeTag,
-                {
-                  backgroundColor: getMovementModeBackgroundColor(flow.movementMode, colorScheme ?? 'light'),
-                },
-              ]}>
-              <Text
-                style={[
-                  styles.tagText,
-                  { color: getMovementModeTextColor(flow.movementMode, colorScheme ?? 'light') },
-                ]}>
-                {getMovementModeLabel(flow.movementMode).toUpperCase()}
+        {/* Información del flow */}
+        <View style={styles.timelineContainer}>
+          {/* Título y descripción */}
+          <View style={styles.flowInfoContainer}>
+            <View style={styles.flowHeader}>
+              <Text style={[textStyles.heading, { color: colors.text }]}>
+                {flow.title}
               </Text>
             </View>
+            {flow.description && (
+              <Text style={[textStyles.body, { color: colors.text, marginTop: spacing.sm }]}>
+                {flow.description}
+              </Text>
+            )}
           </View>
-          {flow.description && (
-            <Text style={[textStyles.body, { color: colors.text, marginTop: spacing.sm }]}>
-              {flow.description}
-            </Text>
-          )}
-        </View>
 
-        {/* Métricas */}
-        <View style={styles.section}>
+          {/* Chip de movement mode */}
+          <View style={styles.chipContainer}>
+            <Chip
+              text={getMovementModeLabel(flow.movementMode).toUpperCase()}
+              variant="highlighted"
+            />
+          </View>
+
+          {/* Métricas con InfoMeta */}
           <View style={styles.metricsContainer}>
-            <View style={styles.metric}>
-              <Icon name="clock" size={20} color={colors.icon} />
-              <Text style={[textStyles.bodyMedium, { color: colors.text, marginTop: spacing.xs / 2 }]}>
-                {formatDuration(estimatedDuration)}
-              </Text>
-            </View>
-            <View style={styles.metric}>
-              <Icon name="map" size={20} color={colors.icon} />
-              <Text style={[textStyles.bodyMedium, { color: colors.text, marginTop: spacing.xs / 2 }]}>
-                {formatDistance(totalDistance)}
-              </Text>
-            </View>
-            <View style={styles.metric}>
-              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>
-                {flowSpots.length} {flowSpots.length === 1 ? 'spot' : 'spots'}
-              </Text>
-            </View>
+            <InfoMeta
+              duration={estimatedDuration}
+              distance={totalDistance}
+              size="large"
+            />
+            <Text style={[textStyles.bodyMedium, { color: colors.text, marginTop: spacing.sm }]}>
+              {flowSpots.length} {flowSpots.length === 1 ? 'spot' : 'spots'}
+            </Text>
           </View>
-          {distanceToStart && (
-            <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.sm }]}>
-              {formatDistanceToStart(distanceToStart)}
-            </Text>
-          )}
-        </View>
 
-        {/* Botón Start Flow */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            onPress={handleStartFlow}
-            style={[
-              styles.startButton, 
-              { 
-                backgroundColor: userLocation ? colors.tint : colors.icon + '40',
-                opacity: userLocation ? 1 : 0.6,
-              }
-            ]}
-            activeOpacity={0.8}
-            disabled={!userLocation}>
-            <Icon name="play" size={24} color="#fff" />
-            <Text style={[textStyles.bodyMedium, { color: '#fff', marginLeft: spacing.xs }]}>
-              Start Flow
-            </Text>
-          </TouchableOpacity>
-          {!userLocation && (
-            <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs, textAlign: 'center' }]}>
-              Enable location for better experience
-            </Text>
-          )}
-        </View>
-
-        {/* Lista de spots */}
-        <View style={styles.section}>
-          <Text style={[textStyles.heading3, { color: colors.text, marginBottom: spacing.md }]}>
-            Places in this flow
-          </Text>
-          <View style={styles.spotsList}>
-            {flowSpots.map((spot, index) => {
-              const distance = userLocation
-                ? calculateDistanceToSpot(userLocation, spot.location)
-                : undefined;
-              return (
-                <FlowSpotCard
-                  key={spot.id}
-                  spot={spot}
-                  index={index}
-                  distance={distance || undefined}
-                  isActive={false}
-                />
-              );
-            })}
+          {/* Botón Start Flow */}
+          <View style={styles.startButtonContainer}>
+            <TouchableOpacity
+              onPress={handleStartFlow}
+              style={[
+                styles.startButton, 
+                { 
+                  backgroundColor: userLocation ? colors.tint : colors.icon + '40',
+                  opacity: userLocation ? 1 : 0.6,
+                }
+              ]}
+              activeOpacity={0.8}
+              disabled={!userLocation}>
+              <Icon name="play" size={24} color="#fff" />
+              <Text style={[textStyles.bodyMedium, { color: '#fff', marginLeft: spacing.xs }]}>
+                Start Flow
+              </Text>
+            </TouchableOpacity>
+            {!userLocation && (
+              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs, textAlign: 'center' }]}>
+                Enable location for better experience
+              </Text>
+            )}
           </View>
+
+          {/* Lista de spots */}
+          {renderSpotsList()}
         </View>
       </ScrollView>
     </View>
@@ -376,68 +366,48 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    paddingTop: spacing['2xl'],
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderBottomWidth: 1,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    paddingTop: 0,
   },
-  coverImageContainer: {
+  // Estilos para mapa embebido - hero visual pegado al top, full width
+  embeddedMapContainer: {
+    height: 280,
     width: '100%',
-    height: Dimensions.get('window').height * 0.4, // 40% de la altura de la pantalla (igual que SpotDetail)
-    marginBottom: spacing.md,
-  },
-  coverImage: {
-    width: '100%',
-    height: '100%',
-  },
-  coverImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  section: {
+    marginLeft: -spacing.md,
+    marginRight: -spacing.md,
+    position: 'relative',
+    marginTop: 0,
     marginBottom: spacing.xl,
   },
-  tagsContainer: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    flexWrap: 'wrap',
+  mapContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    position: 'relative',
   },
-  movementModeTag: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs / 2,
-    borderRadius: borderRadius.sm,
+  timelineContainer: {
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
-  tagText: {
-    fontFamily: fontFamilyMedium,
-    fontSize: fontSize.xs,
-    lineHeight: lineHeight.xs,
-    fontWeight: '500',
+  flowInfoContainer: {
+    marginBottom: spacing.sm,
+  },
+  flowHeader: {
+    marginBottom: spacing.xs,
+  },
+  chipContainer: {
+    marginBottom: spacing.sm,
   },
   metricsContainer: {
-    flexDirection: 'row',
-    gap: spacing.lg,
-    flexWrap: 'wrap',
+    marginBottom: spacing.sm,
   },
-  metric: {
-    alignItems: 'flex-start',
+  startButtonContainer: {
+    marginBottom: spacing.sm,
   },
   startButton: {
     flexDirection: 'row',
@@ -447,8 +417,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
   },
-  spotsList: {
-    gap: spacing.sm,
+  spotsListContainer: {
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  sectionHeader: {
+    marginBottom: spacing.xs,
+  },
+  sectionTitle: {
+    fontFamily: fontFamilyMedium,
+    fontSize: fontSize.sm,
+    lineHeight: lineHeight.sm,
+    fontWeight: '600',
   },
 });
 

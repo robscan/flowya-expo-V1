@@ -1,18 +1,18 @@
 /**
  * Map View Component
- * Scope 1: Integración de Google Maps
+ * Scope 1: Integración de Mapbox
  * 
- * Componente de mapa real usando react-native-maps y Google Maps.
+ * Componente de mapa usando Mapbox para todas las plataformas.
  * Reemplaza SimpleMapView con funcionalidad de mapas reales.
  * 
  * Principios de diseño:
- * - Mapas reales de Google Maps
+ * - Mapas reales de Mapbox
  * - Marcadores interactivos para spots
  * - Long press para crear nuevo spot
  * - Compatible con la interfaz de SimpleMapView
  */
 
-import React, { useState, useRef, useMemo, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useRef, useImperativeHandle, forwardRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -20,35 +20,10 @@ import {
 } from 'react-native';
 
 import { Spot } from '@/data/spots';
-import { MapSpotMarker } from '@/components/MapSpotMarker';
-import { areMapsApiKeysConfigured, USE_GOOGLE_MAPS } from '@/utils/mapsConfig';
+import { USE_MAPBOX, isMapboxConfigured } from '@/utils/mapsConfig';
 import { SimpleMapView } from './SimpleMapView';
-import { MapViewWeb, MapViewWebRef } from './MapViewWeb';
-
-// Importar react-native-maps solo para móvil (lazy loading)
-let MapView: any;
-let Marker: any;
-let PROVIDER_GOOGLE: any;
-let Polyline: any;
-
-// Función para cargar react-native-maps solo cuando se necesite
-function loadReactNativeMaps() {
-  if (Platform.OS === 'web') {
-    return null;
-  }
-  
-  try {
-    const Maps = require('react-native-maps');
-    MapView = Maps.default;
-    Marker = Maps.Marker;
-    PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
-    Polyline = Maps.Polyline;
-    return Maps;
-  } catch (error) {
-    console.warn('react-native-maps no está disponible:', error);
-    return null;
-  }
-}
+import { MapboxView, MapboxViewRef } from './MapboxView';
+import { MapboxViewWeb, MapboxViewWebRef } from './MapboxViewWeb';
 
 interface Region {
   latitude: number;
@@ -74,24 +49,26 @@ interface MapViewProps {
   userLocation?: { latitude: number; longitude: number } | null;
   routeFrom?: { latitude: number; longitude: number } | null;
   routeTo?: { latitude: number; longitude: number } | null;
+  highlightedSpotId?: string; // ID del spot que debe mostrarse destacado con tooltip
+  currentSpotIndex?: number; // Índice del spot actual en el flow
+  flowSpotsOrder?: Spot[]; // Orden de spots en el flow para pines numerados
+  disableNativeControls?: boolean; // Deshabilitar controles nativos si se usan controles custom
 }
 
 export interface FlowyaMapViewRef {
   centerOnUserLocation: () => void;
+  centerOnSpot: (spotId: string) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
 }
 
-// Calcular región inicial basada en spots
-function calculateInitialRegion(spots: Spot[]): Region {
-  if (spots.length === 0) {
-    // Región por defecto (Riviera Maya, México - para el demo)
-    return {
-      latitude: 20.6170,
-      longitude: -87.0798,
-      latitudeDelta: 0.1,
-      longitudeDelta: 0.1,
-    };
-  }
-
+// Calcular región inicial basada en ubicación del usuario o spots
+function calculateInitialRegion(
+  spots: Spot[],
+  userLocation?: { latitude: number; longitude: number } | null
+): Region {
+  // Prioridad 1: Si hay spots, calcular región basada en ellos
+  if (spots.length > 0) {
   const latitudes = spots.map((spot) => spot.location.latitude);
   const longitudes = spots.map((spot) => spot.location.longitude);
 
@@ -110,6 +87,25 @@ function calculateInitialRegion(spots: Spot[]): Region {
     longitude: centerLon,
     latitudeDelta: latDelta,
     longitudeDelta: lonDelta,
+    };
+  }
+
+  // Prioridad 2: Si hay ubicación del usuario, centrar en ella con zoom razonable
+  if (userLocation) {
+    return {
+      latitude: userLocation.latitude,
+      longitude: userLocation.longitude,
+      latitudeDelta: 0.1,
+      longitudeDelta: 0.1,
+    };
+  }
+
+  // Fallback: Región por defecto (Riviera Maya, México - para el demo)
+  return {
+    latitude: 20.6170,
+    longitude: -87.0798,
+    latitudeDelta: 0.1,
+    longitudeDelta: 0.1,
   };
 }
 
@@ -124,44 +120,33 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
   userLocation = null,
   routeFrom = null,
   routeTo = null,
+  highlightedSpotId,
+  currentSpotIndex,
+  flowSpotsOrder,
+  disableNativeControls = false,
 }, ref) => {
-  const mapRef = useRef<MapView>(null);
-  const [region, setRegion] = useState<Region>(
-    initialRegion || calculateInitialRegion(spots)
-  );
-
-  // Verificar si las API keys están configuradas (solo en desarrollo)
-  useMemo(() => {
-    if (Platform.OS !== 'web' && USE_GOOGLE_MAPS) {
-      areMapsApiKeysConfigured();
-    }
-  }, []);
 
   // Ref para los componentes hijos
-  const mapViewWebRef = useRef<MapViewWebRef>(null);
+  const mapboxViewRef = useRef<MapboxViewRef>(null);
+  const mapboxViewWebRef = useRef<MapboxViewWebRef>(null);
   const simpleMapViewRef = useRef<View>(null);
 
-  // Exponer función centerOnUserLocation usando useImperativeHandle
+  // Exponer funciones usando useImperativeHandle
   useImperativeHandle(ref, () => ({
     centerOnUserLocation: () => {
-      // Para react-native-maps (móvil con Google Maps)
-      if (mapRef.current && userLocation) {
-        mapRef.current.animateToRegion({
-          latitude: userLocation.latitude,
-          longitude: userLocation.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }, 500);
+      // Prioridad 1: Mapbox (móvil)
+      if (mapboxViewRef.current && userLocation) {
+        mapboxViewRef.current.centerOnUserLocation();
         return;
       }
       
-      // Intentar desde MapViewWeb (web)
-      if (mapViewWebRef.current) {
-        mapViewWebRef.current.centerOnUserLocation();
+      // Prioridad 2: Mapbox (web)
+      if (mapboxViewWebRef.current && userLocation) {
+        mapboxViewWebRef.current.centerOnUserLocation();
         return;
       }
       
-      // Intentar desde SimpleMapView (fallback)
+      // Fallback: SimpleMapView
       if (simpleMapViewRef.current) {
         const domElement = (simpleMapViewRef.current as any)._nativeNode || simpleMapViewRef.current;
         if ((domElement as any).centerOnUserLocation) {
@@ -170,14 +155,110 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
         }
       }
     },
-  }), [userLocation]);
+    centerOnSpot: (spotId: string) => {
+      const spot = spots.find(s => s.id === spotId);
+      if (!spot) {
+        console.warn(`Spot with id ${spotId} not found`);
+        return;
+      }
 
-  // En web, usar MapViewWeb (Google Maps JavaScript API)
+      // Prioridad 1: Mapbox (móvil)
+      if (mapboxViewRef.current) {
+        mapboxViewRef.current.centerOnSpot(spotId);
+        return;
+      }
+      
+      // Prioridad 2: Mapbox (web)
+      if (mapboxViewWebRef.current) {
+        mapboxViewWebRef.current.centerOnSpot(spotId);
+        return;
+      }
+      
+      // Fallback: SimpleMapView
+      if (simpleMapViewRef.current) {
+        const domElement = (simpleMapViewRef.current as any)._nativeNode || simpleMapViewRef.current;
+        if ((domElement as any).centerOnSpot) {
+          (domElement as any).centerOnSpot(spotId);
+          return;
+        }
+      }
+    },
+    zoomIn: () => {
+      // Prioridad 1: Mapbox (móvil)
+      if (mapboxViewRef.current) {
+        mapboxViewRef.current.zoomIn();
+        return;
+      }
+      
+      // Prioridad 2: Mapbox (web)
+      if (mapboxViewWebRef.current) {
+        mapboxViewWebRef.current.zoomIn();
+        return;
+      }
+    },
+    zoomOut: () => {
+      // Prioridad 1: Mapbox (móvil)
+      if (mapboxViewRef.current) {
+        mapboxViewRef.current.zoomOut();
+        return;
+      }
+      
+      // Prioridad 2: Mapbox (web)
+      if (mapboxViewWebRef.current) {
+        mapboxViewWebRef.current.zoomOut();
+        return;
+      }
+    },
+  }), [userLocation, spots]);
+
+  // En web, priorizar Mapbox si está configurado, sino usar SimpleMapView
   if (Platform.OS === 'web') {
+    if (USE_MAPBOX && isMapboxConfigured()) {
     return (
       <View style={styles.container}>
-        <MapViewWeb
-          ref={mapViewWebRef}
+          <MapboxViewWeb
+            ref={mapboxViewWebRef}
+            spots={spots}
+            onSpotPress={onSpotPress}
+            onLongPress={onLongPress}
+            initialRegion={initialRegion || calculateInitialRegion(spots, userLocation)}
+            showRoute={showRoute}
+            flowSpots={flowSpots}
+            showUserLocation={showUserLocation}
+            userLocation={userLocation}
+            routeFrom={routeFrom}
+            routeTo={routeTo}
+            highlightedSpotId={highlightedSpotId}
+            currentSpotIndex={currentSpotIndex}
+            flowSpotsOrder={flowSpotsOrder}
+            disableNativeControls={disableNativeControls}
+          />
+      </View>
+    );
+  }
+
+    // Fallback a SimpleMapView
+    return (
+      <View style={styles.container}>
+        <View ref={simpleMapViewRef} style={StyleSheet.absoluteFillObject}>
+          <SimpleMapView
+            spots={spots}
+            onSpotPress={onSpotPress}
+            onLongPress={onLongPress}
+            initialRegion={initialRegion || calculateInitialRegion(spots, userLocation)}
+            userLocation={userLocation}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  // En móvil, priorizar Mapbox si está configurado
+  if (USE_MAPBOX && isMapboxConfigured()) {
+    return (
+      <View style={styles.container}>
+        <MapboxView
+          ref={mapboxViewRef}
           spots={spots}
           onSpotPress={onSpotPress}
           onLongPress={onLongPress}
@@ -188,149 +269,27 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
           userLocation={userLocation}
           routeFrom={routeFrom}
           routeTo={routeTo}
+          highlightedSpotId={highlightedSpotId}
+          currentSpotIndex={currentSpotIndex}
+          flowSpotsOrder={flowSpotsOrder}
+          disableNativeControls={disableNativeControls}
         />
       </View>
     );
   }
-
-  // Si Google Maps está desactivado en móvil, usar SimpleMapView (fallback)
-  if (!USE_GOOGLE_MAPS) {
-    return (
-      <View style={styles.container}>
-        <View ref={simpleMapViewRef} style={StyleSheet.absoluteFillObject}>
-          <SimpleMapView
-            spots={spots}
-            onSpotPress={onSpotPress}
-            onLongPress={onLongPress}
-            initialRegion={initialRegion || calculateInitialRegion(spots)}
-            userLocation={userLocation}
-          />
-        </View>
-      </View>
-    );
-  }
-
-  // En móvil con Google Maps activado, usar react-native-maps
-  // NOTA: Este código se mantiene comentado/desactivado temporalmente
-  // Para reactivarlo, cambiar USE_GOOGLE_MAPS a true en utils/mapsConfig.ts
   
-  // Cargar react-native-maps solo cuando se necesite (lazy loading)
-  const [mapsLoaded, setMapsLoaded] = useState(false);
-  
-  useEffect(() => {
-    if (Platform.OS !== 'web' && USE_GOOGLE_MAPS) {
-      const maps = loadReactNativeMaps();
-      if (maps) {
-        setMapsLoaded(true);
-      } else {
-        // Si no se puede cargar, usar SimpleMapView como fallback
-        setMapsLoaded(false);
-      }
-    } else {
-      setMapsLoaded(false);
-    }
-  }, []);
-  
-  // Si react-native-maps no está disponible o no se cargó, usar SimpleMapView como fallback
-  if (Platform.OS !== 'web' && USE_GOOGLE_MAPS && (!MapView || !mapsLoaded)) {
-    return (
-      <View style={styles.container}>
-        <View ref={simpleMapViewRef} style={StyleSheet.absoluteFillObject}>
-          <SimpleMapView
-            spots={spots}
-            onSpotPress={onSpotPress}
-            onLongPress={onLongPress}
-            initialRegion={initialRegion || calculateInitialRegion(spots)}
-            userLocation={userLocation}
-          />
-        </View>
-      </View>
-    );
-  }
-  
-  // Calcular coordenadas para Polyline (ruta)
-  const routeCoordinates: LatLng[] = useMemo(() => {
-    if (!showRoute) {
-      return [];
-    }
-
-    // Prioridad: usar routeFrom y routeTo si están disponibles (ruta punto a punto)
-    if (routeFrom && routeTo) {
-      return [
-        { latitude: routeFrom.latitude, longitude: routeFrom.longitude },
-        { latitude: routeTo.latitude, longitude: routeTo.longitude },
-      ];
-    }
-
-    // Fallback: usar flowSpots si están disponibles (ruta completa del flow)
-    if (flowSpots && flowSpots.length >= 2) {
-      return flowSpots.map((spot) => ({
-        latitude: spot.location.latitude,
-        longitude: spot.location.longitude,
-      }));
-    }
-
-    return [];
-  }, [showRoute, flowSpots, routeFrom, routeTo]);
-
-  const handleLongPress = (event: any) => {
-    const coordinate = event.nativeEvent.coordinate;
-    onLongPress?.({
-      latitude: coordinate.latitude,
-      longitude: coordinate.longitude,
-    });
-  };
-
-  const handleRegionChangeComplete = (newRegion: Region) => {
-    setRegion(newRegion);
-  };
-
+  // Si Mapbox no está disponible, usar SimpleMapView (fallback)
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined} // iOS usa Apple Maps por defecto, Android usa Google
-        initialRegion={region}
-        onRegionChangeComplete={handleRegionChangeComplete}
-        onLongPress={handleLongPress}
-        showsUserLocation={showUserLocation}
-        showsMyLocationButton={showUserLocation}
-        showsCompass={true}
-        showsScale={false}
-        rotateEnabled={true}
-        scrollEnabled={true}
-        zoomEnabled={true}
-        pitchEnabled={false}
-        toolbarEnabled={false}
-      >
-        {/* Marcadores de spots */}
-        {spots.map((spot) => (
-          <Marker
-            key={spot.id}
-            coordinate={{
-              latitude: spot.location.latitude,
-              longitude: spot.location.longitude,
-            }}
-            onPress={() => onSpotPress(spot)}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={styles.markerWrapper}>
-              <MapSpotMarker spot={spot} onPress={() => onSpotPress(spot)} />
+      <View ref={simpleMapViewRef} style={StyleSheet.absoluteFillObject}>
+        <SimpleMapView
+          spots={spots}
+          onSpotPress={onSpotPress}
+          onLongPress={onLongPress}
+          initialRegion={initialRegion || calculateInitialRegion(spots, userLocation)}
+          userLocation={userLocation}
+        />
             </View>
-          </Marker>
-        ))}
-
-        {/* Ruta entre spots (Polyline) */}
-        {showRoute && routeCoordinates.length > 1 && Polyline && (
-          <Polyline
-            coordinates={routeCoordinates}
-            strokeColor="#FF6B35" // Color tint de la app
-            strokeWidth={3}
-            lineDashPattern={[1]}
-          />
-        )}
-      </MapView>
     </View>
   );
 });
@@ -339,13 +298,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     minHeight: 200, // Ensure minimum height for web fallback
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  markerWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
 

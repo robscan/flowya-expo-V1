@@ -82,6 +82,12 @@ export const textStyles = {
     lineHeight: lineHeight['2xl'],
     fontWeight: fontWeight.medium,
   },
+  heading4: {
+    fontFamily: fontFamilyMedium,
+    fontSize: fontSize.xl,
+    lineHeight: lineHeight.xl,
+    fontWeight: fontWeight.medium,
+  },
   body: {
     fontFamily,
     fontSize: fontSize.base,

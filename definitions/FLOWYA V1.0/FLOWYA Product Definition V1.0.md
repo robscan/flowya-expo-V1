@@ -478,15 +478,30 @@ FlowMiniPlayer es el player minimizado que aparece sobre el tab bar cuando Flow 
 FlowScreen es la pantalla principal cuando Flow está activo.
 
 **Header:**
-- Texto "NOW MOVING" a la izquierda
+- Nombre del spot actual (textStyles.heading3) a la izquierda
+- Badge "Live" a la derecha del nombre
+- Metadata debajo del nombre (en línea horizontal):
+  - Distancia al spot actual (icono mapa + distancia en m/km)
+  - Tiempo estimado al siguiente spot (icono reloj + minutos)
+- Botones de afinidad a la derecha del badge Live:
+  - Botón "Like" (icon.like) - Da like al spot actual (solo disponible desde el player)
+  - Botón "Not My Vibe" (icon.notMyVibe) - Marca el spot como no de mi interés
+  - Feedback visual: Color tint cuando está activo, color icon cuando inactivo
+  - Área táctil mínima: 48px x 48px
 - Controles a la derecha:
   - Botón "Minimizar" (icon.minimize) - Minimiza Flow y muestra FlowMiniPlayer sobre el tab bar
   - Botón "Cerrar" (icon.close) - Cierra Flow y regresa a la pantalla de origen
 
+**Stepper compacto:**
+- Barra de progreso ultra reducida (2-3px de altura) arriba de los tabs List/Map
+- Formato de progreso: "1/5" (spot actual / total de spots) en lugar de porcentaje
+- Estilo minimalista, casi invisible, solo indicador visual sutil
+- Color tint para la barra de progreso, fondo con opacidad baja
+- Ubicación: Entre el header y el segmented control
+
 **Vista List (por defecto):**
 - Segmented control: "List" y "Map"
 - Progreso del Path (barra visual y porcentaje)
-- Spot actual (destacado)
 - Listado de spots del Path con formato drag and drop (debajo del spot actual):
   - PathSpotCard para cada spot
   - Indicador visual del spot actual (isActive)
@@ -496,6 +511,7 @@ FlowScreen es la pantalla principal cuando Flow está activo.
 **Controles inferiores:**
 - Pausar/Reanudar (icon.pause/play)
 - Siguiente (icon.next)
+- Botones de afinidad (Like / Not My Vibe) - Integrados en FlowPlayerControls
 - Más opciones (icon.more) - Navega a Flow Full Player
 
 **Comportamiento de Minimizar:**
@@ -535,7 +551,9 @@ Flow Full Player es una sección completa (pantalla completa) que muestra inform
 
 **3. Current Spot:**
 - Sección destacada mostrando el Spot actual
-- Botón "Like" para dar like al spot actual (solo disponible desde el player)
+- Botones de afinidad:
+  - Botón "Like" para dar like al spot actual (solo disponible desde el player)
+  - Botón "Not My Vibe" para marcar el spot como no de mi interés
 - SpotCard completa del spot actual
 
 **4. Full Route:**
@@ -600,6 +618,45 @@ La narración se activa por eventos del Flow:
 Las señales de afinidad influyen en la narración:
 - Likes refuerzan tonos.
 - Not my vibe reduce narraciones similares.
+
+---
+
+## SISTEMA DE AFINIDAD EN FLOW
+
+### COMPORTAMIENTO
+
+**Durante un Flow activo:**
+- Los likes y "Not My Vibe" se registran inmediatamente en SavedContext
+- "Not My Vibe" filtra automáticamente spots similares de las sugerencias del flow
+- El sistema no sugiere más spots del mismo tipo si el usuario marcó uno como "Not My Vibe"
+- Los likes refuerzan la aparición de spots similares en sugerencias futuras
+
+**Persistencia:**
+- Los likes desde el player se guardan en "likedSpotsFromPlayer"
+- Los "Not My Vibe" se guardan en "notMyVibeSpots"
+- Ambas listas persisten en SavedContext y se sincronizan con el timeline
+
+**Feedback visual:**
+- Botones de afinidad muestran estado activo con color tint
+- Estado inactivo usa color icon (gris)
+- Transición suave al cambiar de estado
+- Área táctil mínima: 48px x 48px
+
+**Reglas de exclusión mutua:**
+- Like y Not My Vibe son mutuamente excluyentes
+- Al dar Like, se quita Not My Vibe si estaba marcado
+- Al dar Not My Vibe, se quita Like si estaba marcado
+
+**Influencia en narración:**
+- Likes refuerzan tonos similares y aumentan frecuencia de narrations relacionadas
+- Not my vibe reduce narraciones similares y filtra contenido relacionado
+- El sistema aprende de las preferencias del usuario durante el flow
+- Las narrations futuras se adaptan basándose en las señales de afinidad acumuladas
+
+**Ubicación de controles:**
+- FlowScreen: Botones de afinidad en el header (junto al badge Live) y en controles inferiores (FlowPlayerControls)
+- Flow Full Player: Botones de afinidad en la sección Current Spot y en controles inferiores (FlowPlayerControls)
+- Flow Mini Player: No incluye botones de afinidad (mantiene diseño minimalista)
 
 ---
 

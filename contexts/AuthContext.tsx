@@ -10,10 +10,10 @@
  * - Persistencia de sesión con AsyncStorage
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/utils/supabase';
-import type { User, Session, AuthError } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { AuthError, Session, User } from '@supabase/supabase-js';
+import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 const STORAGE_KEY = '@flowya_auth_session';
 
@@ -41,42 +41,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
   );
 
-  // Cargar sesión guardada al iniciar
-  useEffect(() => {
-    loadSession();
-  }, []);
-
-  // Suscribirse a cambios de autenticación (solo si Supabase está configurado)
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
-      setIsLoading(false);
-      return;
-    }
-
+  const saveSession = async (session: Session) => {
     try {
-      const {
-        data: { subscription },
-      } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session) {
-          await saveSession(session);
-        } else {
-          await clearSession();
-        }
-      });
-
-      return () => {
-        subscription.unsubscribe();
-      };
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(session));
     } catch (error) {
-      console.error('Error setting up auth state change listener:', error);
-      setIsLoading(false);
+      console.error('Error saving session:', error);
     }
-  }, [isSupabaseConfigured]);
+  };
 
-  const loadSession = async () => {
+  const clearSession = async () => {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEY);
+    } catch (error) {
+      console.error('Error clearing session:', error);
+    }
+  };
+
+  const loadSession = useCallback(async () => {
     try {
       setIsLoading(true);
       
@@ -132,48 +113,89 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isSupabaseConfigured]);
 
-  const saveSession = async (session: Session) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    } catch (error) {
-      console.error('Error saving session:', error);
-    }
-  };
+  // Cargar sesión guardada al iniciar
+  useEffect(() => {
+    loadSession();
+  }, [loadSession]);
 
-  const clearSession = async () => {
-    try {
-      await AsyncStorage.removeItem(STORAGE_KEY);
-    } catch (error) {
-      console.error('Error clearing session:', error);
+  // Suscribirse a cambios de autenticación (solo si Supabase está configurado)
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setIsLoading(false);
+      return;
     }
-  };
+
+    try {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session) {
+          await saveSession(session);
+        } else {
+          await clearSession();
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    } catch (error) {
+      console.error('Error setting up auth state change listener:', error);
+      setIsLoading(false);
+    }
+  }, [isSupabaseConfigured]);
 
   const signUp = async (email: string, password: string) => {
     if (!isSupabaseConfigured || !supabase) {
-      return { error: new Error('Supabase not configured') as AuthError };
+      return { 
+        error: { 
+          message: 'Authentication service is not configured. Please contact support.',
+          name: 'ConfigurationError',
+          status: 500,
+        } as AuthError 
+      };
     }
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: email.trim().toLowerCase(),
         password,
+        options: {
+          emailRedirectTo: 'flowya://verify-email',
+        },
       });
 
       if (error) {
+        console.error('SignUp error:', error);
         return { error };
       }
 
+      // Nota: Supabase puede no retornar una sesión inmediatamente si requiere verificación de email
+      // Esto es normal y esperado
       if (data.session) {
         setSession(data.session);
         setUser(data.user);
         await saveSession(data.session);
+      } else if (data.user) {
+        // Usuario creado pero requiere verificación de email
+        // No establecer sesión hasta que el email sea verificado
+        console.log('User created, email verification required');
       }
 
       return { error: null };
     } catch (error) {
       console.error('Error in signUp:', error);
-      return { error: error as AuthError };
+      return { 
+        error: { 
+          message: 'An unexpected error occurred. Please try again.',
+          name: 'UnexpectedError',
+          status: 500,
+        } as AuthError 
+      };
     }
   };
 

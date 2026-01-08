@@ -12,9 +12,8 @@ import { Colors } from '@/constants/theme';
 import { spacing } from '@/constants/spacing';
 import { textStyles, fontSize, lineHeight, fontFamilyMedium } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Icon } from '@/components/ui/Icon';
-import { iconTouchableContainer } from '@/components/ui/Icon';
-import { SpotCard } from '@/components/SpotCard';
+import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
+import { SpotMediaCard } from '@/components/SpotMediaCard';
 import { useSpot } from '@/contexts/SpotContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { calculateDistanceToSpot } from '@/utils/distance';
@@ -107,12 +106,11 @@ export default function LikedSpotsScreen() {
             const distance = calculateDistanceToSpot(userLocation, spot.location);
             return (
               <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-                <SpotCard
+                <SpotMediaCard
                   spot={spot}
+                  size="large"
                   distance={distance || undefined}
                   onPress={() => handleSpotPress(spot)}
-                  onMapPress={() => handleSpotPress(spot)}
-                  inSlider={true}
                 />
               </View>
             );

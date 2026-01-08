@@ -22,6 +22,7 @@ import { Icon } from '@/components/ui/Icon';
 interface MapSpotMarkerProps {
   spot: Spot;
   onPress: () => void;
+  isHighlighted?: boolean;
 }
 
 // Helper para obtener icono según tipo de Spot
@@ -38,7 +39,7 @@ function getSpotTypeColor(type: SpotType, colors: any): string {
   return colors.tint;
 }
 
-export function MapSpotMarker({ spot, onPress }: MapSpotMarkerProps) {
+export function MapSpotMarker({ spot, onPress, isHighlighted = false }: MapSpotMarkerProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const iconName = getSpotTypeIcon(spot.type);
@@ -49,12 +50,24 @@ export function MapSpotMarker({ spot, onPress }: MapSpotMarkerProps) {
       onPress={onPress}
       style={styles.markerContainer}
       activeOpacity={0.7}>
-      <View style={[styles.marker, { backgroundColor: markerColor }]}>
+      <View style={[
+        styles.marker, 
+        { backgroundColor: markerColor },
+        isHighlighted && styles.markerHighlighted
+      ]}>
         <Icon name={iconName} size={16} color={colors.background} />
       </View>
       {spot.name && (
-        <View style={[styles.label, { backgroundColor: colors.background + 'E6' }]}>
-          <Text style={[textStyles.caption, { color: colors.text }]} numberOfLines={1}>
+        <View style={[
+          styles.label, 
+          { backgroundColor: colors.background + 'E6' },
+          isHighlighted && styles.labelHighlighted
+        ]}>
+          <Text style={[
+            textStyles.caption, 
+            { color: colors.text },
+            isHighlighted && styles.labelTextHighlighted
+          ]} numberOfLines={1}>
             {spot.name}
           </Text>
         </View>
@@ -88,6 +101,27 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs / 2,
     borderRadius: 8,
     maxWidth: 120,
+  },
+  markerHighlighted: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 3,
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  labelHighlighted: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    maxWidth: 160,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  labelTextHighlighted: {
+    fontWeight: '600',
+    fontSize: 13,
   },
 });
 

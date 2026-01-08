@@ -48,23 +48,18 @@ interface SimpleMapViewProps {
   userLocation?: { latitude: number; longitude: number } | null;
 }
 
-// Calcular región inicial basada en spots
-function calculateInitialRegion(spots: Spot[]): {
+// Calcular región inicial basada en ubicación del usuario o spots
+function calculateInitialRegion(
+  spots: Spot[],
+  userLocation?: { latitude: number; longitude: number } | null
+): {
   latitude: number;
   longitude: number;
   latitudeDelta: number;
   longitudeDelta: number;
 } {
-  if (spots.length === 0) {
-    // Región por defecto (Lima, Perú)
-    return {
-      latitude: -12.0464,
-      longitude: -77.0428,
-      latitudeDelta: 0.1,
-      longitudeDelta: 0.1,
-    };
-  }
-
+  // Prioridad 1: Si hay spots, calcular región basada en ellos
+  if (spots.length > 0) {
   const latitudes = spots.map((spot) => spot.location.latitude);
   const longitudes = spots.map((spot) => spot.location.longitude);
 
@@ -83,6 +78,25 @@ function calculateInitialRegion(spots: Spot[]): {
     longitude: centerLon,
     latitudeDelta: latDelta,
     longitudeDelta: lonDelta,
+    };
+  }
+
+  // Prioridad 2: Si hay ubicación del usuario, centrar en ella con zoom razonable
+  if (userLocation) {
+    return {
+      latitude: userLocation.latitude,
+      longitude: userLocation.longitude,
+      latitudeDelta: 0.1,
+      longitudeDelta: 0.1,
+    };
+  }
+
+  // Región por defecto (Lima, Perú)
+  return {
+    latitude: -12.0464,
+    longitude: -77.0428,
+    latitudeDelta: 0.1,
+    longitudeDelta: 0.1,
   };
 }
 
@@ -146,7 +160,7 @@ export function SimpleMapView({
   const screenDimensions = Dimensions.get('window');
   const [containerSize, setContainerSize] = useState({ width: screenDimensions.width, height: 400 });
   
-  const baseRegion = initialRegion || calculateInitialRegion(spots);
+  const baseRegion = initialRegion || calculateInitialRegion(spots, userLocation);
   const [currentRegion, setCurrentRegion] = useState(baseRegion);
   const panStartRef = useRef<{ x: number; y: number; region: typeof baseRegion } | null>(null);
   
@@ -230,12 +244,12 @@ export function SimpleMapView({
 
   const centerOnUserLocation = useCallback(() => {
     if (userLocation) {
-      setCurrentRegion((prev) => ({
+      setCurrentRegion({
         latitude: userLocation.latitude,
         longitude: userLocation.longitude,
-        latitudeDelta: Math.min(prev.latitudeDelta, 0.01), // Zoom más cercano cuando se centra en ubicación
-        longitudeDelta: Math.min(prev.longitudeDelta, 0.01),
-      }));
+        latitudeDelta: 0.1,
+        longitudeDelta: 0.1,
+      });
     }
   }, [userLocation]);
 

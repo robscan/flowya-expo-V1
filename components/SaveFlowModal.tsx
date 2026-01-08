@@ -29,8 +29,13 @@ interface SaveFlowModalProps {
   visible: boolean;
   flow: Flow | null;
   spots: Spot[];
+  isSaved: boolean; // CANONICAL: true if flow is already saved, false if draft
+  hasChanges?: boolean; // CANONICAL: true if flow has unsaved changes
+  flowState?: 'draft' | 'saved' | 'edited'; // CANONICAL: Flow state
   currentName?: string;
   onSave: (name: string) => void;
+  onExitWithoutSaving: () => void;
+  onDiscardChanges?: () => void; // CANONICAL: Discard changes (for edited flows)
   onCancel: () => void;
 }
 
@@ -67,24 +72,36 @@ export function SaveFlowModal({
   visible,
   flow,
   spots,
+  isSaved,
+  hasChanges = false,
+  flowState = isSaved ? 'saved' : 'draft',
   currentName,
   onSave,
+  onExitWithoutSaving,
+  onDiscardChanges,
   onCancel,
 }: SaveFlowModalProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const [flowName, setFlowName] = useState('');
 
-  // Inicializar nombre cuando se abre el modal
+  // CANONICAL: Initialize name when modal opens
+  // - If saved: use current saved name (never ask for name again)
+  // - If draft: use suggested name or empty
   useEffect(() => {
     if (visible) {
-      if (currentName) {
+      if (isSaved && currentName) {
+        // Already saved: use current saved name
         setFlowName(currentName);
+      } else if (!isSaved) {
+        // Draft: use suggested name or empty
+        setFlowName(currentName || generateSuggestedName(flow, spots));
       } else {
+        // Fallback
         setFlowName(generateSuggestedName(flow, spots));
       }
     }
-  }, [visible, currentName, flow, spots]);
+  }, [visible, isSaved, currentName, flow, spots]);
 
   const handleSave = () => {
     const trimmedName = flowName.trim();
@@ -124,7 +141,7 @@ export function SaveFlowModal({
               {/* Header */}
               <View style={styles.header}>
                 <Text style={[textStyles.heading3, { color: colors.text }]}>
-                  Save flow
+                  {flowState === 'edited' ? 'Save changes?' : isSaved ? 'Close route' : 'Save route'}
                 </Text>
                 <TouchableOpacity
                   onPress={handleCancel}
@@ -134,54 +151,141 @@ export function SaveFlowModal({
                 </TouchableOpacity>
               </View>
 
-              {/* Description */}
-              <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                Give your flow a name so you can find it later.
-              </Text>
+              {/* CANONICAL: Different UI based on flow state and changes */}
+              {flowState === 'draft' && hasChanges ? (
+                <>
+                  {/* Draft + changes: Show name input */}
+                  <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
+                    Give your route a name so you can find it later.
+                  </Text>
 
-              {/* Input */}
-              <View style={styles.inputContainer}>
-                <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
-                  Flow name
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      color: colors.text,
-                      borderColor: colors.icon + '30',
-                      backgroundColor: colors.background,
-                    },
-                  ]}
-                  value={flowName}
-                  onChangeText={setFlowName}
-                  placeholder={suggestedName}
-                  placeholderTextColor={colors.icon}
-                  autoFocus
-                  maxLength={50}
-                  returnKeyType="done"
-                  onSubmitEditing={handleSave}
-                />
-                <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                  {flowName.length}/50 characters
-                </Text>
-              </View>
+                  {/* Input */}
+                  <View style={styles.inputContainer}>
+                    <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
+                      Route name
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          color: colors.text,
+                          borderColor: colors.icon + '30',
+                          backgroundColor: colors.background,
+                        },
+                      ]}
+                      value={flowName}
+                      onChangeText={setFlowName}
+                      placeholder={suggestedName}
+                      placeholderTextColor={colors.icon}
+                      autoFocus
+                      maxLength={50}
+                      returnKeyType="done"
+                      onSubmitEditing={handleSave}
+                    />
+                    <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
+                      {flowName.length}/50 characters
+                    </Text>
+                  </View>
+                </>
+              ) : flowState === 'edited' ? (
+                <>
+                  {/* Saved + changes: Show confirmation message */}
+                  <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
+                    {currentName ? `Save changes to "${currentName}"?` : 'Save changes to this route?'}
+                  </Text>
+                </>
+              ) : flowState === 'saved' && !hasChanges ? (
+                <>
+                  {/* Saved + no changes: Show current name (read-only) */}
+                  <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
+                    {currentName || 'Route saved'}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  {/* Draft + no changes: Show exit message (rare case) */}
+                  <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
+                    Exit without saving?
+                  </Text>
+                </>
+              )}
 
-              {/* Actions */}
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.button, styles.cancelButton, { borderColor: colors.icon + '30' }]}
-                  onPress={handleCancel}
-                  activeOpacity={0.7}>
-                  <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.button, styles.saveButton, { backgroundColor: colors.tint }]}
-                  onPress={handleSave}
-                  activeOpacity={0.8}>
-                  <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save</Text>
-                </TouchableOpacity>
-              </View>
+              {/* CANONICAL: Different actions based on flow state and changes */}
+              {flowState === 'draft' && hasChanges ? (
+                <>
+                  {/* Draft + changes: Save Route (primary) + Exit without saving (secondary) */}
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.saveButton, { backgroundColor: colors.tint }]}
+                      onPress={handleSave}
+                      activeOpacity={0.8}>
+                      <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save Route</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.exitButton}
+                    onPress={onExitWithoutSaving}
+                    activeOpacity={0.7}>
+                    <Text style={[textStyles.bodyMedium, { color: colors.icon }]}>
+                      Exit without saving
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : flowState === 'edited' ? (
+                <>
+                  {/* Saved + changes: Save Changes (primary) + Discard Changes (secondary) */}
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.saveButton, { backgroundColor: colors.tint }]}
+                      onPress={handleSave}
+                      activeOpacity={0.8}>
+                      <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save Changes</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.exitButton}
+                    onPress={onDiscardChanges || onExitWithoutSaving}
+                    activeOpacity={0.7}>
+                    <Text style={[textStyles.bodyMedium, { color: colors.icon }]}>
+                      Discard Changes
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : flowState === 'saved' && !hasChanges ? (
+                <>
+                  {/* Saved + no changes: Just close (no need to save again, no need to ask for name) */}
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.saveButton, { backgroundColor: colors.tint }]}
+                      onPress={onExitWithoutSaving}
+                      activeOpacity={0.8}>
+                      <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Close</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  {/* Draft + no changes: Just exit (rare case) */}
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.saveButton, { backgroundColor: colors.tint }]}
+                      onPress={onExitWithoutSaving}
+                      activeOpacity={0.8}>
+                      <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Exit</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+
+              {/* Cancel: Close modal only */}
+              <TouchableOpacity
+                style={styles.cancelButtonOnly}
+                onPress={handleCancel}
+                activeOpacity={0.7}>
+                <Text style={[textStyles.body, { color: colors.icon }]}>Cancel</Text>
+              </TouchableOpacity>
             </GlassView>
           </Pressable>
         </KeyboardAvoidingView>
@@ -234,23 +338,29 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   actions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
     marginTop: spacing.md,
   },
   button: {
-    flex: 1,
     borderRadius: borderRadius.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
   },
-  cancelButton: {
-    borderWidth: 1,
-  },
   saveButton: {
     // backgroundColor se aplica dinámicamente
+  },
+  exitButton: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonOnly: {
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

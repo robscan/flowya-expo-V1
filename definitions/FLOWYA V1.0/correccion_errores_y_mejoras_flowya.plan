@@ -1,0 +1,390 @@
+---
+name: Corrección Errores y Mejoras FLOWYA
+overview: Plan para corregir errores críticos de producción identificados y agregar funcionalidad incremental de sugerencia de spots durante flows, incluyendo mejoras adicionales de ingeniería de software.
+todos:
+  - id: fix-maps-api-key
+    content: Configurar EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY en Vercel y mejorar manejo de errores en MapViewWeb.tsx
+    status: completed
+  - id: fix-signup-flow
+    content: Investigar y corregir flujo de creación de cuenta, mejorar mensajes de error y agregar verificación de email
+    status: completed
+  - id: fix-skeleton-loaders
+    content: Mejorar visibilidad de skeleton loaders aumentando opacidad y agregando shimmer effect
+    status: completed
+  - id: fix-search-skeletons
+    content: Agregar skeleton loaders en pantalla de búsqueda durante estados de loading
+    status: completed
+  - id: differentiate-search-results
+    content: Diferenciar visualmente y por contenido los resultados de búsqueda de nearby places
+    status: completed
+  - id: save-flow-with-name
+    content: Crear SaveFlowModal para permitir nombrar flows al guardar y persistir nombres personalizados
+    status: completed
+  - id: filter-incomplete-flows
+    content: Crear validación de flows completos y filtrar flows incompletos en nearby flows
+    status: completed
+  - id: spot-suggestion-system
+    content: Crear sistema de sugerencia de spots con algoritmo de scoring y UI en FlowScreen
+    status: completed
+  - id: integrate-suggestions-in-flow
+    content: Integrar sugerencias de spots al iniciar flow desde spot-detail y permitir agregar al flow
+    status: completed
+  - id: fix-conflicts-and-issues
+    content: Corregir conflictos y problemas de implementación (useEffect duplicado, imports faltantes)
+    status: completed
+  - id: logging-system
+    content: Crear sistema de logging estructurado con niveles y servicio externo opcional
+    status: pending
+  - id: data-validation
+    content: Agregar validación de datos con Zod para spots, flows y usuario
+    status: pending
+  - id: performance-optimization
+    content: Optimizar rendimiento con lazy loading, memoización y virtualización de listas
+    status: pending
+---
+
+# Plan de Corrección de Errores y Mejoras Incrementales: FLOWYA
+
+## Visión General
+
+Este plan aborda errores críticos identificados en producción y agrega una funcionalidad incremental solicitada. Además, incluye análisis técnico y mejoras adicionales propuestas por un enfoque de ingeniería de software experimentado.
+
+**Contexto del proyecto:**
+- Aplicación FLOWYA (anteriormente Mini Tours) - MVP completado (Fase V4)
+- Stack: Expo/React Native, TypeScript, Supabase (Auth), AsyncStorage (persistencia)
+- Arquitectura: Contextos globales (Spot, Path/Flow, Saved, Narration, Auth)
+- Diseño: Sistema Glass con tipografía Inter
+
+**Estado actual:**
+- MVP funcional con 11 scopes completados
+- 5 pantallas principales (Home, Gems, Saved, Search, Profile)
+- Sistema de Flow activo con geofencing simulado
+- Sistema de búsqueda contextual
+- Errores en producción identificados
+- Mejoras de UX pendientes
+
+---
+
+## Scope 1: Corrección de Errores Críticos de Producción
+
+**Prioridad: CRÍTICA** - Bloquea funcionalidad core o genera mala experiencia de usuario.
+
+### 1.1 Error: Google Maps API Key no configurada (Web)
+
+**Problema:**
+- Error en consola: "Google Maps API key not configured. Please set EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY in your .env file or Vercel environment variables."
+- Los mapas no funcionan en versión web desplegada en Vercel
+- El componente `MapViewWeb.tsx` detecta la ausencia de la key pero no maneja el error de forma user-friendly
+
+**Archivos afectados:**
+- `utils/mapsConfig.ts` - Configuración de API keys
+- `components/MapViewWeb.tsx` - Componente de mapa web (línea 172-178)
+- `app.json` - Configuración de Expo (líneas 32-35)
+
+**Solución:**
+1. Configurar variable de entorno en Vercel: `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY`
+2. Mejorar UI de error en `MapViewWeb.tsx` con mensaje claro y acción sugerida
+3. Crear hook `useMapsConfig()` para validación proactiva
+4. Documentar proceso en `docs/DEPLOYMENT.md`
+
+**Archivos a modificar:**
+- `utils/mapsConfig.ts` - Agregar validación y helpers
+- `components/MapViewWeb.tsx` - Mejorar UI de error (líneas 571-577)
+- Crear `docs/DEPLOYMENT.md` - Documentar configuración Vercel
+- Crear `docs/API_KEYS.md` - Documentar requisitos
+
+---
+
+### 1.2 Error: Flujo de creación de cuenta no funciona
+
+**Problema:**
+- El flujo de signup no permite crear cuentas correctamente
+- Posibles causas: validación de email, confirmación de contraseña, integración con Supabase, o redirección post-signup
+
+**Archivos afectados:**
+- `app/(tabs)/signup.tsx` - Pantalla de registro (líneas 51-89)
+- `contexts/AuthContext.tsx` - Contexto de autenticación
+
+**Solución:**
+1. Revisar logs de Supabase para errores de autenticación
+2. Mejorar mensajes de error específicos basados en códigos de error de Supabase
+3. Implementar pantalla intermedia post-signup explicando verificación de email
+4. Agregar opción de reenvío de email de verificación
+5. Testear flujo completo manualmente
+
+**Archivos a revisar/modificar:**
+- `app/(tabs)/signup.tsx` - Mejorar validación y feedback (líneas 51-89)
+- `contexts/AuthContext.tsx` - Revisar manejo de errores de Supabase
+- `app/(tabs)/login.tsx` - Verificar redirección post-verificación
+- Crear `app/verify-email.tsx` si no existe
+
+---
+
+### 1.3 Error: Skeleton loaders no se aprecian al cargar imágenes o cards
+
+**Problema:**
+- Los skeleton loaders no son visibles durante la carga de imágenes o cards
+- Posible causa: opacidad muy baja, color similar al fondo, o timing de carga muy rápido
+
+**Archivos afectados:**
+- `components/ui/SkeletonLoader.tsx` - Componente de skeleton (líneas 19-63)
+- `components/ui/SkeletonLoader.tsx` - SpotCardSkeleton (líneas 66-80)
+
+**Solución:**
+1. Aumentar opacidad base (de 0.3-0.6 a 0.4-0.7) en `SkeletonLoader.tsx` línea 45
+2. Usar color más contrastante (`colors.icon + '40'` en lugar de `'20'` en línea 56)
+3. Agregar shimmer effect (gradiente animado) para mejor percepción
+4. Asegurar que skeletons se muestren mínimo 300ms (evitar flash)
+
+**Archivos a modificar:**
+- `components/ui/SkeletonLoader.tsx` - Mejorar visibilidad y animación (líneas 19-80)
+
+---
+
+### 1.4 Error: Skeleton loaders no se ven en buscador
+
+**Problema:**
+- Los skeleton loaders no aparecen en la pantalla de búsqueda durante la carga
+- Posible causa: no se están usando o el estado de loading no se está manejando correctamente
+
+**Archivos afectados:**
+- `app/(tabs)/search.tsx` - Pantalla de búsqueda (importa SkeletonLoader en línea 40 pero puede no usarlo)
+
+**Solución:**
+1. Revisar implementación actual de skeletons en search
+2. Agregar skeletons durante estados de loading (`spotsLoading || pathsLoading`)
+3. Crear `SearchResultSkeleton` y `SearchSuggestionSkeleton` si es necesario
+4. Mostrar skeletons mientras se cargan datos
+
+**Archivos a modificar:**
+- `app/(tabs)/search.tsx` - Agregar skeletons durante loading (verificar líneas 75-78 para estados de loading)
+
+---
+
+### 1.5 Error: Resultados sugeridos de búsqueda idénticos a nearby places
+
+**Problema:**
+- Los resultados de búsqueda se ven iguales a los de "nearby places"
+- No hay diferenciación visual o de contenido entre búsqueda activa y exploración
+- El usuario no percibe que cambió de sección
+
+**Archivos afectados:**
+- `app/(tabs)/search.tsx` - Pantalla de búsqueda (líneas 174-235 para searchResults)
+- `app/(tabs)/home.tsx` - Pantalla home con nearby spots (líneas 162-179)
+- `utils/searchLogic.ts` - Lógica de búsqueda (líneas 85-105)
+
+**Solución:**
+1. Diferenciación de contenido:
+   - Búsqueda: Mostrar resultados que coinciden con query (nombre, descripción, tipo)
+   - Nearby: Mostrar spots cercanos sin filtro de texto
+   - Agregar filtros en búsqueda (tipo, distancia, rating) que no estén en nearby
+
+2. Diferenciación visual:
+   - Header diferente en search ("Search results for 'X'")
+   - Badge o indicador de "Search result" vs "Nearby"
+   - Orden diferente: búsqueda por relevancia, nearby por distancia
+
+3. Funcionalidades únicas de búsqueda:
+   - Historial de búsquedas (ya existe en línea 71-73)
+   - Sugerencias mientras escribe (ya existe en líneas 102-121)
+   - Búsqueda de flows/paths además de spots
+   - Filtros avanzados (solo en búsqueda)
+
+**Archivos a modificar:**
+- `app/(tabs)/search.tsx` - Mejorar diferenciación visual y de contenido (líneas 174-235)
+- `utils/searchLogic.ts` - Asegurar que la búsqueda sea por relevancia, no solo distancia (líneas 40-80)
+- `components/SearchResultCard.tsx` - Agregar indicadores visuales
+
+---
+
+### 1.6 Error: Save the flow no permite nombrar el flow
+
+**Problema:**
+- Al guardar un flow, no se permite nombrarlo
+- El flow se guarda con nombre genérico o el nombre del path original
+- No hay UI para editar el nombre antes de guardar
+
+**Archivos afectados:**
+- `components/FlowScreen.tsx` - Pantalla de flow (líneas 205-238 para toggleSaveFlow)
+- `contexts/SavedContext.tsx` - Contexto de guardado (líneas 246-261 para toggleSaveFlow)
+
+**Solución:**
+1. Crear componente `SaveFlowModal.tsx` con input para nombre
+2. Mostrar modal cuando el usuario intenta guardar un flow
+3. Modificar `SavedContext.tsx` para guardar nombres personalizados asociados con flowId
+4. Mostrar nombre personalizado en lista de flows guardados en `app/(tabs)/saved.tsx`
+
+**Archivos a crear/modificar:**
+- Crear `components/SaveFlowModal.tsx`
+- Modificar `contexts/SavedContext.tsx` - Agregar nombres personalizados (líneas 246-261)
+- Modificar `components/FlowScreen.tsx` - Mostrar modal antes de guardar (líneas 205-238)
+- Modificar `app/(tabs)/saved.tsx` - Mostrar nombres personalizados
+
+---
+
+### 1.7 Error: Flows incompletos en sección nearby flows
+
+**Problema:**
+- En la sección "Nearby - Flows" hay flows creados pero algunos no están completos
+- Posible causa: flows con pocos spots, spots faltantes, o validación insuficiente
+
+**Archivos afectados:**
+- `app/(tabs)/home.tsx` - Función `getNearbyPaths()` (líneas 278-296)
+
+**Solución:**
+1. Definir criterios de flow completo:
+   - Mínimo de spots (ej: 3 spots)
+   - Todos los spots deben tener datos básicos (nombre, ubicación)
+   - El flow debe tener título y descripción
+
+2. Crear función `isFlowComplete(flow: Flow): boolean` en `utils/flowValidation.ts`
+3. Filtrar flows incompletos en `getNearbyPaths()` (línea 278)
+4. Mostrar badge o indicador en flows completos en `components/FlowCard.tsx`
+
+**Archivos a crear/modificar:**
+- Crear `utils/flowValidation.ts` - Función de validación
+- Modificar `app/(tabs)/home.tsx` - Filtrar flows incompletos (líneas 278-296)
+- Modificar `components/FlowCard.tsx` - Mostrar indicador de completitud
+
+---
+
+## Scope 2: Funcionalidad Incremental - Sugerencia de Spots Durante Flow
+
+**Prioridad: ALTA** - Mejora la experiencia core del producto.
+
+### 2.1 Funcionalidad: Sugerir más spots cuando inicia un flow desde un spot
+
+**Descripción:**
+Cuando un usuario inicia un flow desde un spot (usando "Start from here" en spot-detail), el sistema debe sugerir automáticamente spots adicionales cercanos o relacionados para enriquecer el flow durante la navegación.
+
+**Punto de entrada:**
+- `app/spot-detail.tsx` - Función `handleStartFlow()` (líneas 434-469)
+
+**Solución:**
+
+1. **Sistema de sugerencia de spots:**
+   - Crear `utils/spotSuggestion.ts` con lógica de sugerencia
+   - Función `suggestSpotsForFlow(startingSpot: Spot, userLocation: Location, allSpots: Spot[], savedContext: SavedContext): Spot[]`
+   - Algoritmo de scoring:
+     - Proximidad (30%): spots cercanos al starting spot
+     - Tipo similar (20%): mismo tipo o tipos complementarios
+     - Afinidad del usuario (25%): spots guardados/liked cercanos
+     - Popularidad (15%): spots en flows guardados por otros usuarios
+     - Diversidad (10%): evitar repetir tipos ya en el flow
+
+2. **Integración en Flow:**
+   - Modificar `handleStartFlow()` en `spot-detail.tsx` para sugerir spots iniciales
+   - Mostrar sugerencias en `FlowScreen.tsx` como "Suggested spots"
+   - Permitir agregar spots sugeridos al flow en curso
+   - Actualizar sugerencias dinámicamente mientras el usuario navega
+
+3. **UI de sugerencias:**
+   - Sección "Suggested spots" en FlowScreen (modo list)
+   - Cards compactas de spots sugeridos
+   - Botón "Add to flow" en cada sugerencia
+   - Animación al agregar spot al flow
+
+4. **Persistencia:**
+   - Guardar spots agregados al flow temporal
+   - Cuando el usuario termina el flow, preguntar si quiere guardarlo
+   - Si guarda, crear flow completo con todos los spots agregados
+
+**Archivos a crear/modificar:**
+- Crear `utils/spotSuggestion.ts` - Lógica de sugerencia ✅
+- Modificar `app/spot-detail.tsx` - Iniciar flow con sugerencias (pendiente - puede hacerse después)
+- Modificar `components/FlowScreen.tsx` - Mostrar y manejar sugerencias ✅
+- Modificar `contexts/FlowContext.tsx` - Agregar función `addSpotToFlow(spotId: string)` ✅
+- Crear `components/FlowSuggestedSpotCard.tsx` - Card para spots sugeridos ✅
+
+**Notas de implementación:**
+- Sistema de sugerencias implementado y funcionando en FlowScreen
+- Se agregaron imports faltantes (FlatList, Spot)
+- Se eliminó useEffect duplicado que causaba cálculos redundantes
+- Los tipos son correctos y compatibles con SavedContext y PathContext
+
+---
+
+## Scope 3: Mejoras Adicionales Propuestas
+
+**Prioridad: MEDIA** - Mejoran calidad, mantenibilidad y experiencia general.
+
+### 3.1 Sistema de logging estructurado
+
+**Justificación:** Facilita debugging en producción y tracking de errores.
+
+**Implementación:**
+- Crear `utils/logger.ts` con niveles (debug, info, warn, error)
+- Integrar con servicio de logging (Sentry, LogRocket, o similar)
+- Agregar logging en puntos críticos (auth, flow, búsqueda)
+- Configurar filtros por ambiente (dev vs prod)
+
+---
+
+### 3.2 Validación de datos y tipos mejorada
+
+**Justificación:** Previene errores en runtime y mejora experiencia de usuario.
+
+**Implementación:**
+- Agregar validación con Zod o similar para datos de API
+- Validar datos de spots, flows, y usuario
+- Mostrar mensajes de error claros al usuario
+- Validar datos antes de guardar en AsyncStorage
+
+---
+
+### 3.3 Optimización de rendimiento
+
+**Justificación:** Mejora experiencia de usuario y reduce consumo de batería.
+
+**Implementación:**
+- Lazy loading de imágenes
+- Memoización de cálculos costosos (distancias, filtros)
+- Virtualización de listas largas
+- Optimización de re-renders con React.memo
+
+---
+
+## Priorización y Orden de Implementación
+
+### Fase 1: Errores Críticos (Semana 1)
+1. Google Maps API Key (1.1) - Bloquea funcionalidad
+2. Flujo de creación de cuenta (1.2) - Bloquea onboarding
+3. Skeleton loaders (1.3, 1.4) - Mejora percepción de calidad
+
+### Fase 2: Errores de UX (Semana 2)
+4. Resultados de búsqueda (1.5) - Mejora diferenciación
+5. Save flow con nombre (1.6) - Mejora funcionalidad core
+6. Flows incompletos (1.7) - Mejora calidad de contenido
+
+### Fase 3: Funcionalidad Incremental (Semana 3-4)
+7. Sugerencia de spots durante flow (2.1) - Nueva funcionalidad core
+
+### Fase 4: Mejoras Adicionales (Ongoing)
+8. Sistema de logging (3.1)
+9. Validación de datos (3.2)
+10. Optimización de rendimiento (3.3)
+
+---
+
+## Criterios de Éxito
+
+### Errores Críticos
+- Google Maps funciona en web con API key configurada
+- Usuarios pueden crear cuentas exitosamente
+- Skeletons son visibles durante carga
+
+### Errores de UX
+- Búsqueda se diferencia claramente de nearby
+- Usuarios pueden nombrar flows al guardar
+- Solo flows completos aparecen en nearby
+
+### Funcionalidad Incremental
+- Sistema sugiere spots relevantes al iniciar flow desde spot
+- Usuarios pueden agregar spots sugeridos al flow
+- Sugerencias se actualizan dinámicamente
+
+### Mejoras Adicionales
+- Logging estructurado implementado
+- Validación de datos en puntos críticos
+- Rendimiento optimizado (métricas mejoradas)
+

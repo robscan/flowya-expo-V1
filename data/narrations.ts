@@ -16,57 +16,57 @@ import { Narration, NarrationType } from '@/contexts/NarrationContext';
  * En producción, estas vendrían de una API o base de datos
  */
 export const mockNarrations: Narration[] = [
-  // Anticipation - Se activa antes de llegar
+  // Anticipation - Activates before arriving
   {
     id: 'narration-1',
     spotId: '1',
     type: 'anticipation',
-    text: 'A medida que te acercas, el sonido del océano se vuelve más presente.',
+    text: 'As you approach, the sound of the ocean becomes more present.',
     duration: 8,
   },
   {
     id: 'narration-2',
     spotId: '1',
     type: 'anticipation',
-    text: 'La brisa marina anuncia la proximidad de la playa.',
+    text: 'The sea breeze announces the proximity of the beach.',
     duration: 6,
   },
-  // Presence - Se activa al llegar
+  // Presence - Activates upon arrival
   {
     id: 'narration-3',
     spotId: '1',
     type: 'presence',
-    text: 'Estás aquí. El horizonte se extiende infinito. Respira.',
+    text: 'You are here. The horizon stretches infinitely. Breathe.',
     duration: 10,
   },
   {
     id: 'narration-4',
     spotId: '1',
     type: 'presence',
-    text: 'Este lugar ha sido testigo de infinitos atardeceres.',
+    text: 'This place has witnessed countless sunsets.',
     duration: 8,
   },
-  // Transition - Se activa al salir
+  // Transition - Activates when leaving
   {
     id: 'narration-5',
     spotId: '1',
     type: 'transition',
-    text: 'Lleva contigo este momento. El siguiente lugar te espera.',
+    text: 'Carry this moment with you. The next place awaits.',
     duration: 7,
   },
-  // Context - Entre Spots (Path context)
+  // Context - Between Spots (Path context)
   {
     id: 'narration-6',
     pathId: 'path-1',
     type: 'context',
-    text: 'El camino costero conecta estos lugares como puntos en un mapa emocional.',
+    text: 'The coastal path connects these places like points on an emotional map.',
     duration: 9,
   },
   {
     id: 'narration-7',
     pathId: 'path-1',
     type: 'context',
-    text: 'Cada paso te acerca a descubrir más de este lugar.',
+    text: 'Each step brings you closer to discovering more of this place.',
     duration: 6,
   },
 ];

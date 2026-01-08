@@ -3,11 +3,12 @@
  * Simple skeleton loader for loading states
  */
 
-import React from 'react';
-import { View, StyleSheet, Animated, Easing } from 'react-native';
+import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { spacing } from '@/constants/spacing';
+import { LinearGradient } from 'expo-linear-gradient';
+import React from 'react';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 interface SkeletonLoaderProps {
   width?: number | string;
@@ -21,29 +22,54 @@ export function SkeletonLoader({ width = '100%', height = 20, borderRadius = 8, 
   const colors = Colors[colorScheme ?? 'light'];
   const animatedValue = React.useRef(new Animated.Value(0)).current;
 
+  const shimmerTranslateX = React.useRef(new Animated.Value(-200)).current;
+
   React.useEffect(() => {
+    // Animación de shimmer (gradiente que se mueve)
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerTranslateX, {
+          toValue: 400,
+          duration: 1500,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerTranslateX, {
+          toValue: -200,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Animación de pulso (opacidad base)
     Animated.loop(
       Animated.sequence([
         Animated.timing(animatedValue, {
           toValue: 1,
-          duration: 1000,
+          duration: 1200,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(animatedValue, {
           toValue: 0,
-          duration: 1000,
+          duration: 1200,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
       ])
     ).start();
-  }, [animatedValue]);
+  }, [animatedValue, shimmerTranslateX]);
 
   const opacity = animatedValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.3, 0.6],
+    outputRange: [0.4, 0.7], // Aumentado de 0.3-0.6 a 0.4-0.7
   });
+
+  const baseColor = colors.icon + '40'; // Aumentado de '20' a '40' para mayor contraste
+  const shimmerColor = colorScheme === 'dark' 
+    ? 'rgba(255, 255, 255, 0.15)' 
+    : 'rgba(255, 255, 255, 0.3)';
 
   return (
     <Animated.View
@@ -53,12 +79,33 @@ export function SkeletonLoader({ width = '100%', height = 20, borderRadius = 8, 
           width,
           height,
           borderRadius,
-          backgroundColor: colors.icon + '20',
+          backgroundColor: baseColor,
           opacity,
+          overflow: 'hidden',
         },
         style,
-      ]}
-    />
+      ]}>
+      {/* Shimmer effect */}
+      <Animated.View
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          transform: [{ translateX: shimmerTranslateX }],
+        }}>
+        <LinearGradient
+          colors={['transparent', shimmerColor, 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{
+            width: '100%',
+            height: '100%',
+          }}
+        />
+      </Animated.View>
+    </Animated.View>
   );
 }
 

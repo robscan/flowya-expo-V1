@@ -6,30 +6,30 @@
  * Permite a usuarios existentes autenticarse.
  */
 
-import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-} from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { Colors } from '@/constants/theme';
-import { spacing } from '@/constants/spacing';
-import { textStyles, fontSize, lineHeight, fontFamily, fontFamilyMedium } from '@/constants/typography';
-import { borderRadius } from '@/constants/borders';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
+import { borderRadius } from '@/constants/borders';
+import { spacing } from '@/constants/spacing';
+import { Colors } from '@/constants/theme';
+import { fontFamily, fontFamilyMedium, fontSize, lineHeight, textStyles } from '@/constants/typography';
+import { useAuth } from '@/contexts/AuthContext';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function LoginScreen() {
   const colorScheme = useColorScheme();
@@ -85,7 +85,7 @@ export default function LoginScreen() {
         // Redirección se maneja en useEffect
         router.replace('/(tabs)/home');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Unexpected error', 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
@@ -118,7 +118,7 @@ export default function LoginScreen() {
           'Check your email to reset your password. Check spam if you don\'t see it.'
         );
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Something went wrong. Try again.');
     } finally {
       setIsResettingPassword(false);
@@ -241,7 +241,7 @@ export default function LoginScreen() {
 
               {/* Sign Up Link */}
               <View style={styles.signupContainer}>
-                <Text style={[textStyles.body, { color: colors.icon }]}>Don't have an account? </Text>
+                <Text style={[textStyles.body, { color: colors.icon }]}>Don&apos;t have an account? </Text>
                 <TouchableOpacity onPress={handleNavigateToSignup} disabled={isLoading} activeOpacity={0.7}>
                   <Text style={[textStyles.body, { color: colors.tint, fontFamily: fontFamilyMedium }]}>
                     Create account
