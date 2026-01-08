@@ -25,7 +25,6 @@ import {
   ActivityIndicator,
   Animated,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 
 import { FlowyaMapView } from '@/components/MapView';
 import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
@@ -60,6 +59,7 @@ const SPOT_TYPES: SpotType[] = [
   'other',
 ];
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import { calculateDistanceToSpot } from '@/utils/distance';
 import { hasValidImage, getValidImage } from '@/utils/imageHelpers';
 
@@ -124,10 +124,31 @@ export default function SpotDetailScreen() {
   const [editDescription, setEditDescription] = useState('');
   const [editWhyItMatters, setEditWhyItMatters] = useState('');
   const [editType, setEditType] = useState<SpotType>('other');
-  const [editPhoto, setEditPhoto] = useState<string | null>(null);
   const [editCulturalContext, setEditCulturalContext] = useState('');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // Hook de optimización de imágenes para edición
+  // Inicializar con imagen existente del spot si está en modo edición
+  const {
+    uri: editPhoto,
+    isOptimizing: isOptimizingImage,
+    pickFromGallery,
+    reset: resetImage,
+  } = useImageUpload({
+    allowsEditing: true,
+    aspect: [4, 3],
+    quality: 75,
+    initialUri: isEditMode && spot?.photos && spot.photos.length > 0 ? getValidImage(spot.photos) : null,
+    onOptimized: (optimizedUri) => {
+      // La imagen ya está optimizada y lista para usar
+      console.log('✅ Imagen optimizada:', optimizedUri);
+    },
+    onError: (error) => {
+      console.error('Error optimizando imagen:', error);
+      Alert.alert('Error', 'No se pudo optimizar la imagen. Intenta de nuevo.');
+    },
+  });
   const [editHowToVisit1, setEditHowToVisit1] = useState('');
   const [editHowToVisit2, setEditHowToVisit2] = useState('');
   const [editHowToVisitIcon1, setEditHowToVisitIcon1] = useState<IconName>('sun');
@@ -250,7 +271,7 @@ export default function SpotDetailScreen() {
     setEditDescription(spot.description || '');
     setEditWhyItMatters(spot.whyItMatters || spot.description || '');
     setEditType(spot.type);
-    setEditPhoto(spot.photos && spot.photos.length > 0 ? spot.photos[0] : null);
+    // La imagen existente se inicializa automáticamente en el hook con initialUri
     setEditCulturalContext(spot.culturalContext || '');
     setEditHowToVisit1('Visit early morning (8–10 AM) for soft light and fewer crowds.'); // Default text
     setEditHowToVisit2('Allowed everywhere, but tripods require a special permit.'); // Default text
@@ -345,7 +366,7 @@ export default function SpotDetailScreen() {
     setEditDescription('');
     setEditWhyItMatters('');
     setEditType('other');
-    setEditPhoto(null);
+    resetImage();
     setEditCulturalContext('');
     setAiError(null);
     setEditHowToVisit1('');
@@ -404,28 +425,11 @@ export default function SpotDetailScreen() {
   };
 
 
+  // Handle photo selection (usa hook de optimización)
   const handlePickImage = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'We need access to your photos to change the spot image.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setEditPhoto(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
-    }
+    const optimizedUri = await pickFromGallery();
+    // El hook ya maneja la optimización y actualiza el estado 'editPhoto'
+    // No necesitamos hacer nada más, la imagen ya está optimizada
   };
 
   const handleStartFlow = () => {
@@ -528,22 +532,36 @@ export default function SpotDetailScreen() {
           if (!validImage) {
             return (
               <View style={[styles.imagePlaceholder, { backgroundColor: colors.icon + '10', height: IMAGE_HEIGHT }]}>
-                <TouchableOpacity
-                  onPress={handlePickImage}
-                  style={styles.imagePlaceholderButton}
-                  activeOpacity={0.7}>
-                  <Icon name="upload" size={48} color={colors.icon} />
-                  <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>Add photo</Text>
-                </TouchableOpacity>
+                {isOptimizingImage ? (
+                  <View style={styles.imagePlaceholderButton}>
+                    <ActivityIndicator size="large" color={colors.tint} />
+                    <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>Optimizando imagen...</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    onPress={handlePickImage}
+                    style={styles.imagePlaceholderButton}
+                    activeOpacity={0.7}>
+                    <Icon name="upload" size={48} color={colors.icon} />
+                    <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>Add photo</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             );
           }
           return (
             <View style={[styles.editImageButtonContainer, { height: IMAGE_HEIGHT }]}>
+              {isOptimizingImage && (
+                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+                  <ActivityIndicator size="large" color="#fff" />
+                  <Text style={[textStyles.caption, { color: '#fff', marginTop: spacing.xs }]}>Optimizando...</Text>
+                </View>
+              )}
               <TouchableOpacity
                 onPress={handlePickImage}
                 style={[styles.editImageButton, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}
-                activeOpacity={0.7}>
+                activeOpacity={0.7}
+                disabled={isOptimizingImage}>
                 <Icon name="edit" size={20} color="#fff" />
               </TouchableOpacity>
             </View>

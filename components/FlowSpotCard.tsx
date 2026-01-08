@@ -13,7 +13,7 @@
  * - Border radius igual a FlowCard (borderRadius.lg = 16px)
  */
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';

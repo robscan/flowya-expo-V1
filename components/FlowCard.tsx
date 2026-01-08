@@ -7,6 +7,7 @@
  * - Editable: For FlowScreen or editing contexts (supports delete, doesn't break on small screens)
  */
 
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
@@ -31,7 +32,7 @@ interface FlowCardDisplayProps {
   customName?: string; // Nombre personalizado para el flow (opcional)
 }
 
-function FlowCardDisplay({ flow, spots, onPress, distance, customName }: FlowCardDisplayProps) {
+const FlowCardDisplay = memo(function FlowCardDisplay({ flow, spots, onPress, distance, customName }: FlowCardDisplayProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
@@ -91,7 +92,7 @@ function FlowCardDisplay({ flow, spots, onPress, distance, customName }: FlowCar
       </GlassView>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   cardContainer: {

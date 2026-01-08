@@ -6,12 +6,16 @@
  * También incluye ciudades predefinidas de Riviera Maya
  */
 
-import { Spot } from '@/data/spots';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Spot, mockSpots } from '@/data/spots';
 import { calculateDistance } from './distance';
 import { reverseGeocode } from './placesApi';
 
+const STORAGE_KEY = '@flowya_spots';
+
 // Cache para resultados de geocoding (coordenadas -> nombre de ciudad)
-const geocodingCache = new Map<string, string | null>();
+// IMPORTANTE: Solo almacena ciudades (nunca null). Si no hay ciudad, no se guarda nada.
+const geocodingCache = new Map<string, string>();
 
 // Cache para ubicaciones extraídas de spots (spots hash -> ubicaciones)
 const locationsCache = new Map<string, PredefinedCity[]>();
@@ -248,6 +252,9 @@ export function findNearestPredefinedCity(
  * 
  * Nunca retorna coordenadas ni identificadores numéricos
  * Usa getCityNameFromCoordinates que ya implementa la lógica completa
+ * 
+ * IMPORTANTE: El cache solo almacena ciudades (nunca null).
+ * Si no hay ciudad, no se guarda nada en cache para permitir intentar región como fallback.
  */
 async function getCityOrRegionFromCoordinates(
   latitude: number,
@@ -255,16 +262,19 @@ async function getCityOrRegionFromCoordinates(
 ): Promise<{ city: string | null; region: string | null }> {
   const cacheKey = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
   
-  // Verificar cache
-  const cached = geocodingCache.get(cacheKey);
-  if (cached) {
-    // Cache almacena city name si existe
-    return { city: cached, region: null };
+  // Verificar cache: solo almacena ciudades (nunca null)
+  // Si existe en cache, significa que hay ciudad
+  if (geocodingCache.has(cacheKey)) {
+    const cachedCity = geocodingCache.get(cacheKey);
+    // Si hay ciudad en cache, retornarla (no intentar región)
+    // Usar non-null assertion porque ya verificamos con has()
+    return { city: cachedCity!, region: null };
   }
 
   try {
     const result = await reverseGeocode(latitude, longitude);
     if (!result || !result.addressComponents) {
+      // No guardar null en cache, permitir reintentos
       return { city: null, region: null };
     }
 
@@ -282,7 +292,8 @@ async function getCityOrRegionFromCoordinates(
     );
     const region = regionComponent ? regionComponent.longName : null;
 
-    // Guardar ciudad en cache (si existe)
+    // Guardar SOLO ciudad en cache (si existe)
+    // No guardar null para permitir reintentos y fallback a región
     if (city) {
       geocodingCache.set(cacheKey, city);
     }
@@ -290,7 +301,7 @@ async function getCityOrRegionFromCoordinates(
     return { city, region };
   } catch (error) {
     console.error(`Error getting city/region for ${latitude}, ${longitude}:`, error);
-    geocodingCache.set(cacheKey, null);
+    // No guardar null en cache, permitir reintentos
     return { city: null, region: null };
   }
 }
@@ -339,22 +350,23 @@ export async function getAllLocationsFromSpots(spots: Spot[]): Promise<Predefine
     
     let destinationName: string | null = null;
     
-    // Verificar cache de geocoding
-    const cachedCity = geocodingCache.get(cacheKey);
-    if (cachedCity) {
-      destinationName = cachedCity;
+    // Verificar cache de geocoding: usar has() para distinguir entre "no calculado" y "calculado sin resultado"
+    // El cache solo almacena ciudades (nunca null), así que si existe, hay ciudad
+    if (geocodingCache.has(cacheKey)) {
+      // Hay ciudad en cache, usarla directamente
+      // Usar non-null assertion porque ya verificamos con has()
+      destinationName = geocodingCache.get(cacheKey)!;
     } else {
-      // Obtener ciudad/región usando geocoding
+      // No está en cache, obtener ciudad/región usando geocoding
       const { city, region } = await getCityOrRegionFromCoordinates(latitude, longitude);
       destinationName = city || region || null;
       
-      // Guardar en cache si hay ciudad
-      if (city) {
-        geocodingCache.set(cacheKey, city);
-      }
+      // El cache ya se maneja dentro de getCityOrRegionFromCoordinates
+      // Solo guarda ciudad si existe, nunca null
     }
 
-    // Si no se pudo obtener destino, saltar este spot (no mostrar coordenadas)
+    // Si no se pudo obtener destino (ni ciudad ni región), saltar este spot
+    // No mostrar coordenadas al usuario
     if (!destinationName) {
       continue;
     }
@@ -387,5 +399,65 @@ export async function getAllLocationsFromSpots(spots: Spot[]): Promise<Predefine
 
   return locations;
 }
+
+/**
+ * getAllLocations - Obtiene todas las ubicaciones disponibles desde la base de datos
+ * 
+ * Fuente de datos independiente:
+ * - NO depende de spots context
+ * - NO depende de Home
+ * - NO depende de cercanía
+ * - Es global
+ * 
+ * Carga spots directamente desde AsyncStorage o mockSpots y extrae ubicaciones únicas
+ */
+export async function getAllLocations(): Promise<PredefinedCity[]> {
+  try {
+    // Cargar spots directamente desde AsyncStorage (sin depender del contexto)
+    let spots: Spot[] = [];
+    
+    const stored = await AsyncStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Convertir fechas
+      const spotsWithDates = parsed.map((spot: any) => ({
+        ...spot,
+        createdAt: new Date(spot.createdAt),
+        updatedAt: new Date(spot.updatedAt),
+      }));
+      
+      // Detectar nuevos spots en mockSpots que no están en el storage
+      const storedIds = new Set(spotsWithDates.map((s: Spot) => s.id));
+      const newSpots = mockSpots.filter(spot => !storedIds.has(spot.id));
+      
+      if (newSpots.length > 0) {
+        // Hay nuevos spots: combinar los existentes con los nuevos
+        spots = [...spotsWithDates, ...newSpots];
+      } else {
+        spots = spotsWithDates;
+      }
+    } else {
+      // Usar mock data si no hay datos guardados
+      spots = mockSpots;
+    }
+
+    // Extraer ubicaciones únicas de todos los spots
+    if (spots.length === 0) {
+      return [];
+    }
+
+    return await getAllLocationsFromSpots(spots);
+  } catch (error) {
+    console.error('Error loading locations from database:', error);
+    // Fallback: intentar con mockSpots directamente
+    try {
+      return await getAllLocationsFromSpots(mockSpots);
+    } catch (fallbackError) {
+      console.error('Error loading locations from mockSpots:', fallbackError);
+      return [];
+    }
+  }
+}
+
 
 

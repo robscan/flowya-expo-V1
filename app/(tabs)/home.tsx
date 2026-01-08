@@ -11,27 +11,26 @@
 
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Dimensions, FlatList, LayoutAnimation, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Dimensions, FlatList, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
 
 import { FlowCard } from '@/components/FlowCard';
 import { LocationWeatherHeader } from '@/components/LocationWeatherHeader';
 import { SpotMediaCard } from '@/components/SpotMediaCard';
-import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
+import { Icon } from '@/components/ui/Icon';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { SkeletonLoader, SpotCardSkeleton } from '@/components/ui/SkeletonLoader';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
-import { fontFamilyMedium, fontSize, lineHeight, textStyles } from '@/constants/typography';
+import { textStyles } from '@/constants/typography';
 import { useOverlay } from '@/contexts/OverlayContext';
 import { usePath } from '@/contexts/PathContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Flow } from '@/data/flows';
 import { Spot } from '@/data/spots';
-import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
 import { calculateDistanceToSpot } from '@/utils/distance';
 import { isFlowComplete } from '@/utils/flowValidation';
 import { getFeaturedSpots, getRecentSpots } from '@/utils/gemsLogic';
@@ -52,10 +51,10 @@ export default function HomeScreen() {
     threshold: 24 
   });
 
-  const { spots, isLoading: spotsLoading, refreshSpots } = useSpot();
-  const { paths, isLoading: pathsLoading, refreshFlows } = usePath();
+  const { spots, refreshSpots } = useSpot();
+  const { paths, refreshFlows } = usePath();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const { likedSpots, savedSpots, timeline } = useSaved();
+  const { likedSpots, savedSpots } = useSaved();
   const [selectedLocation, setSelectedLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // Enable LayoutAnimation on Android
@@ -95,11 +94,6 @@ export default function HomeScreen() {
   // Handle Spot selection (normal detail)
   const handleSpotPress = (spot: Spot) => {
     router.push(`/spot-detail?id=${spot.id}`);
-  };
-
-  // Handle "View on map" (navigates to Map tab and centers on spot)
-  const handleMapPress = (spot: Spot) => {
-    router.push(`/(tabs)/map?spotId=${spot.id}`);
   };
 
   // Handle scroll to show/hide tab bar labels and header
@@ -250,6 +244,10 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.sliderContent}
           keyExtractor={(item) => item.id}
+          windowSize={5}
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+          removeClippedSubviews={true}
           renderItem={({ item: spot }) => {
             const distance = calculateDistanceToSpot(currentLocation, spot.location);
             return (
@@ -284,6 +282,10 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.sliderContent}
           keyExtractor={(item) => item.id}
+          windowSize={5}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          removeClippedSubviews={true}
           renderItem={({ item: spot }) => {
             const distance = calculateDistanceToSpot(currentLocation, spot.location);
             return (
@@ -340,45 +342,6 @@ export default function HomeScreen() {
 
   // Render Explore content
   const renderExplore = () => {
-    const isLoading = spotsLoading || pathsLoading;
-
-    if (isLoading) {
-      return (
-        <View style={styles.exploreContent}>
-          <View style={styles.section}>
-            <SkeletonLoader width="40%" height={24} style={{ marginBottom: spacing.md, marginHorizontal: spacing.md }} />
-            <FlatList
-              data={[1, 2, 3]}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.sliderContent}
-              keyExtractor={(item) => item.toString()}
-              renderItem={() => (
-                <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-                  <SpotCardSkeleton />
-                </View>
-              )}
-            />
-          </View>
-          <View style={styles.section}>
-            <SkeletonLoader width="50%" height={24} style={{ marginBottom: spacing.md, marginHorizontal: spacing.md }} />
-            <FlatList
-              data={[1, 2, 3]}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.sliderContent}
-              keyExtractor={(item) => item.toString()}
-              renderItem={() => (
-                <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-                  <SpotCardSkeleton />
-                </View>
-              )}
-            />
-          </View>
-        </View>
-      );
-    }
-
     const filteredSpots = getFilteredSpotsByPriority();
     const nearbySpots = filteredSpots.nearby;
     const forYouSpots = filteredSpots.forYou;

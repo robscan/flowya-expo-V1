@@ -19,13 +19,14 @@
  */
 
 import React from 'react';
-import { Image, ImageSourcePropType, StyleSheet, View } from 'react-native';
+import { ImageSourcePropType, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TouchableOpacity } from 'react-native';
 
 import { IconButton, IconButtonVariant } from '@/components/ui/IconButton';
 import { Icon, IconName, iconTouchableContainer } from '@/components/ui/Icon';
+import { OptimizedImage } from '@/components/ui/OptimizedImage';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { TouchableOpacity } from 'react-native';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -76,7 +77,13 @@ export function ContentHeader({
     if (heroType === 'image' && heroImage) {
       return (
         <View style={[styles.heroImageContainer, heroHeight && { height: heroHeight }]}>
-          <Image source={heroImage} style={styles.heroImage} resizeMode="cover" />
+          <OptimizedImage
+            source={heroImage}
+            width="100%"
+            height={heroHeight || '100%'}
+            showFallback={false}
+            resizeMode="cover"
+          />
           {showOverlay && <View style={styles.heroOverlay} />}
         </View>
       );
@@ -205,10 +212,6 @@ const styles = StyleSheet.create({
   heroImageContainer: {
     width: '100%',
     position: 'relative',
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
   },
   heroPlaceholder: {
     width: '100%',

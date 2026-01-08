@@ -26,6 +26,7 @@ import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { InfoMeta } from '@/components/ui/InfoMeta';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { SkeletonBlock, SkeletonCard, SkeletonImage, SkeletonList, SkeletonText } from '@/components/ui/Skeleton';
 import { Toast } from '@/components/ui/Toast';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { spacing } from '@/constants/spacing';
@@ -387,6 +388,93 @@ export default function DesignSystemScreen() {
                   onPress={() => {}}
                 />
               </View>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Skeleton Loaders */}
+      <View style={styles.componentGroup}>
+        <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.sm }]}>
+          Skeleton Loaders
+        </Text>
+        <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.md }]}>
+          CANONICAL: Componentes reutilizables para estados de carga. Usan tokens del Design System (spacing, colors, typography). Animación ligera de shimmer.
+        </Text>
+        
+        <View style={styles.componentExamples}>
+          {/* SkeletonBlock */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              SkeletonBlock (base)
+            </Text>
+            <View style={styles.skeletonExamples}>
+              <SkeletonBlock width={200} height={20} />
+              <SkeletonBlock width={150} height={16} style={{ marginTop: spacing.xs }} />
+              <SkeletonBlock width={100} height={12} style={{ marginTop: spacing.xs }} />
+            </View>
+            <View style={[styles.skeletonExamples, { marginTop: spacing.sm, flexDirection: 'row', gap: spacing.xs }]}>
+              <SkeletonBlock size="xs" width={80} />
+              <SkeletonBlock size="sm" width={100} />
+              <SkeletonBlock size="md" width={120} />
+              <SkeletonBlock size="lg" width={140} />
+            </View>
+          </View>
+
+          {/* SkeletonText */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              SkeletonText (variantes tipográficas)
+            </Text>
+            <View style={styles.skeletonExamples}>
+              <SkeletonText variant="heading4" width="80%" />
+              <SkeletonText variant="bodyMedium" width="90%" lines={2} style={{ marginTop: spacing.xs }} />
+              <SkeletonText variant="caption" width="60%" style={{ marginTop: spacing.xs }} />
+            </View>
+          </View>
+
+          {/* SkeletonImage */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              SkeletonImage (aspect ratio)
+            </Text>
+            <View style={styles.skeletonExamples}>
+              <SkeletonImage width={200} aspectRatio={16 / 9} />
+              <SkeletonImage size="small" style={{ marginTop: spacing.sm }} />
+              <SkeletonImage size="medium" style={{ marginTop: spacing.sm }} />
+            </View>
+          </View>
+
+          {/* SkeletonCard */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              SkeletonCard (completo)
+            </Text>
+            <View style={styles.skeletonExamples}>
+              <SkeletonCard size="small" />
+              <SkeletonCard size="medium" style={{ marginTop: spacing.md }} />
+            </View>
+          </View>
+
+          {/* SkeletonList */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              SkeletonList (listas)
+            </Text>
+            <View style={styles.skeletonExamples}>
+              <SkeletonList count={3} layout="list" variant="card" cardProps={{ size: 'small' }} />
+            </View>
+            <View style={styles.skeletonExamples}>
+              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.md, marginBottom: spacing.xs }]}>
+                Grid layout
+              </Text>
+              <SkeletonList count={4} layout="grid" variant="card" cardProps={{ size: 'small' }} />
+            </View>
+            <View style={styles.skeletonExamples}>
+              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.md, marginBottom: spacing.xs }]}>
+                Row variant
+              </Text>
+              <SkeletonList count={3} variant="row" />
             </View>
           </View>
         </View>
@@ -1116,6 +1204,9 @@ const styles = StyleSheet.create({
   },
   mapMarkerExample: {
     alignItems: 'center',
+  },
+  skeletonExamples: {
+    gap: spacing.xs,
   },
   toastExample: {
     borderRadius: 12,

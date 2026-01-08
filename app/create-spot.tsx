@@ -4,7 +4,6 @@
  * Converted from CreateSpotModal to full screen navigation
  */
 
-import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -30,6 +29,7 @@ import { textStyles } from '@/constants/typography';
 import { useSpot } from '@/contexts/SpotContext';
 import { Spot, SpotType } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import { isAIConfigured } from '@/utils/aiConfig';
 import { generateSpotContent } from '@/utils/aiContentGenerator';
 
@@ -70,7 +70,6 @@ export default function CreateSpotScreen() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<SpotType>('other');
-  const [photo, setPhoto] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [addressSearch, setAddressSearch] = useState('');
@@ -78,6 +77,26 @@ export default function CreateSpotScreen() {
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // Hook de optimización de imágenes
+  const {
+    uri: photo,
+    isOptimizing: isOptimizingImage,
+    pickFromGallery,
+    reset: resetImage,
+  } = useImageUpload({
+    allowsEditing: true,
+    aspect: [4, 3],
+    quality: 75,
+    onOptimized: (optimizedUri) => {
+      // La imagen ya está optimizada y lista para usar
+      console.log('✅ Imagen optimizada:', optimizedUri);
+    },
+    onError: (error) => {
+      console.error('Error optimizando imagen:', error);
+      Alert.alert('Error', 'No se pudo optimizar la imagen. Intenta de nuevo.');
+    },
+  });
 
   // Initialize location from query params or user location
   useEffect(() => {
@@ -200,29 +219,11 @@ export default function CreateSpotScreen() {
     }
   };
 
-  // Handle photo selection
+  // Handle photo selection (usa hook de optimización)
   const handlePickImage = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'We need access to your photos to add a spot image.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setPhoto(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Couldn\'t pick image. Try again.');
-    }
+    const optimizedUri = await pickFromGallery();
+    // El hook ya maneja la optimización y actualiza el estado 'photo'
+    // No necesitamos hacer nada más, la imagen ya está optimizada
   };
 
   // Validación en tiempo real
@@ -345,10 +346,16 @@ export default function CreateSpotScreen() {
           </Text>
           {photo ? (
             <View style={styles.photoContainer}>
-              <Image source={{ uri: photo }} style={styles.photo} resizeMode="cover" />
+              {isOptimizingImage ? (
+                <View style={[styles.photo, { justifyContent: 'center', alignItems: 'center' }]}>
+                  <ActivityIndicator size="large" color={colors.tint} />
+                </View>
+              ) : (
+                <Image source={{ uri: photo }} style={styles.photo} resizeMode="cover" />
+              )}
               <TouchableOpacity
                 style={styles.removePhotoButton}
-                onPress={() => setPhoto(null)}
+                onPress={() => resetImage()}
                 activeOpacity={0.7}>
                 <Icon name="close" size={20} color={colors.background} />
               </TouchableOpacity>

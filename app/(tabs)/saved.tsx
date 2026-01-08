@@ -46,13 +46,11 @@ export default function SavedScreen() {
   // Centralized scroll visibility control
   const { isHeaderVisible, isBottomNavVisible, handleScroll } = useScrollVisibility({ threshold: 24 });
 
-  const { spots, isLoading: spotsLoading, refreshSpots } = useSpot();
-  const { paths, isLoading: pathsLoading, refreshFlows } = usePath();
-  const { savedSpots, savedPaths, isLoading: savedLoading, getFlowCustomName } = useSaved();
+  const { spots, refreshSpots } = useSpot();
+  const { paths, refreshFlows } = usePath();
+  const { savedSpots, savedPaths, getFlowCustomName } = useSaved();
   const { startFlow } = useFlow();
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const isLoading = spotsLoading || pathsLoading || savedLoading;
 
   // Enable LayoutAnimation on Android
   useEffect(() => {
@@ -115,6 +113,10 @@ export default function SavedScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.sliderContent}
           keyExtractor={(item) => item.id}
+          windowSize={5}
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+          removeClippedSubviews={true}
           renderItem={({ item: spot }) => {
             const distance = calculateDistanceToSpot(userLocation, spot.location);
             return (
@@ -149,6 +151,10 @@ export default function SavedScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.sliderContent}
           keyExtractor={(item) => item.id}
+          windowSize={5}
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+          removeClippedSubviews={true}
           renderItem={({ item: path }) => {
             const distance = calculateDistanceToSpot(
               userLocation,
@@ -217,12 +223,7 @@ export default function SavedScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {isLoading ? (
-        <View style={styles.loadingState}>
-          <Text style={[textStyles.body, { color: colors.icon }]}>Loading...</Text>
-        </View>
-      ) : (
-        <ScrollView
+      <ScrollView
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
@@ -253,7 +254,6 @@ export default function SavedScreen() {
           {/* Content */}
           {renderContent()}
         </ScrollView>
-      )}
 
       {/* Spot Detail Sheet */}
     </View>

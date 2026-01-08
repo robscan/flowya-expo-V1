@@ -12,12 +12,13 @@
  * - Container controls width, not the card
  */
 
-import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
 import { InfoMeta } from '@/components/ui/InfoMeta';
+import { OptimizedImage } from '@/components/ui/OptimizedImage';
 import { borderRadius } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
@@ -51,7 +52,7 @@ interface SpotMediaCardProps {
   size?: 'large' | 'small'; // Tamaño de la card (default: 'large')
 }
 
-export function SpotMediaCard({ 
+export const SpotMediaCard = memo(function SpotMediaCard({ 
   spot, 
   onPress, 
   distance,
@@ -63,23 +64,29 @@ export function SpotMediaCard({
   const hasImage = hasValidImage(spot.photos);
   const spotTypeLabel = getSpotTypeLabel(spot.type);
 
+  // Memoizar source para evitar recreaciones innecesarias y prevenir loops
+  const imageSource = useMemo(() => {
+    if (!hasImage || !spot.photos || spot.photos.length === 0) {
+      return null;
+    }
+    return { uri: spot.photos[0] };
+  }, [hasImage, spot.photos?.[0]]); // Solo cambiar cuando cambia la URI de la primera foto
+
   // Render variant="small" (compacto para grid y sliders)
   if (size === 'small') {
     return (
       <Pressable onPress={onPress} style={styles.smallCardContainer}>
         {/* Imagen cuadrada 160px - siempre visible */}
         <View style={styles.smallImageContainer}>
-          {hasImage ? (
-            <Image 
-              source={{ uri: spot.photos[0] }} 
-              style={styles.smallImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[styles.smallImagePlaceholder, { backgroundColor: colors.icon + '20' }]}>
-              <Icon name="upload" size={32} color={colors.icon} />
-            </View>
-          )}
+          <OptimizedImage
+            source={imageSource}
+            width="100%"
+            height="100%"
+            borderRadius={borderRadius.md}
+            showFallback={true}
+            fallbackIcon="upload"
+            resizeMode="cover"
+          />
         </View>
 
         {/* Título debajo de imagen */}
@@ -109,17 +116,14 @@ export function SpotMediaCard({
       >
         {/* Imagen arriba o placeholder - siempre visible */}
         <View style={styles.imageContainer}>
-          {hasImage ? (
-            <Image 
-              source={{ uri: spot.photos[0] }} 
-              style={styles.image}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[styles.imagePlaceholder, { backgroundColor: colors.icon + '20' }]}>
-              <Icon name="upload" size={48} color={colors.icon} />
-            </View>
-          )}
+          <OptimizedImage
+            source={imageSource}
+            width="100%"
+            height={200}
+            showFallback={true}
+            fallbackIcon="upload"
+            resizeMode="cover"
+          />
         </View>
 
         {/* Contenido principal */}
@@ -145,7 +149,7 @@ export function SpotMediaCard({
       </GlassView>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   // Variant large
@@ -160,16 +164,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 200,
     overflow: 'hidden',
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  imagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   content: {
     flexDirection: 'row',
@@ -186,18 +180,6 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 1, // Mantener cuadrado
     marginBottom: spacing.xs,
-  },
-  smallImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: borderRadius.md,
-  },
-  smallImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   smallTitle: {
     fontFamily: fontFamilyMedium,

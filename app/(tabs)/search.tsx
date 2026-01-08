@@ -19,7 +19,6 @@ import { FlowCard } from '@/components/FlowCard';
 import { SpotMediaCard } from '@/components/SpotMediaCard';
 import { Icon } from '@/components/ui/Icon';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamilyMedium, textStyles } from '@/constants/typography';
@@ -40,10 +39,9 @@ export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  const { spots, isLoading: spotsLoading } = useSpot();
-  const { paths, isLoading: pathsLoading } = usePath();
+  const { spots } = useSpot();
+  const { paths } = usePath();
   const { startFlow } = useFlow();
-  const isLoading = spotsLoading || pathsLoading;
 
   // Get user location
   useEffect(() => {
@@ -198,33 +196,7 @@ export default function SearchScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
       {/* Contenido */}
-      {isLoading ? (
-        <ScrollView
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer}
-          showsVerticalScrollIndicator={false}>
-          {/* Search header skeleton */}
-          <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
-            <SkeletonLoader width="100%" height={48} borderRadius={12} />
-          </View>
-
-          
-          {/* Results skeleton */}
-          <View style={styles.resultsContainer}>
-            {[1, 2, 3].map((i) => (
-              <View key={i} style={styles.resultSkeletonCard}>
-                <SkeletonLoader width="100%" height={120} borderRadius={12} />
-                <View style={{ padding: spacing.md }}>
-                  <SkeletonLoader width="70%" height={20} borderRadius={8} style={{ marginTop: spacing.sm }} />
-                  <SkeletonLoader width="50%" height={16} borderRadius={8} style={{ marginTop: spacing.xs }} />
-                  <SkeletonLoader width="40%" height={16} borderRadius={8} style={{ marginTop: spacing.xs }} />
-                </View>
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-      ) : (
-        <ScrollView
+      <ScrollView
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
@@ -261,10 +233,14 @@ export default function SearchScreen() {
                   <FlatList
                     data={searchResults.spots as { type: 'spot'; spot: Spot; relevanceScore: number; distance?: number }[]}
                     numColumns={2}
-                    keyExtractor={(item) => `spot-${item.spot!.id}`}
+                    keyExtractor={(item) => item.spot!.id}
                     columnWrapperStyle={styles.gridRow}
                     contentContainerStyle={styles.gridContent}
                     scrollEnabled={false}
+                    windowSize={10}
+                    initialNumToRender={6}
+                    maxToRenderPerBatch={6}
+                    removeClippedSubviews={true}
                     renderItem={({ item: result }) => {
                       if (!result.spot) return null;
                       const distance = result.distance || calculateDistanceToSpot(userLocation, result.spot.location);
@@ -350,6 +326,10 @@ export default function SearchScreen() {
                 columnWrapperStyle={styles.gridRow}
                 contentContainerStyle={styles.gridContent}
                 scrollEnabled={false}
+                windowSize={10}
+                initialNumToRender={6}
+                maxToRenderPerBatch={6}
+                removeClippedSubviews={true}
                 renderItem={({ item: spot }) => {
                   const distance = calculateDistanceToSpot(userLocation, spot.location);
                   return (
@@ -379,9 +359,6 @@ export default function SearchScreen() {
             </View>
           )}
         </ScrollView>
-      )}
-
-
     </KeyboardAvoidingView>
   );
 }
@@ -451,14 +428,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
-  },
-  resultsContainer: {
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  resultSkeletonCard: {
-    marginBottom: spacing.md,
-    borderRadius: 12,
-    overflow: 'hidden',
   },
 });
