@@ -6,8 +6,8 @@
  * También incluye ciudades predefinidas de Riviera Maya
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Spot, mockSpots } from '@/data/spots';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { calculateDistance } from './distance';
 import { reverseGeocode } from './placesApi';
 
@@ -78,6 +78,7 @@ export const PREDEFINED_CITIES: PredefinedCity[] = [
  * Obtener nombre de ciudad desde coordenadas
  * Usa reverse geocoding para extraer el nombre de la ciudad
  * Busca múltiples tipos de componentes para mejor precisión
+ * Automáticamente usa ciudades predefinidas como fallback si no se encuentra resultado
  */
 export async function getCityNameFromCoordinates(
   latitude: number,
@@ -87,6 +88,12 @@ export async function getCityNameFromCoordinates(
     const result = await reverseGeocode(latitude, longitude);
     if (!result) {
       console.warn('Reverse geocoding returned no result');
+      // Fallback automático: buscar ciudad predefinida más cercana
+      const nearestCity = findNearestPredefinedCity(latitude, longitude, 10000);
+      if (nearestCity) {
+        console.log(`Using nearest predefined city as fallback: ${nearestCity.name}`);
+        return nearestCity.name;
+      }
       return null;
     }
 
@@ -159,9 +166,21 @@ export async function getCityNameFromCoordinates(
     }
 
     console.warn('Could not extract city name from geocoding result');
+    // Fallback automático: buscar ciudad predefinida más cercana
+    const nearestCity = findNearestPredefinedCity(latitude, longitude, 10000);
+    if (nearestCity) {
+      console.log(`Using nearest predefined city as fallback: ${nearestCity.name}`);
+      return nearestCity.name;
+    }
     return null;
   } catch (error) {
     console.error('Error getting city name from coordinates:', error);
+    // Fallback automático en caso de error: buscar ciudad predefinida más cercana
+    const nearestCity = findNearestPredefinedCity(latitude, longitude, 10000);
+    if (nearestCity) {
+      console.log(`Using nearest predefined city as fallback after error: ${nearestCity.name}`);
+      return nearestCity.name;
+    }
     return null;
   }
 }

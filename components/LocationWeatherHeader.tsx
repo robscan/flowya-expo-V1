@@ -13,7 +13,7 @@ import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { findNearestPredefinedCity, getCityNameFromCoordinates } from '@/utils/geocoding';
+import { getCityNameFromCoordinates } from '@/utils/geocoding';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -50,45 +50,16 @@ export function LocationWeatherHeader({
     const loadCity = async () => {
       setIsLoading(true);
       try {
-        // Obtener nombre de ciudad
-        let city = await getCityNameFromCoordinates(
+        // Obtener nombre de ciudad (ahora incluye fallback automático)
+        const city = await getCityNameFromCoordinates(
           currentLocation.latitude,
           currentLocation.longitude
         );
 
-        // Fallback inteligente: si no se encuentra ciudad, buscar ciudad predefinida más cercana
-        if (!city) {
-          const nearestCity = findNearestPredefinedCity(
-            currentLocation.latitude,
-            currentLocation.longitude,
-            10000 // 10km de radio
-          );
-          if (nearestCity) {
-            city = nearestCity.name;
-            console.log(`Using nearest predefined city as fallback: ${city}`);
-          }
-        }
-
-        // Último recurso: mostrar "Current location" solo si no hay fallback
         setCityName(city || 'Current location');
       } catch (error) {
         console.error('Error loading city:', error);
-        // Intentar fallback a ciudad predefinida en caso de error
-        try {
-          const nearestCity = findNearestPredefinedCity(
-            currentLocation.latitude,
-            currentLocation.longitude,
-            10000
-          );
-          if (nearestCity) {
-            setCityName(nearestCity.name);
-          } else {
-            setCityName('Current location');
-          }
-        } catch (fallbackError) {
-          console.error('Error in fallback:', fallbackError);
-          setCityName('Current location');
-        }
+        setCityName('Current location');
       } finally {
         setIsLoading(false);
       }

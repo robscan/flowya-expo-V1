@@ -53,6 +53,7 @@ export const iconMap = {
   minimize: 'keyboard-arrow-down',
   plus: 'add',
   minus: 'remove',
+  remove: 'remove', // Alias para compatibilidad con MapControls
   'map-pin': 'place',
   upload: 'cloud-upload',
   // Weather icons
