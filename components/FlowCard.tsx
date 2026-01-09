@@ -8,7 +8,7 @@
  */
 
 import { memo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
@@ -96,6 +96,8 @@ const FlowCardDisplay = memo(function FlowCardDisplay({ flow, spots, onPress, di
 const styles = StyleSheet.create({
   cardContainer: {
     marginBottom: spacing.sm,
+    // @ts-ignore - touch-action es válido en web
+    ...(Platform.OS === 'web' && { touchAction: 'manipulation' }),
   },
   card: {
     borderRadius: borderRadius.lg,

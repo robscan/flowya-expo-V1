@@ -156,11 +156,7 @@ export default function MapScreen() {
       if (mapViewRef.current) {
         mapViewRef.current.centerOnSpot(params.spotId!);
       }
-      // Establecer spot seleccionado si existe
-      const spot = spots.find(s => s.id === params.spotId);
-      if (spot) {
-        setSelectedSpot(spot);
-      }
+      // El card solo aparecerá si el usuario toca explícitamente el marker
     }, 500);
 
     return () => clearTimeout(timer);

@@ -12,8 +12,7 @@
  * - Fullscreen: Toggle opcional (inferior derecha, junto a zoom)
  */
 
-import React from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
@@ -141,6 +140,8 @@ const styles = StyleSheet.create({
     elevation: 5,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.1)',
+    // @ts-ignore - touch-action es válido en web
+    ...(Platform.OS === 'web' && { touchAction: 'manipulation' }),
   },
   buttonContent: {
     width: '100%',

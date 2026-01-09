@@ -12,10 +12,11 @@
  * - Container controls width, not the card
  */
 
-import { memo, useCallback, useEffect, useMemo } from 'react';
-import { GestureResponderEvent, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { memo, useCallback, useEffect, useMemo } from 'react';
+import { GestureResponderEvent, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { Chip } from '@/components/ui/Chip';
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { InfoMeta } from '@/components/ui/InfoMeta';
@@ -121,22 +122,15 @@ export const SpotMediaCard = memo(function SpotMediaCard({
           rating={size === 'large' ? rating : undefined}
           size={size}
         />
-        <View style={styles.separatorContainer}>
-          <Text style={[styles.separator, { color: colors.icon }]}>·</Text>
-        </View>
-        <TouchableOpacity
+        <Pressable
           onPress={handleViewOnMap}
           style={styles.viewOnMapButton}
-          activeOpacity={0.7}>
-          <View style={styles.mapTextContainer}>
-            <Text style={[styles.mapText, { color: colors.tint }]}>
-              Map
-            </Text>
-          </View>
-        </TouchableOpacity>
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Chip text="Map" variant="highlighted" />
+        </Pressable>
       </View>
     );
-  }, [distance, size, spotTypeLabel, rating, handleViewOnMap, colors.tint, colors.icon]);
+  }, [distance, size, spotTypeLabel, rating, handleViewOnMap, colors.tint]);
 
   // Render variant="small" (compacto para grid y sliders)
   if (size === 'small') {
@@ -260,6 +254,8 @@ const styles = StyleSheet.create({
   // Variant large
   cardContainer: {
     marginBottom: spacing.xs,
+    // @ts-ignore - touch-action es válido en web
+    ...(Platform.OS === 'web' && { touchAction: 'manipulation' }),
   },
   card: {
     borderRadius: borderRadius.lg,
@@ -280,6 +276,8 @@ const styles = StyleSheet.create({
   smallCardContainer: {
     // Container controls width, not the card
     width: '100%',
+    // @ts-ignore - touch-action es válido en web
+    ...(Platform.OS === 'web' && { touchAction: 'manipulation' }),
   },
   smallImageContainer: {
     width: '100%',
@@ -329,28 +327,11 @@ const styles = StyleSheet.create({
   // Distance row con "Map"
   distanceRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'flex-end',
     marginTop: spacing.sm,
     gap: spacing.xs,
   },
-  separatorContainer: {
-    paddingTop: 10, // Ajuste óptico para alinear baseline con distancia
-  },
-  separator: {
-    fontSize: fontSize.sm,
-    lineHeight: lineHeight.sm,
-    marginHorizontal: spacing.xs / 2,
-  },
   viewOnMapButton: {
     // Sin marginLeft adicional, el separador ya proporciona el espacio
-  },
-  mapTextContainer: {
-    paddingTop: 10, // Ajuste óptico para alinear baseline con distancia
-  },
-  mapText: {
-    fontSize: fontSize.sm,
-    lineHeight: lineHeight.sm,
-    fontWeight: '400',
-    fontFamily: fontFamily,
   },
 });

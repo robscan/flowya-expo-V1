@@ -82,6 +82,7 @@ export function SkeletonBlock({
 
   return (
     <View
+      pointerEvents="none"
       style={[
         styles.container,
         {

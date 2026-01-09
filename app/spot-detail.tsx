@@ -5,28 +5,25 @@
  */
 
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Share,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  UIManager,
-  View,
-  ActivityIndicator,
-  Animated,
+    Alert,
+    Animated,
+    Dimensions,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    Share,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    UIManager,
+    View
 } from 'react-native';
 
 import { FlowyaMapView, FlowyaMapViewRef } from '@/components/MapView';
-import { MapControls } from '@/components/ui/MapControls';
 import { AIContentPreview } from '@/components/ui/AIContentPreview';
 import { AIGenerateButton } from '@/components/ui/AIGenerateButton';
 import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
@@ -37,32 +34,30 @@ import { FormTextArea } from '@/components/ui/FormTextArea';
 import { FormTextInput } from '@/components/ui/FormTextInput';
 import { FormTypeSelector } from '@/components/ui/FormTypeSelector';
 import { GlassView } from '@/components/ui/GlassView';
+import { Icon, IconName } from '@/components/ui/Icon';
 import { InfoMeta } from '@/components/ui/InfoMeta';
-import { Icon } from '@/components/ui/Icon';
-import { Tooltip } from '@/components/ui/Tooltip';
+import { MapControls } from '@/components/ui/MapControls';
 import { Toast } from '@/components/ui/Toast';
 import { borderRadius, borderTokens } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
-import { fontFamilyMedium, fontSize, lineHeight, textStyles } from '@/constants/typography';
+import { fontSize, textStyles } from '@/constants/typography';
+import { useAuth } from '@/contexts/AuthContext';
+import { useFlow } from '@/contexts/FlowContext';
+import { useOverlay } from '@/contexts/OverlayContext';
+import { usePath } from '@/contexts/PathContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { usePath } from '@/contexts/PathContext';
-import { useFlow } from '@/contexts/FlowContext';
-import { useAuth } from '@/contexts/AuthContext';
-import { useOverlay } from '@/contexts/OverlayContext';
-import { Spot, SpotType, SpotHours, SpotCost } from '@/data/spots';
-import { IconName } from '@/components/ui/Icon';
-import { generateSpotContent } from '@/utils/aiContentGenerator';
-import { isAIConfigured } from '@/utils/aiConfig';
-import { useBaseLocation } from '@/hooks/useBaseLocation';
+import { Spot, SpotHours } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
 import { useSpotForm } from '@/hooks/useSpotForm';
-import { hasValidImage, getValidImage } from '@/utils/imageHelpers';
-import { getSpotTypeLabel, formatHours, formatCost } from '@/utils/spotFormHelpers';
+import { isAIConfigured } from '@/utils/aiConfig';
+import { getValidImage, hasValidImage } from '@/utils/imageHelpers';
+import { mapMovementModeToNavigationMode, openNavigationApp } from '@/utils/navigationHelpers';
 import { canDeleteSpot } from '@/utils/permissions';
-import { openNavigationApp, mapMovementModeToNavigationMode } from '@/utils/navigationHelpers';
+import { formatCost, formatHours, getSpotTypeLabel } from '@/utils/spotFormHelpers';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const IMAGE_HEIGHT = SCREEN_HEIGHT * 0.4; // 40% of screen height

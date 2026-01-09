@@ -44,7 +44,7 @@ export function SkeletonList({
   if (variant === 'row') {
     // Variante simple: rows horizontales
     return (
-      <View style={[styles.container, style]}>
+      <View pointerEvents="none" style={[styles.container, style]}>
         {items.map((_, index) => (
           <View key={index} style={styles.row}>
             <SkeletonBlock
@@ -71,7 +71,7 @@ export function SkeletonList({
   // Variante card
   if (layout === 'grid') {
     return (
-      <View style={[styles.gridContainer, style]}>
+      <View pointerEvents="none" style={[styles.gridContainer, style]}>
         {items.map((_, index) => (
           <SkeletonCard
             key={index}
@@ -86,7 +86,7 @@ export function SkeletonList({
 
   // Layout lista vertical
   return (
-    <View style={[styles.container, style]}>
+    <View pointerEvents="none" style={[styles.container, style]}>
       {items.map((_, index) => (
         <SkeletonCard
           key={index}

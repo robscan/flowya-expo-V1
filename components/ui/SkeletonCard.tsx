@@ -71,6 +71,7 @@ export function SkeletonCard({
 
   return (
     <View
+      pointerEvents="none"
       style={[
         styles.card,
         {

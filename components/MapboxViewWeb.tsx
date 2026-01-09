@@ -217,22 +217,24 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       if (!mapInstanceRef.current) return;
       const spot = spots.find(s => s.id === spotId);
       if (spot) {
-        setCurrentZoom(13);
+        setCurrentZoom(15);
         mapInstanceRef.current.flyTo({
           center: [spot.location.longitude, spot.location.latitude],
-          zoom: 13, // Zoom amplio para mostrar otros spots
+          zoom: 15, // Zoom cercano para contexto urbano (calles legibles)
           duration: 500,
         });
       }
     },
     zoomIn: () => {
       if (!mapInstanceRef.current) return;
+      const currentZoom = mapInstanceRef.current.getZoom();
       const newZoom = Math.min(currentZoom + 1, 20); // Max zoom 20
       setCurrentZoom(newZoom);
       mapInstanceRef.current.zoomTo(newZoom, { duration: 200 });
     },
     zoomOut: () => {
       if (!mapInstanceRef.current) return;
+      const currentZoom = mapInstanceRef.current.getZoom();
       const newZoom = Math.max(currentZoom - 1, 0); // Min zoom 0
       setCurrentZoom(newZoom);
       mapInstanceRef.current.zoomTo(newZoom, { duration: 200 });
@@ -242,7 +244,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       // Forzar recalculo del tamaño del mapa
       mapInstanceRef.current.resize();
     },
-  }), [userLocation, spots, currentZoom]);
+  }), [userLocation, spots]);
 
   // Cargar Mapbox y crear instancia
   useEffect(() => {

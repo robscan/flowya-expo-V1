@@ -195,10 +195,10 @@ const MapboxViewComponent = forwardRef<MapboxViewRef, MapboxViewProps>(({
       if (!cameraRef.current) return;
       const spot = spots.find(s => s.id === spotId);
       if (spot) {
-        currentZoomRef.current = 13;
+        currentZoomRef.current = 15;
         cameraRef.current.setCamera({
           centerCoordinate: [spot.location.longitude, spot.location.latitude],
-          zoomLevel: 13, // Zoom amplio para mostrar otros spots
+          zoomLevel: 15, // Zoom cercano para contexto urbano (calles legibles)
           animationDuration: 500,
         });
       }
