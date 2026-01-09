@@ -4,15 +4,13 @@
  * Based on V5 definition: SPOT DETAIL section
  */
 
-import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
-  FlatList,
-  Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -21,13 +19,23 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
   ActivityIndicator,
   Animated,
 } from 'react-native';
 
-import { FlowyaMapView } from '@/components/MapView';
+import { FlowyaMapView, FlowyaMapViewRef } from '@/components/MapView';
+import { MapControls } from '@/components/ui/MapControls';
+import { AIContentPreview } from '@/components/ui/AIContentPreview';
+import { AIGenerateButton } from '@/components/ui/AIGenerateButton';
 import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
+import { FormField } from '@/components/ui/FormField';
+import { FormIconSelector } from '@/components/ui/FormIconSelector';
+import { FormLocationSelector } from '@/components/ui/FormLocationSelector';
+import { FormTextArea } from '@/components/ui/FormTextArea';
+import { FormTextInput } from '@/components/ui/FormTextInput';
+import { FormTypeSelector } from '@/components/ui/FormTypeSelector';
 import { GlassView } from '@/components/ui/GlassView';
 import { InfoMeta } from '@/components/ui/InfoMeta';
 import { Icon } from '@/components/ui/Icon';
@@ -42,147 +50,207 @@ import { useSpot } from '@/contexts/SpotContext';
 import { usePath } from '@/contexts/PathContext';
 import { useFlow } from '@/contexts/FlowContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOverlay } from '@/contexts/OverlayContext';
 import { Spot, SpotType, SpotHours, SpotCost } from '@/data/spots';
 import { IconName } from '@/components/ui/Icon';
 import { generateSpotContent } from '@/utils/aiContentGenerator';
 import { isAIConfigured } from '@/utils/aiConfig';
-
-const SPOT_TYPES: SpotType[] = [
-  'beach',
-  'cafe',
-  'viewpoint',
-  'museum',
-  'restaurant',
-  'park',
-  'monument',
-  'market',
-  'other',
-];
+import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useImageUpload } from '@/hooks/useImageUpload';
-import { calculateDistanceToSpot } from '@/utils/distance';
+import { useSpotDistance } from '@/hooks/useSpotDistance';
+import { useSpotForm } from '@/hooks/useSpotForm';
 import { hasValidImage, getValidImage } from '@/utils/imageHelpers';
+import { getSpotTypeLabel, formatHours, formatCost } from '@/utils/spotFormHelpers';
+import { canDeleteSpot } from '@/utils/permissions';
+import { openNavigationApp, mapMovementModeToNavigationMode } from '@/utils/navigationHelpers';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const IMAGE_HEIGHT = SCREEN_HEIGHT * 0.4; // 40% of screen height
 
-// Helper para obtener nombre legible del tipo
-function getSpotTypeLabel(type: SpotType): string {
-  const labels: Record<SpotType, string> = {
-    beach: 'Beach',
-    cafe: 'Café', // Keep original label for consistency
-    viewpoint: 'Viewpoint',
-    museum: 'Museum',
-    restaurant: 'Restaurant',
-    park: 'Park',
-    monument: 'Monument',
-    market: 'Market',
-    other: 'Other',
-  };
-  return labels[type] || 'Other';
-}
-
-// Helper para formatear horarios
-function formatHours(hours?: Spot['hours']): string | null {
-  if (!hours) return null;
-  const days = Object.entries(hours)
-    .filter(([_, value]) => value)
-    .map(([day, value]) => `${day}: ${value}`)
-    .join(', ');
-  return days || null;
-}
-
-// Helper para formatear costo
-function formatCost(cost?: Spot['cost']): string | null {
-  if (!cost) return null;
-  return cost.description || `${cost.amount} ${cost.currency}`;
-}
+// Helpers moved to utils/spotFormHelpers.ts - using shared utilities
 
 export default function SpotDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { getSpotById, updateSpot, deleteSpot } = useSpot();
+  const { getSpotById, updateSpot, deleteSpot, markSpotAsSeen, markSpotAsAvailable, getSpotLoadState } = useSpot();
   const { isSpotSaved, toggleSaveSpot } = useSaved();
   const { createPath } = usePath();
   const { startFlow } = useFlow();
   const { user, isAuthenticated } = useAuth();
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const { setIsTabBarVisible } = useOverlay();
+  
+  // Ubicación base estable
+  const { baseLocation } = useBaseLocation();
+  const mapViewRef = useRef<FlowyaMapViewRef>(null);
+  const mapViewFullscreenRef = useRef<FlowyaMapViewRef>(null);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
+  const [showAIPreview, setShowAIPreview] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // Animaciones para feedback visual
-  const saveButtonScale = useState(new Animated.Value(1))[0];
-  const likeButtonScale = useState(new Animated.Value(1))[0];
+  const [saveButtonScale] = useState(() => new Animated.Value(1));
+  const [likeButtonScale] = useState(() => new Animated.Value(1));
   
-  // Estados locales para modo de edición
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editWhyItMatters, setEditWhyItMatters] = useState('');
-  const [editType, setEditType] = useState<SpotType>('other');
-  const [editCulturalContext, setEditCulturalContext] = useState('');
-  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-
-  // Hook de optimización de imágenes para edición
-  // Inicializar con imagen existente del spot si está en modo edición
-  const {
-    uri: editPhoto,
-    isOptimizing: isOptimizingImage,
-    pickFromGallery,
-    reset: resetImage,
-  } = useImageUpload({
-    allowsEditing: true,
-    aspect: [4, 3],
-    quality: 75,
-    initialUri: isEditMode && spot?.photos && spot.photos.length > 0 ? getValidImage(spot.photos) : null,
-    onOptimized: (optimizedUri) => {
-      // La imagen ya está optimizada y lista para usar
-      console.log('✅ Imagen optimizada:', optimizedUri);
-    },
-    onError: (error) => {
-      console.error('Error optimizando imagen:', error);
-      Alert.alert('Error', 'No se pudo optimizar la imagen. Intenta de nuevo.');
-    },
-  });
-  const [editHowToVisit1, setEditHowToVisit1] = useState('');
-  const [editHowToVisit2, setEditHowToVisit2] = useState('');
-  const [editHowToVisitIcon1, setEditHowToVisitIcon1] = useState<IconName>('sun');
-  const [editHowToVisitIcon2, setEditHowToVisitIcon2] = useState<IconName>('camera');
-  const [editLocation, setEditLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [editHours, setEditHours] = useState<Spot['hours'] | undefined>(undefined);
-  const [editCost, setEditCost] = useState<Spot['cost'] | undefined>(undefined);
+  // Estados para selector de iconos
   const [showIconSelector, setShowIconSelector] = useState<{ field: '1' | '2' | 'restrictions' | 'accessibility' } | null>(null);
   const [editPlanInfoIconRestrictions, setEditPlanInfoIconRestrictions] = useState<IconName>('paw');
   const [editPlanInfoIconAccessibility, setEditPlanInfoIconAccessibility] = useState<IconName>('accessibility');
-  const [editRestrictions, setEditRestrictions] = useState('');
-  const [editAccessibility, setEditAccessibility] = useState('');
 
   // Get spot from context
   const spot = id ? getSpotById(id) : null;
 
-  // Get user location
+  // Marcar Spot como 'seen' al montar (automáticamente)
   useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          return;
-        }
-        const location = await Location.getCurrentPositionAsync({});
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-      } catch (error) {
-        console.error('Error getting location:', error);
+    if (!id) return;
+    
+    markSpotAsSeen(id);
+    
+    // Si el Spot tiene imagen principal, marcar como 'available' después de un breve delay
+    // (esto permite que OptimizedImage inicie la carga si es necesario)
+    // El cache de imágenes se maneja independientemente, esto solo marca el Spot como disponible
+    if (spot && hasValidImage(spot.photos)) {
+      // Usar un pequeño delay para permitir que OptimizedImage verifique su cache
+      const timer = setTimeout(() => {
+        markSpotAsAvailable(id);
+      }, 100);
+      return () => clearTimeout(timer);
+    } else {
+      // Si no tiene imagen, marcar como disponible inmediatamente
+      markSpotAsAvailable(id);
+    }
+  }, [id, spot?.photos?.[0], markSpotAsSeen, markSpotAsAvailable]);
+
+  // CANONICAL: Ocultar/mostrar TabBar según estado de fullscreen
+  useEffect(() => {
+    setIsTabBarVisible(!isFullscreen);
+  }, [isFullscreen, setIsTabBarVisible]);
+
+  // CANONICAL: Forzar resize del mapa cuando cambia fullscreen
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const currentMapRef = isFullscreen ? mapViewFullscreenRef.current : mapViewRef.current;
+      if (currentMapRef) {
+        currentMapRef.resize();
       }
-    })();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [isFullscreen]);
+
+  // Enable LayoutAnimation on Android
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
   }, []);
+
+  // CANONICAL: Centrar mapa en spot al montar (siempre, no en userLocation)
+  useEffect(() => {
+    if (!spot || isEditMode) return;
+    
+    // Pequeño delay para asegurar que el mapa esté listo
+    const timer = setTimeout(() => {
+      if (mapViewRef.current) {
+        mapViewRef.current.centerOnSpot(spot.id);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [spot?.id, isEditMode]);
+
+  // CANONICAL: Centrar mapa en fullscreen cuando se activa
+  useEffect(() => {
+    if (!spot || isEditMode || !isFullscreen) return;
+    
+    // Pequeño delay para asegurar que el mapa fullscreen esté listo
+    const timer = setTimeout(() => {
+      if (mapViewFullscreenRef.current) {
+        mapViewFullscreenRef.current.centerOnSpot(spot.id);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [isFullscreen, spot?.id, isEditMode]);
+
+  // Hook de gestión de estado del formulario (solo en modo edición)
+  const form = useSpotForm({
+    initialSpot: spot || null,
+    isEditMode,
+    onSave: (spotData) => {
+      if (!spot) return;
+      const updates: Partial<Spot> = {
+        name: spotData.name,
+        description: spotData.description,
+        whyItMatters: spotData.whyItMatters,
+        culturalContext: spotData.culturalContext,
+        type: spotData.type,
+        hours: spotData.hours,
+        cost: spotData.cost,
+        restrictions: spotData.restrictions,
+        accessibility: spotData.accessibility,
+        howToVisit: spotData.howToVisit,
+      };
+      if (spotData.photos && spotData.photos.length > 0 && spotData.photos[0] !== spot.photos?.[0]) {
+        updates.photos = spotData.photos;
+      }
+      if (spotData.location && (spotData.location.latitude !== spot.location.latitude || spotData.location.longitude !== spot.location.longitude)) {
+        updates.location = spotData.location;
+      }
+      updateSpot(spot.id, updates);
+      setIsEditMode(false);
+      Alert.alert('Place updated', 'Changes saved');
+    },
+    onCancel: () => {
+      setIsEditMode(false);
+    },
+  });
+
+
+  // Helpers para trabajar con howToVisit desde form.howToVisit
+  const getHowToVisitBestTime = () => form.howToVisit?.bestTime?.text || '';
+  const getHowToVisitBestTimeIcon = () => (form.howToVisit?.bestTime?.icon as IconName) || 'sun';
+  const getHowToVisitPhotography = () => form.howToVisit?.photography?.text || '';
+  const getHowToVisitPhotographyIcon = () => (form.howToVisit?.photography?.icon as IconName) || 'camera';
+
+  const setHowToVisitBestTime = (text: string, icon?: IconName) => {
+    form.setHowToVisit({
+      ...form.howToVisit,
+      bestTime: text ? { icon: icon || getHowToVisitBestTimeIcon(), text } : undefined,
+      photography: form.howToVisit?.photography,
+    });
+  };
+
+  const setHowToVisitPhotography = (text: string, icon?: IconName) => {
+    form.setHowToVisit({
+      ...form.howToVisit,
+      bestTime: form.howToVisit?.bestTime,
+      photography: text ? { icon: icon || getHowToVisitPhotographyIcon(), text } : undefined,
+    });
+  };
+
+  const setHowToVisitBestTimeIcon = (icon: IconName) => {
+    const currentText = getHowToVisitBestTime();
+    if (currentText) {
+      setHowToVisitBestTime(currentText, icon);
+    }
+  };
+
+  const setHowToVisitPhotographyIcon = (icon: IconName) => {
+    const currentText = getHowToVisitPhotography();
+    if (currentText) {
+      setHowToVisitPhotography(currentText, icon);
+    }
+  };
+
+  // Calcular distancia usando hook canónico - DEBE estar antes del return temprano
+  const distance = useSpotDistance(id || null, baseLocation);
 
   if (!spot) {
     return (
@@ -199,11 +267,15 @@ export default function SpotDetailScreen() {
   }
 
   const isSaved = isSpotSaved(spot.id);
-  const hoursText = formatHours(isEditMode ? editHours : spot.hours);
-  const costText = formatCost(isEditMode ? editCost : spot.cost);
-  const distance = userLocation ? calculateDistanceToSpot(userLocation, spot.location) : null;
+  const hoursText = formatHours(isEditMode ? form.hours : spot.hours);
+  const costText = formatCost(isEditMode ? form.cost : spot.cost);
 
   const handleBack = () => {
+    // Si está en fullscreen, salir primero del fullscreen
+    if (isFullscreen) {
+      setIsFullscreen(false);
+      return;
+    }
     if (isEditMode) {
       handleCancelEdit();
       return;
@@ -266,144 +338,116 @@ export default function SpotDetailScreen() {
   const handleSuggestEdit = () => {
     if (!spot) return;
     setIsMenuVisible(false);
-    // Inicializar estados de edición con valores actuales
-    setEditName(spot.name || '');
-    setEditDescription(spot.description || '');
-    setEditWhyItMatters(spot.whyItMatters || spot.description || '');
-    setEditType(spot.type);
-    // La imagen existente se inicializa automáticamente en el hook con initialUri
-    setEditCulturalContext(spot.culturalContext || '');
-    setEditHowToVisit1('Visit early morning (8–10 AM) for soft light and fewer crowds.'); // Default text
-    setEditHowToVisit2('Allowed everywhere, but tripods require a special permit.'); // Default text
-    setEditHowToVisitIcon1('sun');
-    setEditHowToVisitIcon2('camera');
-    setEditLocation({ latitude: spot.location.latitude, longitude: spot.location.longitude });
-    setEditHours(spot.hours);
-    setEditCost(spot.cost);
+    // Inicializar iconos de plan info (si no están en form)
     setEditPlanInfoIconRestrictions('paw');
     setEditPlanInfoIconAccessibility('accessibility');
-    setEditRestrictions(spot.restrictions || 'No pets');
-    setEditAccessibility(spot.accessibility || 'Unknown');
     setIsEditMode(true);
+    // form.howToVisit ya se inicializa desde initialSpot en useSpotForm
   };
 
   const handleGenerateAI = async () => {
     if (!spot) return;
-
-    if (!isAIConfigured()) {
-      Alert.alert('AI not configured', 'OpenAI API key is not configured. Please set EXPO_PUBLIC_OPENAI_API_KEY in .env');
-      return;
+    const generatedContent = await form.generateContent();
+    if (generatedContent) {
+      setShowAIPreview(true);
     }
+  };
 
-    setIsGeneratingAI(true);
-    setAiError(null);
-
-    try {
-      // Crear spot temporal con datos actuales de edición
-      const tempSpot: Spot = {
-        ...spot,
-        name: editName || spot.name,
-        description: editDescription || spot.description,
-        whyItMatters: editWhyItMatters || spot.whyItMatters,
-        culturalContext: editCulturalContext || spot.culturalContext,
-        type: editType,
-        location: editLocation || spot.location,
-      };
-
-      const generatedContent = await generateSpotContent(tempSpot);
-
-      // Prellenar campos con contenido generado
-      if (generatedContent.whyItMatters) {
-        setEditWhyItMatters(generatedContent.whyItMatters);
+  const handleAcceptAIContent = () => {
+    if (form.previewContent) {
+      if (form.previewContent.whyItMatters) {
+        form.setWhyItMatters(form.previewContent.whyItMatters);
+        form.setDescription(form.previewContent.whyItMatters);
       }
-      if (generatedContent.culturalContext) {
-        setEditCulturalContext(generatedContent.culturalContext);
+      if (form.previewContent.culturalContext) {
+        form.setCulturalContext(form.previewContent.culturalContext);
       }
-      // Nota: howToVisit se puede agregar si se implementa en el formulario
-
-        Alert.alert('Content generated', 'Edit before saving.');
-    } catch (error: any) {
-      console.error('Error generating AI content:', error);
-      setAiError(error.message || 'Failed to generate content. Please try again.');
-      Alert.alert('Error', error.message || 'Couldn\'t generate content. Try again.');
-    } finally {
-      setIsGeneratingAI(false);
+      if (form.previewContent.howToVisit) {
+        // Form.howToVisit ya maneja toda la estructura
+        form.setHowToVisit(form.previewContent.howToVisit);
+      }
     }
+    setShowAIPreview(false);
+    form.setPreviewContent(null);
+  };
+
+  const handleRejectAIContent = () => {
+    setShowAIPreview(false);
+    form.setPreviewContent(null);
   };
 
   const handleSaveEdit = () => {
     if (!spot) return;
-    const updates: Partial<Spot> = {
-      name: editName || undefined,
-      description: editDescription || undefined,
-      whyItMatters: editWhyItMatters || undefined,
-      culturalContext: editCulturalContext || undefined,
-      type: editType,
-      hours: editHours,
-      cost: editCost,
-      restrictions: editRestrictions || undefined,
-      accessibility: editAccessibility || undefined,
-    };
-    if (editPhoto && editPhoto !== spot.photos?.[0]) {
-      updates.photos = [editPhoto, ...(spot.photos?.slice(1) || [])];
-    }
-    if (editLocation) {
-      updates.location = {
-        ...spot.location,
-        latitude: editLocation.latitude,
-        longitude: editLocation.longitude,
-      };
-    }
-    updateSpot(spot.id, updates);
-    setIsEditMode(false);
-    Alert.alert('Place updated', 'Changes saved');
+    // form.howToVisit ya está actualizado desde los helpers
+    form.handleSave();
   };
 
   const handleCancelEdit = () => {
-    setIsEditMode(false);
-    // Resetear estados locales
-    setEditName('');
-    setEditDescription('');
-    setEditWhyItMatters('');
-    setEditType('other');
-    resetImage();
-    setEditCulturalContext('');
-    setAiError(null);
-    setEditHowToVisit1('');
-    setEditHowToVisit2('');
-    setEditHowToVisitIcon1('sun');
-    setEditHowToVisitIcon2('camera');
-    setEditLocation(null);
-    setEditHours(undefined);
-    setEditCost(undefined);
-    setEditPlanInfoIconRestrictions('paw');
-    setEditPlanInfoIconAccessibility('accessibility');
-    setEditRestrictions('');
-    setEditAccessibility('');
+    if (form.hasChanges) {
+      setShowCancelConfirm(true);
+    } else {
+      form.handleCancel();
+      setShowIconSelector(null);
+    }
+  };
+
+  const handleConfirmCancel = () => {
+    form.handleCancel();
     setShowIconSelector(null);
+    setShowCancelConfirm(false);
   };
 
 
   const handleReport = () => {
     setIsMenuVisible(false);
+    // Reporte es visible para todos los usuarios
+    // Por ahora, mostrar modal con opciones de reporte
     Alert.alert(
-      'Report',
-      'This feature will allow you to report issues with this spot. Coming soon!',
-      [{ text: 'OK' }]
+      'Report issue',
+      'Select the type of issue you want to report:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Incorrect content', 
+          onPress: () => {
+            Alert.alert('Report submitted', 'Thank you for your report. We will review it soon.');
+          }
+        },
+        { 
+          text: 'Place closed', 
+          onPress: () => {
+            Alert.alert('Report submitted', 'Thank you for your report. We will review it soon.');
+          }
+        },
+        { 
+          text: 'Spam or inappropriate', 
+          onPress: () => {
+            Alert.alert('Report submitted', 'Thank you for your report. We will review it soon.');
+          }
+        },
+        { 
+          text: 'Other', 
+          onPress: () => {
+            Alert.alert('Report submitted', 'Thank you for your report. We will review it soon.');
+          }
+        },
+      ],
+      { cancelable: true }
     );
   };
 
   const handlePlaceNoLongerExists = () => {
     if (!spot) return;
     
-    // Verificar que el usuario esté logueado y sea el creador del spot
+    // Verificar autenticación
     if (!isAuthenticated || !user) {
       Alert.alert('Permission required', 'You must be logged in to delete spots.');
       setIsMenuVisible(false);
       return;
     }
 
-    if (spot.createdBy && spot.createdBy !== user.id) {
+    // Verificar permisos usando helper canónico
+    if (!canDeleteSpot(spot, user)) {
       Alert.alert('Permission denied', 'You can only delete spots that you created.');
       setIsMenuVisible(false);
       return;
@@ -417,7 +461,8 @@ export default function SpotDetailScreen() {
     if (!spot) return;
     deleteSpot(spot.id);
     setIsDeleteConfirmVisible(false);
-    router.back();
+    // Redirigir a home después de eliminar
+    router.replace('/(tabs)/home');
   };
 
   const handleCancelDelete = () => {
@@ -425,16 +470,13 @@ export default function SpotDetailScreen() {
   };
 
 
-  // Handle photo selection (usa hook de optimización)
-  const handlePickImage = async () => {
-    const optimizedUri = await pickFromGallery();
-    // El hook ya maneja la optimización y actualiza el estado 'editPhoto'
-    // No necesitamos hacer nada más, la imagen ya está optimizada
-  };
+  // Photo selection is now handled by useSpotForm hook via form.pickImage
 
   const handleStartFlow = () => {
+    if (!spot) return;
+    
     // Validar ubicación antes de iniciar flow
-    if (!userLocation) {
+    if (!baseLocation) {
       Alert.alert(
         'Location needed',
         'Enable location to start flow from here. Go to Settings and allow location access.',
@@ -451,7 +493,6 @@ export default function SpotDetailScreen() {
       );
       return;
     }
-    if (!spot) return;
     
     // Create a temporary path with just this spot
     // The path will grow as the user moves and discovers more spots
@@ -467,12 +508,120 @@ export default function SpotDetailScreen() {
     startFlow(tempPath.id);
   };
 
+  /**
+   * Get directions - Abre app externa de navegación
+   * POLÍTICA: NO hace llamadas internas a Google Maps APIs.
+   * Solo construye URL externa y delega navegación al sistema.
+   */
+  const handleGetDirections = async () => {
+    if (!spot) return;
+    
+    // Si no hay ubicación del usuario, usar ubicación del spot como origen
+    // (aunque idealmente deberíamos tener la ubicación actual del usuario)
+    const originLocation = baseLocation || spot.location;
+    const destinationLocation = spot.location;
+    
+    // Usar modo walking por defecto (se puede hacer dinámico según el flow si aplica)
+    const navigationMode = mapMovementModeToNavigationMode('walking');
+    
+    const success = await openNavigationApp(
+      originLocation,
+      destinationLocation,
+      navigationMode
+    );
+    
+    if (!success) {
+      Alert.alert(
+        'Navigation unavailable',
+        'Could not open navigation app. Please make sure you have a maps app installed.'
+      );
+    }
+  };
+
+  // Handle zoom
+  const handleZoomIn = () => {
+    const currentMapRef = isFullscreen ? mapViewFullscreenRef.current : mapViewRef.current;
+    if (currentMapRef) {
+      currentMapRef.zoomIn();
+    }
+  };
+
+  const handleZoomOut = () => {
+    const currentMapRef = isFullscreen ? mapViewFullscreenRef.current : mapViewRef.current;
+    if (currentMapRef) {
+      currentMapRef.zoomOut();
+    }
+  };
+
+  // Handle fullscreen toggle
+  const handleFullscreenToggle = () => {
+    setIsFullscreen(!isFullscreen);
+  };
+
+  // Handle center on user location
+  const handleCenterOnUserLocation = () => {
+    if (!baseLocation) return;
+    
+    const currentMapRef = isFullscreen ? mapViewFullscreenRef.current : mapViewRef.current;
+    if (currentMapRef) {
+      currentMapRef.centerOnUserLocation();
+    }
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[
+      styles.container,
+      { backgroundColor: colors.background },
+      isFullscreen && styles.containerFullscreen,
+    ]}>
       <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       
 
+      {/* Map en fullscreen - Fuera del ScrollView */}
+      {isFullscreen && (
+        <View 
+          style={[
+            styles.mapContainer,
+            {
+              width: Dimensions.get('window').width,
+              height: Dimensions.get('window').height,
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 1000,
+              borderRadius: 0,
+              marginTop: 0,
+            },
+          ]}
+          onLayout={() => {
+            if (mapViewFullscreenRef.current && isFullscreen) {
+              setTimeout(() => {
+                mapViewFullscreenRef.current?.resize();
+              }, 50);
+            }
+          }}>
+          <FlowyaMapView
+            ref={mapViewFullscreenRef}
+            spots={[spot]}
+            onSpotPress={() => {}}
+            initialRegion={{
+              latitude: spot.location.latitude,
+              longitude: spot.location.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            }}
+            userLocation={baseLocation}
+            showUserLocation={!!baseLocation}
+            highlightedSpotId={spot.id}
+            disableNativeControls={true}
+          />
+        </View>
+      )}
+
       {/* Scrollable content */}
+      {!isFullscreen && (
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -480,7 +629,7 @@ export default function SpotDetailScreen() {
         
         {/* ContentHeader with image hero */}
         {(() => {
-          const validImage = isEditMode ? editPhoto : getValidImage(spot.photos);
+          const validImage = isEditMode ? form.photo : getValidImage(spot.photos);
           const heroImage = validImage ? { uri: validImage } : null;
           
           // Left actions
@@ -526,59 +675,19 @@ export default function SpotDetailScreen() {
           );
         })()}
         
-        {/* Edit mode image picker button */}
-        {isEditMode && (() => {
-          const validImage = editPhoto || getValidImage(spot.photos);
-          if (!validImage) {
-            return (
-              <View style={[styles.imagePlaceholder, { backgroundColor: colors.icon + '10', height: IMAGE_HEIGHT }]}>
-                {isOptimizingImage ? (
-                  <View style={styles.imagePlaceholderButton}>
-                    <ActivityIndicator size="large" color={colors.tint} />
-                    <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>Optimizando imagen...</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    onPress={handlePickImage}
-                    style={styles.imagePlaceholderButton}
-                    activeOpacity={0.7}>
-                    <Icon name="upload" size={48} color={colors.icon} />
-                    <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>Add photo</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            );
-          }
-          return (
-            <View style={[styles.editImageButtonContainer, { height: IMAGE_HEIGHT }]}>
-              {isOptimizingImage && (
-                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
-                  <ActivityIndicator size="large" color="#fff" />
-                  <Text style={[textStyles.caption, { color: '#fff', marginTop: spacing.xs }]}>Optimizando...</Text>
-                </View>
-              )}
-              <TouchableOpacity
-                onPress={handlePickImage}
-                style={[styles.editImageButton, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}
-                activeOpacity={0.7}
-                disabled={isOptimizingImage}>
-                <Icon name="edit" size={20} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          );
-        })()}
+        {/* Edit mode image picker button - handled by ContentHeader with FormImagePicker */}
 
         <View style={[styles.contentSection, { backgroundColor: colors.background }]}>
 
           {/* Title */}
           {isEditMode ? (
-            <TextInput
-              style={[styles.editInput, styles.editTitleInput, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background }]}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="Spot name"
-              placeholderTextColor={colors.icon}
-            />
+            <FormField label="Name" style={{ marginTop: spacing.md }}>
+              <FormTextInput
+                value={form.name}
+                onChangeText={form.setName}
+                placeholder="Spot name"
+              />
+            </FormField>
           ) : (
             spot.name && (
             <Text style={[textStyles.heading, { color: colors.text, marginTop: spacing.md }]}>
@@ -589,31 +698,12 @@ export default function SpotDetailScreen() {
 
           {/* Metadata Row: Chip | Distance | Rating */}
           {isEditMode ? (
-            <View style={{ marginTop: spacing.sm, marginBottom: spacing.md }}>
-              <FlatList
-                data={SPOT_TYPES}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.typeSelector}
-                keyExtractor={(item) => item}
-                renderItem={({ item: spotType }) => (
-                  <TouchableOpacity
-                    style={[
-                      styles.typeSelectorButton,
-                      {
-                        backgroundColor: editType === spotType ? colors.tint + '20' : colors.icon + '10',
-                        borderColor: editType === spotType ? colors.tint : 'transparent',
-                      },
-                    ]}
-                    onPress={() => setEditType(spotType)}
-                    activeOpacity={0.7}>
-                    <Text style={[textStyles.caption, { color: editType === spotType ? colors.tint : colors.text }]}>
-                      {getSpotTypeLabel(spotType)}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+            <FormField label="Type" style={{ marginTop: spacing.sm, marginBottom: spacing.md }}>
+              <FormTypeSelector
+                selectedType={form.type}
+                onSelectType={form.setType}
               />
-            </View>
+            </FormField>
           ) : (
             <InfoMeta
               chip={{ label: getSpotTypeLabel(spot.type) }}
@@ -631,23 +721,23 @@ export default function SpotDetailScreen() {
             style={[
               styles.primaryButton, 
               { 
-                backgroundColor: userLocation ? colors.tint : colors.icon + '40',
-                opacity: userLocation ? 1 : 0.6,
+                backgroundColor: baseLocation ? colors.tint : colors.icon + '40',
+                opacity: baseLocation ? 1 : 0.6,
               }
             ]}
             activeOpacity={0.8}
-            disabled={!userLocation}>
+            disabled={!baseLocation}>
             <Icon name="play" size={20} color="#fff" />
             <Text style={[textStyles.bodyMedium, { color: '#fff', marginLeft: spacing.xs }]}>
               Start from here
             </Text>
           </TouchableOpacity>
-          {!userLocation && (
+          {!baseLocation && (
             <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2, marginBottom: spacing.md }]}>
               Enable location to start flow
             </Text>
           )}
-          {userLocation && (
+          {baseLocation && (
             <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs, marginBottom: spacing.md }]}>
               We&apos;ll build the path as you move.
             </Text>
@@ -662,39 +752,22 @@ export default function SpotDetailScreen() {
                   Why it matters
                 </Text>
                 {isEditMode && isAIConfigured() && (
-                  <Tooltip text="Generate description with AI">
-                    <TouchableOpacity
-                      style={[styles.aiButtonSmall, { backgroundColor: colors.tint + '20', borderColor: colors.tint }]}
-                      onPress={handleGenerateAI}
-                      disabled={isGeneratingAI}
-                      activeOpacity={0.7}>
-                      {isGeneratingAI ? (
-                        <ActivityIndicator size="small" color={colors.tint} />
-                      ) : (
-                        <>
-                          <Icon name="star" size={14} color={colors.tint} />
-                          <Text style={[textStyles.caption, { color: colors.tint, marginLeft: spacing.xs / 2 }]}>
-                            AI
-                          </Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </Tooltip>
+                  <AIGenerateButton
+                    onPress={handleGenerateAI}
+                    isGenerating={form.isGeneratingAI}
+                    size="small"
+                  />
                 )}
               </View>
             {isEditMode ? (
-              <TextInput
-                style={[styles.editInput, styles.editTextArea, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background }]}
-                value={editWhyItMatters || editDescription}
+              <FormTextArea
+                value={form.whyItMatters || form.description}
                 onChangeText={(text) => {
-                  setEditWhyItMatters(text);
-                  setEditDescription(text); // Mantener sincronizado por ahora
+                  form.setWhyItMatters(text);
+                  form.setDescription(text); // Mantener sincronizado por ahora
                 }}
                 placeholder="What makes this place special? e.g. A 16th-century temple representing colonial architecture..."
-                placeholderTextColor={colors.icon}
-                multiline
                 numberOfLines={4}
-                textAlignVertical="top"
               />
             ) : (
               (spot.whyItMatters || spot.description) && (
@@ -710,15 +783,12 @@ export default function SpotDetailScreen() {
               <Icon name="chevron-down" size={20} color={colors.icon} />
             </View>
             {isEditMode ? (
-              <TextInput
-                style={[styles.editInput, styles.editTextArea, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background, marginTop: spacing.sm }]}
-                value={editCulturalContext}
-                onChangeText={setEditCulturalContext}
+              <FormTextArea
+                value={form.culturalContext}
+                onChangeText={form.setCulturalContext}
                 placeholder="Cultural and historical context. e.g. Built in 1650, this was the center of social life during colonial times..."
-                placeholderTextColor={colors.icon}
-                multiline
                 numberOfLines={4}
-                textAlignVertical="top"
+                style={{ marginTop: spacing.sm }}
               />
             ) : (
             spot.culturalContext && (
@@ -735,75 +805,103 @@ export default function SpotDetailScreen() {
               Location
             </Text>
             {isEditMode ? (
-              <View style={styles.locationEditContainer}>
-                <View style={styles.locationInputRow}>
-                  <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Latitude</Text>
-                  <TextInput
-                    style={[styles.editInput, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background }]}
-                    value={editLocation ? editLocation.latitude.toString() : ''}
-                    onChangeText={(text) => {
-                      const num = parseFloat(text);
-                      if (!isNaN(num) && editLocation) {
-                        setEditLocation({ ...editLocation, latitude: num });
-                      }
-                    }}
-                    placeholder="Latitude"
-                    placeholderTextColor={colors.icon}
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={styles.locationInputRow}>
-                  <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Longitude</Text>
-                  <TextInput
-                    style={[styles.editInput, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background }]}
-                    value={editLocation ? editLocation.longitude.toString() : ''}
-                    onChangeText={(text) => {
-                      const num = parseFloat(text);
-                      if (!isNaN(num) && editLocation) {
-                        setEditLocation({ ...editLocation, longitude: num });
-                      }
-                    }}
-                    placeholder="Longitude"
-                    placeholderTextColor={colors.icon}
-                    keyboardType="numeric"
-                  />
-                </View>
-            <View style={styles.mapContainer}>
-                  <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.xs }]}>
-                    Tap on the map to select location
-                  </Text>
+              <FormLocationSelector
+                location={form.location}
+                onLocationChange={(loc) => {
+                  form.setLocation(loc);
+                  // El mapa se centra automáticamente cuando cambia la ubicación
+                }}
+                userLocation={baseLocation}
+                mapHeight={400}
+              />
+            ) : (
+              <>
+                {/* Map Container - Edge-to-edge en fullscreen */}
+                <View 
+                  style={[
+                    styles.mapContainer,
+                    isFullscreen && {
+                      width: Dimensions.get('window').width,
+                      height: Dimensions.get('window').height,
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      zIndex: 1000,
+                      borderRadius: 0,
+                      marginTop: 0,
+                    },
+                  ]}>
                   <FlowyaMapView
-                    spots={editLocation ? [{ ...spot, location: { ...spot.location, latitude: editLocation.latitude, longitude: editLocation.longitude } }] : [spot]}
+                    ref={mapViewRef}
+                    spots={[spot]}
                     onSpotPress={() => {}}
-                    onLongPress={(location) => {
-                      setEditLocation(location);
-                    }}
                     initialRegion={{
-                      latitude: editLocation?.latitude ?? spot.location.latitude,
-                      longitude: editLocation?.longitude ?? spot.location.longitude,
+                      latitude: spot.location.latitude,
+                      longitude: spot.location.longitude,
                       latitudeDelta: 0.01,
                       longitudeDelta: 0.01,
                     }}
-                    userLocation={userLocation}
-                    showUserLocation={!!userLocation}
+                    userLocation={baseLocation}
+                    showUserLocation={!!baseLocation}
+                    highlightedSpotId={spot.id}
+                    disableNativeControls={true}
                   />
+
+                  {/* Controles del mapa - Overlay dentro del contenedor del mapa, solo cuando no está en fullscreen */}
+                  {!isFullscreen && (
+                    <>
+                      {/* Botón Current Location - Lado izquierdo */}
+                      {baseLocation && (
+                        <TouchableOpacity
+                          onPress={handleCenterOnUserLocation}
+                          activeOpacity={0.7}
+                          style={[styles.currentLocationButton, {
+                            backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.9)',
+                          }]}>
+                          <GlassView
+                            style={styles.buttonContent}
+                            intensity="light"
+                            opacity="medium"
+                            shadowLevel="subtle"
+                            enableGlow={false}>
+                            <Icon name="navigation" size={20} color={colors.tint} />
+                          </GlassView>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Map Controls - Lado derecho (zoom y fullscreen) */}
+                      <MapControls
+                        onZoomIn={handleZoomIn}
+                        onZoomOut={handleZoomOut}
+                        onFullscreenToggle={handleFullscreenToggle}
+                        isFullscreen={isFullscreen}
+                        showFullscreen={true}
+                      />
+                    </>
+                  )}
                 </View>
-              </View>
-            ) : (
-              <View style={styles.mapContainer}>
-                <FlowyaMapView
-                spots={[spot]}
-                onSpotPress={() => {}}
-                initialRegion={{
-                  latitude: spot.location.latitude,
-                  longitude: spot.location.longitude,
-                  latitudeDelta: 0.01,
-                  longitudeDelta: 0.01,
-                }}
-                  userLocation={userLocation}
-                  showUserLocation={!!userLocation}
-              />
-            </View>
+
+                {/* Botón Get directions - Ocultar en fullscreen */}
+                {!isFullscreen && (
+                  <TouchableOpacity
+                    onPress={handleGetDirections}
+                    style={[
+                      styles.getDirectionsButton,
+                      { 
+                        backgroundColor: colors.background,
+                        borderColor: colors.icon + '30',
+                      }
+                    ]}
+                    activeOpacity={0.7}>
+                    <Icon name="directions" size={20} color={colors.tint} />
+                    <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
+                      Get directions
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </>
             )}
           </View>
 
@@ -818,51 +916,49 @@ export default function SpotDetailScreen() {
                   <TouchableOpacity
                     onPress={() => setShowIconSelector({ field: '1' })}
                     style={[styles.iconSelectorButton, { backgroundColor: colors.icon + '10', borderColor: colors.icon + '30' }]}>
-                    <Icon name={editHowToVisitIcon1} size={24} color={colors.tint} />
+                    <Icon name={getHowToVisitBestTimeIcon()} size={24} color={colors.tint} />
                   </TouchableOpacity>
-                  <TextInput
-                    style={[styles.editInput, styles.editTextArea, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background, flex: 1, marginLeft: spacing.sm }]}
-                    value={editHowToVisit1}
-                    onChangeText={setEditHowToVisit1}
+                  <FormTextArea
+                    value={getHowToVisitBestTime()}
+                    onChangeText={(text) => setHowToVisitBestTime(text)}
                     placeholder="First tip (e.g., Visit early morning...)"
-                    placeholderTextColor={colors.icon}
-                    multiline
                     numberOfLines={2}
-                    textAlignVertical="top"
+                    style={{ flex: 1, marginLeft: spacing.sm }}
                   />
                 </View>
                 <View style={[styles.howToVisitEditCard, { marginTop: spacing.sm }]}>
                   <TouchableOpacity
                     onPress={() => setShowIconSelector({ field: '2' })}
                     style={[styles.iconSelectorButton, { backgroundColor: colors.icon + '10', borderColor: colors.icon + '30' }]}>
-                    <Icon name={editHowToVisitIcon2} size={24} color={colors.tint} />
+                    <Icon name={getHowToVisitPhotographyIcon()} size={24} color={colors.tint} />
                   </TouchableOpacity>
-                  <TextInput
-                    style={[styles.editInput, styles.editTextArea, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background, flex: 1, marginLeft: spacing.sm }]}
-                    value={editHowToVisit2}
-                    onChangeText={setEditHowToVisit2}
+                  <FormTextArea
+                    value={getHowToVisitPhotography()}
+                    onChangeText={(text) => setHowToVisitPhotography(text)}
                     placeholder="Second tip (e.g., Allowed everywhere...)"
-                    placeholderTextColor={colors.icon}
-                    multiline
                     numberOfLines={2}
-                    textAlignVertical="top"
+                    style={{ flex: 1, marginLeft: spacing.sm }}
                   />
                 </View>
               </>
             ) : (
               <>
-            <View style={[styles.howToVisitCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
-              <Icon name="sun" size={24} color={colors.tint} />
-              <Text style={[textStyles.body, { color: colors.text, marginLeft: spacing.sm, flex: 1 }]}>
-                Visit early morning (8–10 AM) for soft light and fewer crowds.
-              </Text>
-            </View>
-            <View style={[styles.howToVisitCard, { marginTop: spacing.sm, backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
-              <Icon name="camera" size={24} color={colors.tint} />
-              <Text style={[textStyles.body, { color: colors.text, marginLeft: spacing.sm, flex: 1 }]}>
-                Allowed everywhere, but tripods require a special permit.
-              </Text>
-            </View>
+            {(isEditMode ? form.howToVisit : spot.howToVisit)?.bestTime && (
+              <View style={[styles.howToVisitCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
+                <Icon name={(isEditMode ? form.howToVisit : spot.howToVisit)?.bestTime?.icon as any} size={24} color={colors.tint} />
+                <Text style={[textStyles.body, { color: colors.text, marginLeft: spacing.sm, flex: 1 }]}>
+                  {(isEditMode ? form.howToVisit : spot.howToVisit)?.bestTime?.text}
+                </Text>
+              </View>
+            )}
+            {(isEditMode ? form.howToVisit : spot.howToVisit)?.photography && (
+              <View style={[styles.howToVisitCard, { marginTop: spacing.sm, backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
+                <Icon name={(isEditMode ? form.howToVisit : spot.howToVisit)?.photography?.icon as any} size={24} color={colors.tint} />
+                <Text style={[textStyles.body, { color: colors.text, marginLeft: spacing.sm, flex: 1 }]}>
+                  {(isEditMode ? form.howToVisit : spot.howToVisit)?.photography?.text}
+                </Text>
+              </View>
+            )}
               </>
             )}
           </View>
@@ -882,22 +978,20 @@ export default function SpotDetailScreen() {
                       return (
                         <View key={day} style={styles.hoursEditRow}>
                           <Text style={[textStyles.caption, { color: colors.text, width: 80, flexShrink: 0 }]}>{dayLabel}</Text>
-                          <TextInput
-                            style={[styles.editInput, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background, flex: 1 }]}
-                            value={editHours?.[day] || ''}
+                          <FormTextInput
+                            value={form.hours?.[day] || ''}
                             onChangeText={(text) => {
-                              setEditHours(prev => {
-                                const updated = { ...prev };
-                                if (text.trim()) {
-                                  updated[day] = text.trim();
-                                } else {
-                                  delete updated[day];
-                                }
-                                return Object.keys(updated).length > 0 ? updated : undefined;
-                              });
+                              const currentHours = form.hours || {};
+                              const updated: SpotHours = { ...currentHours };
+                              if (text.trim()) {
+                                updated[day] = text.trim();
+                              } else {
+                                delete updated[day];
+                              }
+                              form.setHours(Object.keys(updated).length > 0 ? updated : undefined);
                             }}
                             placeholder="8:00 - 20:00"
-                            placeholderTextColor={colors.icon}
+                            style={{ flex: 1 }}
                           />
                         </View>
                       );
@@ -914,12 +1008,11 @@ export default function SpotDetailScreen() {
                         activeOpacity={0.7}>
                         <Icon name={editPlanInfoIconRestrictions} size={24} color={colors.tint} />
                       </TouchableOpacity>
-                      <TextInput
-                        style={[styles.editInput, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background, flex: 1, marginLeft: spacing.sm }]}
-                        value={editRestrictions}
-                        onChangeText={setEditRestrictions}
+                      <FormTextInput
+                        value={form.restrictions}
+                        onChangeText={form.setRestrictions}
                         placeholder="Restrictions (e.g., No pets)"
-                        placeholderTextColor={colors.icon}
+                        style={{ flex: 1, marginLeft: spacing.sm }}
                       />
                     </View>
                     <View style={[styles.planInfoIconTextEditContainer, { marginTop: spacing.sm }]}>
@@ -929,12 +1022,11 @@ export default function SpotDetailScreen() {
                         activeOpacity={0.7}>
                         <Icon name={editPlanInfoIconAccessibility} size={24} color={colors.tint} />
                       </TouchableOpacity>
-                      <TextInput
-                        style={[styles.editInput, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background, flex: 1, marginLeft: spacing.sm }]}
-                        value={editAccessibility}
-                        onChangeText={setEditAccessibility}
+                      <FormTextInput
+                        value={form.accessibility}
+                        onChangeText={form.setAccessibility}
                         placeholder="Accessibility (e.g., Wheelchair accessible)"
-                        placeholderTextColor={colors.icon}
+                        style={{ flex: 1, marginLeft: spacing.sm }}
                       />
                     </View>
                   </View>
@@ -942,47 +1034,44 @@ export default function SpotDetailScreen() {
                 <View style={styles.planInfoEditRow}>
                   <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Cost</Text>
                   <View style={styles.costEditRow}>
-                    <TextInput
-                      style={[styles.editInput, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background, flex: 1 }]}
-                      value={editCost?.amount?.toString() || ''}
+                    <FormTextInput
+                      value={form.cost?.amount?.toString() || ''}
                       onChangeText={(text) => {
                         const num = parseFloat(text);
-                        setEditCost({
-                          currency: editCost?.currency || 'USD',
+                        form.setCost({
+                          currency: form.cost?.currency || 'USD',
                           amount: isNaN(num) ? 0 : num,
-                          description: editCost?.description,
+                          description: form.cost?.description,
                         });
                       }}
                       placeholder="Amount"
-                      placeholderTextColor={colors.icon}
                       keyboardType="numeric"
+                      style={{ flex: 1 }}
                     />
-                    <TextInput
-                      style={[styles.editInput, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background, width: 80, marginLeft: spacing.sm }]}
-                      value={editCost?.currency || ''}
+                    <FormTextInput
+                      value={form.cost?.currency || ''}
                       onChangeText={(text) => {
-                        setEditCost({
+                        form.setCost({
                           currency: text || 'USD',
-                          amount: editCost?.amount || 0,
-                          description: editCost?.description,
+                          amount: form.cost?.amount || 0,
+                          description: form.cost?.description,
                         });
                       }}
                       placeholder="Currency"
-                      placeholderTextColor={colors.icon}
+                      style={{ width: 80, marginLeft: spacing.sm }}
                     />
                   </View>
-                  <TextInput
-                    style={[styles.editInput, { color: colors.text, borderColor: colors.icon + '30', backgroundColor: colors.background, marginTop: spacing.sm }]}
-                    value={editCost?.description || ''}
+                  <FormTextInput
+                    value={form.cost?.description || ''}
                     onChangeText={(text) => {
-                      setEditCost({
-                        currency: editCost?.currency || 'USD',
-                        amount: editCost?.amount || 0,
+                      form.setCost({
+                        currency: form.cost?.currency || 'USD',
+                        amount: form.cost?.amount || 0,
                         description: text || undefined,
                       });
                     }}
                     placeholder="Description (optional)"
-                    placeholderTextColor={colors.icon}
+                    style={{ marginTop: spacing.sm }}
                   />
                 </View>
               </View>
@@ -1035,6 +1124,7 @@ export default function SpotDetailScreen() {
           <View style={{ height: spacing['2xl'] }} />
         </View>
       </ScrollView>
+      )}
 
       {/* Edit Mode Actions */}
       {isEditMode && (
@@ -1083,15 +1173,18 @@ export default function SpotDetailScreen() {
                 Report
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={handlePlaceNoLongerExists}
-              activeOpacity={0.7}>
-              <Icon name="delete" size={20} color={colors.text} />
-              <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
-                This place no longer exists
-              </Text>
-            </TouchableOpacity>
+            {/* Visible para el creador del spot o administrador */}
+            {spot && user && canDeleteSpot(spot, user) && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={handlePlaceNoLongerExists}
+                activeOpacity={0.7}>
+                <Icon name="delete" size={20} color={colors.text} />
+                <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
+                  This place no longer exists
+                </Text>
+              </TouchableOpacity>
+            )}
           </GlassView>
         </Pressable>
       </Modal>
@@ -1110,12 +1203,10 @@ export default function SpotDetailScreen() {
             shadowLevel="medium"
             enableGlow={true}>
             <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.sm }]}>
-              Delete place
+              Delete this spot?
             </Text>
             <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
-              Are you sure you want to delete "{spot?.name || 'this place'}"?
-              {'\n\n'}
-              This action cannot be undone. The place will be permanently deleted.
+              This action cannot be undone. The spot will be permanently deleted.
             </Text>
             <View style={styles.deleteConfirmButtons}>
               <TouchableOpacity
@@ -1125,7 +1216,7 @@ export default function SpotDetailScreen() {
                 <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.deleteConfirmButton, styles.deleteConfirmButtonDelete, { backgroundColor: colors.error }]}
+                style={[styles.deleteConfirmButton, styles.deleteConfirmButtonDelete, { backgroundColor: '#FF6B6B' }]}
                 onPress={handleConfirmDelete}
                 activeOpacity={0.7}>
                 <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Delete</Text>
@@ -1135,69 +1226,29 @@ export default function SpotDetailScreen() {
         </Pressable>
       </Modal>
 
-      {/* Icon Selector Modal */}
-      <Modal
+      {/* Icon Selector Modal - Using canonical component */}
+      <FormIconSelector
+        selectedIcon={
+          showIconSelector?.field === '1' ? getHowToVisitBestTimeIcon() :
+          showIconSelector?.field === '2' ? getHowToVisitPhotographyIcon() :
+          showIconSelector?.field === 'restrictions' ? editPlanInfoIconRestrictions :
+          showIconSelector?.field === 'accessibility' ? editPlanInfoIconAccessibility :
+          'sun'
+        }
+        onSelectIcon={(iconName) => {
+          if (showIconSelector?.field === '1') {
+            setHowToVisitBestTimeIcon(iconName);
+          } else if (showIconSelector?.field === '2') {
+            setHowToVisitPhotographyIcon(iconName);
+          } else if (showIconSelector?.field === 'restrictions') {
+            setEditPlanInfoIconRestrictions(iconName);
+          } else if (showIconSelector?.field === 'accessibility') {
+            setEditPlanInfoIconAccessibility(iconName);
+          }
+        }}
         visible={showIconSelector !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowIconSelector(null)}>
-        <Pressable style={styles.menuOverlay} onPress={() => setShowIconSelector(null)}>
-          <GlassView
-            style={styles.iconSelectorContainer}
-            shadowLevel="medium"
-            enableGlow={true}>
-            <Text style={[textStyles.heading3, { color: colors.text, marginBottom: spacing.md }]}>
-              Select Icon
-            </Text>
-            <ScrollView style={styles.iconSelectorGrid} showsVerticalScrollIndicator={false}>
-              <View style={styles.iconSelectorGridContent}>
-                {(['sun', 'camera', 'clock', 'map', 'star', 'bookmark', 'like', 'audio', 'play', 'navigation', 'home', 'explore', 'gems', 'search', 'mic', 'money', 'paw', 'accessibility', 'edit', 'share', 'add', 'minus', 'plus'] as IconName[]).map((iconName) => (
-                  <TouchableOpacity
-                    key={iconName}
-                    style={[
-                      styles.iconSelectorItem,
-                      {
-                        backgroundColor: (() => {
-                          if (showIconSelector?.field === '1') return editHowToVisitIcon1 === iconName;
-                          if (showIconSelector?.field === '2') return editHowToVisitIcon2 === iconName;
-                          if (showIconSelector?.field === 'restrictions') return editPlanInfoIconRestrictions === iconName;
-                          if (showIconSelector?.field === 'accessibility') return editPlanInfoIconAccessibility === iconName;
-                          return false;
-                        })()
-                          ? colors.tint + '20'
-                          : colors.icon + '10',
-                        borderColor: (() => {
-                          if (showIconSelector?.field === '1') return editHowToVisitIcon1 === iconName;
-                          if (showIconSelector?.field === '2') return editHowToVisitIcon2 === iconName;
-                          if (showIconSelector?.field === 'restrictions') return editPlanInfoIconRestrictions === iconName;
-                          if (showIconSelector?.field === 'accessibility') return editPlanInfoIconAccessibility === iconName;
-                          return false;
-                        })()
-                          ? colors.tint
-                          : 'transparent',
-                      },
-                    ]}
-                    onPress={() => {
-                      if (showIconSelector?.field === '1') {
-                        setEditHowToVisitIcon1(iconName);
-                      } else if (showIconSelector?.field === '2') {
-                        setEditHowToVisitIcon2(iconName);
-                      } else if (showIconSelector?.field === 'restrictions') {
-                        setEditPlanInfoIconRestrictions(iconName);
-                      } else if (showIconSelector?.field === 'accessibility') {
-                        setEditPlanInfoIconAccessibility(iconName);
-                      }
-                      setShowIconSelector(null);
-                    }}
-                    activeOpacity={0.7}>
-                    <Icon name={iconName} size={32} color={colors.tint} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </GlassView>
-        </Pressable>
-      </Modal>
+        onClose={() => setShowIconSelector(null)}
+      />
       
       {/* Toast notification */}
       <Toast
@@ -1206,6 +1257,57 @@ export default function SpotDetailScreen() {
         visible={showToast}
         onHide={() => setShowToast(false)}
       />
+
+      {/* AI Content Preview */}
+      {form.previewContent && (
+        <AIContentPreview
+          content={form.previewContent}
+          visible={showAIPreview}
+          onAccept={handleAcceptAIContent}
+          onReject={handleRejectAIContent}
+          onEdit={() => {
+            handleAcceptAIContent();
+          }}
+          title="Generated Content"
+        />
+      )}
+
+      {/* Cancel Confirmation Modal */}
+      <Modal
+        visible={showCancelConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCancelConfirm(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setShowCancelConfirm(false)}>
+          <GlassView
+            style={styles.deleteConfirmModal}
+            intensity="medium"
+            opacity="strong"
+            shadowLevel="medium"
+            enableGlow={true}>
+            <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.sm }]}>
+              Discard changes?
+            </Text>
+            <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
+              You have unsaved changes. Are you sure you want to discard them?
+            </Text>
+            <View style={styles.deleteConfirmButtons}>
+              <TouchableOpacity
+                style={[styles.deleteConfirmButton, styles.deleteConfirmButtonCancel, { borderColor: colors.icon + '30' }]}
+                onPress={() => setShowCancelConfirm(false)}
+                activeOpacity={0.7}>
+                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Keep editing</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.deleteConfirmButton, { backgroundColor: colors.tint }]}
+                onPress={handleConfirmCancel}
+                activeOpacity={0.7}>
+                <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Discard</Text>
+              </TouchableOpacity>
+            </View>
+          </GlassView>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1213,6 +1315,17 @@ export default function SpotDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  containerFullscreen: {
+    backgroundColor: 'transparent',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    zIndex: 999,
   },
   errorContainer: {
     flex: 1,
@@ -1273,6 +1386,16 @@ const styles = StyleSheet.create({
     borderRadius: borderTokens.card,
     marginTop: spacing.md,
   },
+  getDirectionsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48, // Múltiplo de 8px, convención
+    paddingVertical: spacing.md,
+    borderRadius: borderTokens.card,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+  },
   section: {
     marginTop: spacing.xl,
   },
@@ -1327,6 +1450,35 @@ const styles = StyleSheet.create({
     borderRadius: borderTokens.card,
     overflow: 'hidden',
     marginTop: spacing.sm,
+    position: 'relative', // Para que los controles con position: absolute se posicionen relativos al contenedor
+  },
+  currentLocationButton: {
+    position: 'absolute',
+    // MapControls tiene bottom: spacing.xl (40px), con 3 botones (48px cada uno) + 2 divisores (2px + 4px margin cada uno = 10px cada uno)
+    // Altura total del MapControls: 48 + 10 + 48 + 10 + 48 = 164px
+    // El botón Current Location debe estar arriba del MapControls: spacing.xl + 164 + spacing.sm
+    bottom: spacing.xl + 164 + spacing.sm, // Arriba del MapControls (164px es altura total: 3 botones + 2 divisores)
+    left: spacing.md,
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    zIndex: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  buttonContent: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   menuOverlay: {
     flex: 1,
@@ -1352,7 +1504,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: spacing.sm,
     fontFamily: 'Inter-Regular',
-    fontSize: fontSize.md,
+    fontSize: fontSize.base,
   },
   editTitleInput: {
     marginTop: spacing.md,
@@ -1361,24 +1513,6 @@ const styles = StyleSheet.create({
   editTextArea: {
     minHeight: 100,
     textAlignVertical: 'top',
-  },
-  editImageButton: {
-    position: 'absolute',
-    bottom: spacing.sm,
-    right: spacing.sm,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imagePlaceholder: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imagePlaceholderButton: {
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   typeSelector: {
     gap: spacing.xs,

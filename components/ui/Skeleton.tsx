@@ -18,3 +18,4 @@ export { SkeletonCard, type SkeletonCardProps } from './SkeletonCard';
 export { SkeletonImage, type SkeletonImageProps } from './SkeletonImage';
 export { SkeletonList, type SkeletonListProps } from './SkeletonList';
 export { SkeletonText, type SkeletonTextProps } from './SkeletonText';
+

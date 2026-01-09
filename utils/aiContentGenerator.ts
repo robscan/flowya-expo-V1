@@ -91,6 +91,8 @@ Generate ONLY the following fields (as JSON, no markdown):
 }\n`;
   }
 
+  // Narration se genera si está en fieldsToGenerate (NO es visible para el usuario)
+  // Se usa automáticamente durante Flow
   if (fieldsToGenerate.includes('narration')) {
     prompt += `- narration: {
   anticipation: "Short emotional text for when approaching (1 sentence)",
@@ -176,9 +178,16 @@ async function callOpenAI(prompt: string): Promise<string> {
  */
 function detectMissingFields(spot: Spot, options?: GenerateContentOptions): string[] {
   if (options?.forceRegenerate) {
+    // Si forceRegenerate está activo, generar todos los campos especificados o todos por defecto
     return options.fields || ['whyItMatters', 'culturalContext', 'howToVisit', 'narration'];
   }
 
+  // Si se especificaron campos, solo generar esos (incluso si ya tienen contenido)
+  if (options?.fields) {
+    return options.fields;
+  }
+
+  // Si no se especificaron campos, generar todos los faltantes + narration (siempre para Flow)
   const missing: string[] = [];
 
   if (!spot.whyItMatters && !spot.description) {
@@ -193,13 +202,10 @@ function detectMissingFields(spot: Spot, options?: GenerateContentOptions): stri
     missing.push('howToVisit');
   }
 
+  // Narration siempre se incluye en generación completa para uso en Flow
+  // (incluso si ya existe, puede regenerarse con mejor contexto)
   if (!spot.narration) {
     missing.push('narration');
-  }
-
-  // Si se especificaron campos, solo generar esos
-  if (options?.fields) {
-    return missing.filter(field => options.fields!.includes(field));
   }
 
   return missing;
@@ -239,9 +245,16 @@ export async function generateSpotContent(
   try {
     generatedJson = await callOpenAI(prompt);
   } catch (error: any) {
-    // Fallback: retornar contenido existente o genérico
+    // Fallback: retornar contenido existente si hay error
     console.error('Error generating AI content:', error);
-    throw error;
+    // Retornar contenido existente en lugar de lanzar error
+    return {
+      whyItMatters: spot.whyItMatters || spot.description,
+      culturalContext: spot.culturalContext,
+      howToVisit: spot.howToVisit,
+      narration: spot.narration,
+      aiGenerated: spot.aiGenerated,
+    };
   }
 
   // Parsear respuesta JSON

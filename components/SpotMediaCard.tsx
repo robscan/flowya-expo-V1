@@ -12,17 +12,20 @@
  * - Container controls width, not the card
  */
 
-import React, { memo, useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo } from 'react';
+import { GestureResponderEvent, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import { GlassView } from '@/components/ui/GlassView';
-import { Icon } from '@/components/ui/Icon';
+import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { InfoMeta } from '@/components/ui/InfoMeta';
 import { OptimizedImage } from '@/components/ui/OptimizedImage';
 import { borderRadius } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
+import { useSaved } from '@/contexts/SavedContext';
+import { useSpot } from '@/contexts/SpotContext';
 import { Spot, SpotType } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { hasValidImage } from '@/utils/imageHelpers';
@@ -61,8 +64,17 @@ export const SpotMediaCard = memo(function SpotMediaCard({
 }: SpotMediaCardProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const router = useRouter();
+  const { markSpotAsSeen } = useSpot();
+  const { toggleSaveSpot, isSpotSaved } = useSaved();
   const hasImage = hasValidImage(spot.photos);
   const spotTypeLabel = getSpotTypeLabel(spot.type);
+  const isSaved = isSpotSaved(spot.id);
+
+  // Marcar Spot como 'seen' al montar (automáticamente)
+  useEffect(() => {
+    markSpotAsSeen(spot.id);
+  }, [spot.id, markSpotAsSeen]);
 
   // Memoizar source para evitar recreaciones innecesarias y prevenir loops
   const imageSource = useMemo(() => {
@@ -71,6 +83,60 @@ export const SpotMediaCard = memo(function SpotMediaCard({
     }
     return { uri: spot.photos[0] };
   }, [hasImage, spot.photos?.[0]]); // Solo cambiar cuando cambia la URI de la primera foto
+
+  // Handler para guardar spot
+  const handleSavePress = useCallback((e: GestureResponderEvent) => {
+    e.stopPropagation(); // Prevenir que el card se abra
+    toggleSaveSpot(spot.id);
+  }, [spot.id, toggleSaveSpot]);
+
+  // Handler para navegar a Map
+  const handleViewOnMap = useCallback((e: GestureResponderEvent) => {
+    e.stopPropagation(); // Prevenir que el card se abra
+    router.push(`/(tabs)/map?spotId=${spot.id}`);
+  }, [spot.id, router]);
+
+  // Render distancia con "Map" inline
+  const renderDistanceWithViewOnMap = useCallback(() => {
+    if (distance === undefined || distance === null) {
+      // Si no hay distancia, mostrar InfoMeta normal para size="large"
+      if (size === 'large') {
+        return (
+          <InfoMeta
+            chip={{ label: spotTypeLabel }}
+            distance={distance}
+            rating={rating}
+            size="large"
+          />
+        );
+      }
+      return null;
+    }
+    
+    return (
+      <View style={styles.distanceRow}>
+        <InfoMeta
+          chip={size === 'large' ? { label: spotTypeLabel } : undefined}
+          distance={distance}
+          rating={size === 'large' ? rating : undefined}
+          size={size}
+        />
+        <View style={styles.separatorContainer}>
+          <Text style={[styles.separator, { color: colors.icon }]}>·</Text>
+        </View>
+        <TouchableOpacity
+          onPress={handleViewOnMap}
+          style={styles.viewOnMapButton}
+          activeOpacity={0.7}>
+          <View style={styles.mapTextContainer}>
+            <Text style={[styles.mapText, { color: colors.tint }]}>
+              Map
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [distance, size, spotTypeLabel, rating, handleViewOnMap, colors.tint, colors.icon]);
 
   // Render variant="small" (compacto para grid y sliders)
   if (size === 'small') {
@@ -87,6 +153,28 @@ export const SpotMediaCard = memo(function SpotMediaCard({
             fallbackIcon="upload"
             resizeMode="cover"
           />
+          {/* Icono de guardar sobre la imagen */}
+          <View style={styles.bookmarkOverlay}>
+            <View
+              style={[
+                styles.bookmarkButton,
+                {
+                  backgroundColor:
+                    colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)',
+                },
+              ]}>
+              <TouchableOpacity
+                onPress={handleSavePress}
+                style={iconTouchableContainer.base}
+                activeOpacity={0.7}>
+                <Icon
+                  name="bookmark"
+                  size={24}
+                  color={isSaved ? colors.tint : colors.text}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         {/* Título debajo de imagen */}
@@ -97,8 +185,8 @@ export const SpotMediaCard = memo(function SpotMediaCard({
           {spot.name || 'Unnamed spot'}
         </Text>
 
-        {/* InfoMeta simplificado (solo distancia) */}
-        <InfoMeta distance={distance} size="small" />
+        {/* Distancia + "Map" inline */}
+        {renderDistanceWithViewOnMap()}
       </Pressable>
     );
   }
@@ -124,6 +212,28 @@ export const SpotMediaCard = memo(function SpotMediaCard({
             fallbackIcon="upload"
             resizeMode="cover"
           />
+          {/* Icono de guardar sobre la imagen */}
+          <View style={styles.bookmarkOverlay}>
+            <View
+              style={[
+                styles.bookmarkButton,
+                {
+                  backgroundColor:
+                    colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)',
+                },
+              ]}>
+              <TouchableOpacity
+                onPress={handleSavePress}
+                style={iconTouchableContainer.base}
+                activeOpacity={0.7}>
+                <Icon
+                  name="bookmark"
+                  size={24}
+                  color={isSaved ? colors.tint : colors.text}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         {/* Contenido principal */}
@@ -137,13 +247,8 @@ export const SpotMediaCard = memo(function SpotMediaCard({
                 {spot.description}
               </Text>
             )}
-            {/* InfoMeta debajo del título (chip, distancia, rating) */}
-            <InfoMeta
-              chip={{ label: spotTypeLabel }}
-              distance={distance}
-              rating={rating}
-              size="large"
-            />
+            {/* Distancia + "Map" inline */}
+            {renderDistanceWithViewOnMap()}
           </View>
         </View>
       </GlassView>
@@ -205,5 +310,47 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     lineHeight: lineHeight.sm,
     fontWeight: '400',
+  },
+  // Bookmark overlay
+  bookmarkOverlay: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    zIndex: 10,
+  },
+  bookmarkButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  // Distance row con "Map"
+  distanceRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  separatorContainer: {
+    paddingTop: 10, // Ajuste óptico para alinear baseline con distancia
+  },
+  separator: {
+    fontSize: fontSize.sm,
+    lineHeight: lineHeight.sm,
+    marginHorizontal: spacing.xs / 2,
+  },
+  viewOnMapButton: {
+    // Sin marginLeft adicional, el separador ya proporciona el espacio
+  },
+  mapTextContainer: {
+    paddingTop: 10, // Ajuste óptico para alinear baseline con distancia
+  },
+  mapText: {
+    fontSize: fontSize.sm,
+    lineHeight: lineHeight.sm,
+    fontWeight: '400',
+    fontFamily: fontFamily,
   },
 });

@@ -170,7 +170,6 @@ interface FlowSpotCardProps {
 interface InfoMetaProps {
   chip?: { label: string };
   distance?: number; // En metros
-  duration?: number; // En minutos
   rating?: { value: number; count?: number };
   size?: 'large' | 'small';
 }
@@ -179,7 +178,7 @@ interface InfoMetaProps {
 **Responsabilidad**: Renderizar información secundaria debajo de títulos
 
 **Variantes**:
-- `large`: Muestra chip (si existe), distancia, duración, rating (solo si se pasa)
+- `large`: Muestra chip (si existe), distancia, rating (solo si se pasa)
 - `small`: Solo muestra distancia
 
 **Reglas**:

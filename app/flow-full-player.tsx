@@ -7,12 +7,12 @@
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import {
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 import { FlowPlayerControls } from '@/components/FlowPlayerControls';
@@ -24,6 +24,7 @@ import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
 import { useNarration } from '@/contexts/NarrationContext';
+import { useOverlay } from '@/contexts/OverlayContext';
 import { usePath } from '@/contexts/PathContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
@@ -39,6 +40,12 @@ export default function FlowFullPlayerScreen() {
   const { spots, getSpotById } = useSpot();
   const { isSpotLikedFromPlayer, toggleLikeSpotFromPlayer, toggleNotMyVibeSpot, notMyVibeSpots } = useSaved();
   const narration = useNarration();
+  const { isTabBarVisible, tabBarHeight } = useOverlay();
+  
+  // ARQUITECTÓNICO: Calcular paddingBottom dinámicamente basado en visibilidad del tab bar
+  // FlowMiniBar height (~56px) + tab bar height (solo si está visible) + spacing
+  const flowMiniBarHeight = 56;
+  const dynamicPaddingBottom = flowMiniBarHeight + (isTabBarVisible ? tabBarHeight : 0) + spacing.md;
 
   const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
   const flowSpots = flow ? getFlowSpots(flow, spots) : [];
@@ -80,7 +87,10 @@ export default function FlowFullPlayerScreen() {
       <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: dynamicPaddingBottom }, // ARQUITECTÓNICO: Padding dinámico basado en visibilidad del tab bar
+        ]}
         showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
@@ -190,7 +200,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: spacing.md,
-    paddingBottom: 160, // FlowMiniBar height (~56px) + tab bar height (88px max) + spacing
+    // ARQUITECTÓNICO: paddingBottom se calcula dinámicamente basado en visibilidad del tab bar
+    // Ver dynamicPaddingBottom en el componente
   },
   header: {
     marginBottom: spacing.md,

@@ -63,6 +63,8 @@ export type AIGeneratedMetadata = {
   source?: 'ai' | 'manual' | 'hybrid';
 };
 
+import { LocationRegion } from '@/types/locationRegion';
+
 export interface Spot {
   id: string;
   name?: string; // Opcional
@@ -85,6 +87,21 @@ export interface Spot {
   narration?: SpotNarration; // Narrativas para audio (NO visibles en UI)
   aiGenerated?: AIGeneratedMetadata; // Metadatos de generación AI
   createdBy?: string; // ID del usuario que creó el spot (opcional para backward compatibility)
+  /**
+   * Región canónica normalizada derivada de Mapbox
+   * CANONICAL: Estructura única de región en todo el dominio
+   * 
+   * Este campo debe derivarse exclusivamente de Mapbox Geocoding API
+   * usando resolveRegion() desde core/region/RegionResolver.ts.
+   * 
+   * ⚠️ NUNCA usar texto libre para región.
+   * ⚠️ NUNCA comparar por label, siempre usar regionId.
+   * ⚠️ Este campo es OBLIGATORIO para spots nuevos y se migra automáticamente para legacy.
+   * 
+   * @see types/locationRegion.ts para la estructura completa
+   * @see core/region/RegionResolver.ts para la función canónica de resolución
+   */
+  locationRegion?: LocationRegion;
   createdAt: Date;
   updatedAt: Date;
 }

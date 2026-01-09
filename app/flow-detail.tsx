@@ -6,9 +6,8 @@
  * Muestra información detallada de un Flow (Path) con opción de iniciar Flow
  */
 
-import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import {
     Alert,
     ScrollView,
@@ -35,9 +34,11 @@ import { useFlow } from '@/contexts/FlowContext';
 import { usePath } from '@/contexts/PathContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { calculateEstimatedDuration, getFlowSpots } from '@/data/flows';
+import { getFlowSpots } from '@/data/flows';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { calculateDistanceToSpot, calculatePathDistance } from '@/utils/distance';
+import { useBaseLocation } from '@/hooks/useBaseLocation';
+import { getSpotDistance } from '@/hooks/useSpotDistance';
+import { calculatePathDistance } from '@/utils/distance';
 
 export default function FlowDetailScreen() {
   const router = useRouter();
@@ -48,29 +49,12 @@ export default function FlowDetailScreen() {
   const { spots } = useSpot();
   const { startFlow } = useFlow();
   const { isFlowSaved, toggleSaveFlow } = useSaved();
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  
+  // Ubicación base estable
+  const { baseLocation } = useBaseLocation();
 
   // Get flow from context
   const flow = id ? getFlowById(id) : null;
-
-  // Get user location
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          return;
-        }
-        const location = await Location.getCurrentPositionAsync({});
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-      } catch (error) {
-        console.error('Error getting location:', error);
-      }
-    })();
-  }, []);
 
   // If no flow, redirect back
   useEffect(() => {
@@ -91,7 +75,6 @@ export default function FlowDetailScreen() {
   }
 
   const isSaved = isFlowSaved(flow.id);
-  const estimatedDuration = calculateEstimatedDuration(flowSpots.length, flow.movementMode);
   const totalDistance = calculatePathDistance(flow, spots);
 
   const handleBack = () => {
@@ -104,7 +87,6 @@ export default function FlowDetailScreen() {
 
   const handleLike = () => {
     // TODO: Implement like functionality for flows if needed
-    console.log('Like flow:', flow.id);
   };
 
   const handleSave = () => {
@@ -128,7 +110,7 @@ export default function FlowDetailScreen() {
 
   const handleStartFlow = () => {
     // Validar ubicación antes de iniciar flow
-    if (!userLocation) {
+    if (!baseLocation) {
       Alert.alert(
         'Location needed',
         'Enable location for guided navigation. Flow works without it.',
@@ -156,9 +138,9 @@ export default function FlowDetailScreen() {
     const calculateMapRegion = () => {
       const allPoints: { latitude: number; longitude: number }[] = [];
       
-      // Incluir ubicación del usuario si está disponible
-      if (userLocation) {
-        allPoints.push(userLocation);
+      // Incluir ubicación base si está disponible
+      if (baseLocation) {
+        allPoints.push(baseLocation);
       }
       
       // Incluir todos los spots del flow
@@ -192,7 +174,7 @@ export default function FlowDetailScreen() {
     };
 
     // Key para forzar reencuadre cuando cambien los spots o la ubicación
-    const mapKey = `map-${flowSpots.length}-${userLocation ? `${userLocation.latitude.toFixed(4)}-${userLocation.longitude.toFixed(4)}` : 'no-location'}`;
+    const mapKey = `map-${flowSpots.length}-${baseLocation ? `${baseLocation.latitude.toFixed(4)}-${baseLocation.longitude.toFixed(4)}` : 'no-location'}`;
 
     return (
       <View style={styles.mapContainer}>
@@ -204,8 +186,8 @@ export default function FlowDetailScreen() {
           }}
           showRoute={false}
           flowSpots={flowSpots}
-          showUserLocation={!!userLocation}
-          userLocation={userLocation}
+          showUserLocation={!!baseLocation}
+          userLocation={baseLocation}
           initialRegion={calculateMapRegion()}
           currentSpotIndex={-1}
           flowSpotsOrder={flowSpots}
@@ -226,9 +208,7 @@ export default function FlowDetailScreen() {
           </Text>
         </View>
         {flowSpots.map((spot, index) => {
-          const distance = userLocation
-            ? calculateDistanceToSpot(userLocation, spot.location) ?? undefined
-            : undefined;
+          const distance = getSpotDistance(spot, baseLocation);
           return (
             <SpotMediaCard
               key={spot.id}
@@ -320,7 +300,6 @@ export default function FlowDetailScreen() {
           {/* Métricas con InfoMeta */}
           <View style={styles.metricsContainer}>
             <InfoMeta
-              duration={estimatedDuration}
               distance={totalDistance}
               size="large"
             />
@@ -336,18 +315,18 @@ export default function FlowDetailScreen() {
               style={[
                 styles.startButton, 
                 { 
-                  backgroundColor: userLocation ? colors.tint : colors.icon + '40',
-                  opacity: userLocation ? 1 : 0.6,
+                  backgroundColor: baseLocation ? colors.tint : colors.icon + '40',
+                  opacity: baseLocation ? 1 : 0.6,
                 }
               ]}
               activeOpacity={0.8}
-              disabled={!userLocation}>
+              disabled={!baseLocation}>
               <Icon name="play" size={24} color="#fff" />
               <Text style={[textStyles.bodyMedium, { color: '#fff', marginLeft: spacing.xs }]}>
                 Start Flow
               </Text>
             </TouchableOpacity>
-            {!userLocation && (
+            {!baseLocation && (
               <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs, textAlign: 'center' }]}>
                 Enable location for better experience
               </Text>

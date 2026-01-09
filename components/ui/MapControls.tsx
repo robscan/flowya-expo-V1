@@ -3,21 +3,20 @@
  * Componente canónico para controles del mapa
  * 
  * Responsabilidad:
- * - Renderizar controles unificados del mapa (zoom, fullscreen, ubicación)
+ * - Renderizar controles unificados del mapa (zoom, fullscreen)
  * - Estilo consistente con Design System (glass/blur)
  * - NO maneja lógica de mapa (solo renderiza controles)
  * 
  * Controles:
  * - Zoom: Botones + y - (vertical, inferior derecha)
  * - Fullscreen: Toggle opcional (inferior derecha, junto a zoom)
- * - Mi ubicación: Botón opcional (inferior izquierda, separado)
  */
 
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
-import { Icon, IconName } from '@/components/ui/Icon';
+import { Icon } from '@/components/ui/Icon';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { borderRadius } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
@@ -27,21 +26,17 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 interface MapControlsProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
-  onCenterLocation?: () => void;
   onFullscreenToggle?: () => void;
   isFullscreen?: boolean;
   showFullscreen?: boolean;
-  showLocation?: boolean;
 }
 
 export function MapControls({
   onZoomIn,
   onZoomOut,
-  onCenterLocation,
   onFullscreenToggle,
   isFullscreen = false,
   showFullscreen = false,
-  showLocation = true,
 }: MapControlsProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -118,27 +113,6 @@ export function MapControls({
           </>
         )}
       </View>
-
-      {/* Location Button - Inferior izquierda (separado) */}
-      {showLocation && onCenterLocation && (
-        <View style={styles.locationButton}>
-          <Tooltip text="Center on your location">
-            <TouchableOpacity
-              style={buttonBaseStyle}
-              onPress={onCenterLocation}
-              activeOpacity={0.7}>
-              <GlassView
-                style={styles.buttonContent}
-                intensity="light"
-                opacity="medium"
-                shadowLevel="subtle"
-                enableGlow={false}>
-                <Icon name="map" size={20} color={colors.tint} />
-              </GlassView>
-            </TouchableOpacity>
-          </Tooltip>
-        </View>
-      )}
     </>
   );
 }
@@ -152,12 +126,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 20,
     gap: 0,
-  },
-  locationButton: {
-    position: 'absolute',
-    bottom: spacing.xl,
-    left: spacing.md,
-    zIndex: 20,
   },
   controlButton: {
     width: 48,

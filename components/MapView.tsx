@@ -58,6 +58,7 @@ export interface FlowyaMapViewRef {
   centerOnSpot: (spotId: string) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  resize: () => void;
 }
 
 // Calcular región inicial basada en ubicación del usuario o spots
@@ -174,6 +175,16 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
       }
       if (mapboxViewWebRef.current) {
         mapboxViewWebRef.current.zoomOut();
+        return;
+      }
+    },
+    resize: () => {
+      if (mapboxViewRef.current) {
+        mapboxViewRef.current.resize?.();
+        return;
+      }
+      if (mapboxViewWebRef.current) {
+        mapboxViewWebRef.current.resize();
         return;
       }
     },

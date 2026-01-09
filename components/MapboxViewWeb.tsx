@@ -1,7 +1,9 @@
 /**
  * Mapbox View Web Component
  * Componente de mapa usando Mapbox GL JS para web
- * Reemplaza Google Maps con Mapbox debido a problemas de facturación
+ * 
+ * POLÍTICA CANÓNICA: FLOWYA usa Mapbox como sistema principal de mapas.
+ * Google Maps solo se usa como app externa para "Get directions" (ver utils/navigationHelpers.ts).
  */
 
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
@@ -40,6 +42,7 @@ export interface MapboxViewWebRef {
   centerOnSpot: (spotId: string) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  resize: () => void;
 }
 
 // Calcular región inicial basada en ubicación del usuario o spots
@@ -233,6 +236,11 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       const newZoom = Math.max(currentZoom - 1, 0); // Min zoom 0
       setCurrentZoom(newZoom);
       mapInstanceRef.current.zoomTo(newZoom, { duration: 200 });
+    },
+    resize: () => {
+      if (!mapInstanceRef.current) return;
+      // Forzar recalculo del tamaño del mapa
+      mapInstanceRef.current.resize();
     },
   }), [userLocation, spots, currentZoom]);
 
@@ -435,15 +443,42 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
             }
           });
 
-          // Long press handler
+          // Click/Long press handler
+          // Desktop: click simple en el mapa (fuera de marcadores) selecciona ubicación
+          // Mobile: long press selecciona ubicación
           let longPressTimer: NodeJS.Timeout | null = null;
+          let clickLocation: { lat: number; lng: number } | null = null;
+          let isClick = false;
+          
+          map.on('click', (e) => {
+            // Si no hay spots o el click es fuera de marcadores, permitir selección directa
+            if (spots.length <= 1 && onLongPress) {
+              // En desktop web, permitir click directo (con un pequeño delay para distinguir de drag)
+              clickLocation = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+              isClick = true;
+              
+              setTimeout(() => {
+                if (isClick && clickLocation && onLongPress) {
+                  onLongPress({
+                    latitude: clickLocation.lat,
+                    longitude: clickLocation.lng,
+                  });
+                }
+                isClick = false;
+                clickLocation = null;
+              }, 100);
+            }
+          });
+
           map.on('mousedown', (e) => {
+            // Long press handler (para mobile o cuando se mantiene presionado)
             longPressTimer = setTimeout(() => {
               if (onLongPress) {
                 onLongPress({
                   latitude: e.lngLat.lat,
                   longitude: e.lngLat.lng,
                 });
+                isClick = false; // Cancelar click si hay long press
               }
             }, 500);
           });
@@ -455,11 +490,12 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
             }
           });
 
-          map.on('drag', () => {
+          map.on('dragstart', () => {
             if (longPressTimer) {
               clearTimeout(longPressTimer);
               longPressTimer = null;
             }
+            isClick = false; // Cancelar click si hay drag
           });
         };
 

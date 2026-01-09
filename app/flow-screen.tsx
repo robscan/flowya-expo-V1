@@ -21,14 +21,14 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 import { FlowPlayerControls } from '@/components/FlowPlayerControls';
@@ -49,13 +49,14 @@ import { usePath } from '@/contexts/PathContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Flow, getFlowSpots } from '@/data/flows';
+import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { calculateDistanceToSpot } from '@/utils/distance';
+import { useBaseLocation } from '@/hooks/useBaseLocation';
+import { getSpotDistance, useSpotDistance } from '@/hooks/useSpotDistance';
 import { getFlowState, hasFlowChanges } from '@/utils/flowChanges';
 import { geofencingSimulator } from '@/utils/geofencingSimulator';
 import { mapMovementModeToNavigationMode, openNavigationApp } from '@/utils/navigationHelpers';
 import { updateSuggestionsForCurrentSpot } from '@/utils/spotSuggestion';
-import * as Location from 'expo-location';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -96,13 +97,9 @@ export default function FlowScreenPage() {
   const [showSaveFlowModal, setShowSaveFlowModal] = useState(false);
   const narration = useNarration();
   const narrationTriggers = useNarrationTriggers();
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-
-  // Define Spot type locally to fix error if not globally available
-  type Spot = {
-    id: string;
-    [key: string]: any;
-  };
+  
+  // Ubicación base estable
+  const { baseLocation } = useBaseLocation();
 
   const [suggestedSpots, setSuggestedSpots] = useState<Spot[]>([]);
   const [toastVisible, setToastVisible] = useState(false);
@@ -139,6 +136,17 @@ export default function FlowScreenPage() {
   }, [flow, spots]);
   const currentSpot = currentSpotId ? getSpotById(currentSpotId) : null;
   const nextSpotData = nextSpotId ? getSpotById(nextSpotId) : null;
+  
+  // Calcular distancias usando hooks canónicos (siempre, no condicionalmente)
+  const currentSpotDistance = useSpotDistance(currentSpotId || null, baseLocation);
+  
+  // Preparar distancias de suggestedSpots (memoizado usando selector puro)
+  const suggestedSpotsWithDistance = useMemo(() => {
+    return suggestedSpots.map(spot => ({
+      spot,
+      distance: spot.location ? getSpotDistance(spot, baseLocation) : undefined,
+    }));
+  }, [suggestedSpots, baseLocation]);
 
   // SELF GUARD: Immediately redirect if no active flow
   // This prevents zombie FlowScreen from rendering
@@ -168,24 +176,6 @@ export default function FlowScreenPage() {
     return isFlowStartedFromSpot(flow);
   }, [flow]);
 
-  // Obtener ubicación del usuario
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          return;
-        }
-        const location = await Location.getCurrentPositionAsync({});
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-      } catch (error) {
-        console.error('Error getting location:', error);
-      }
-    })();
-  }, []);
 
   // Reproducir mensaje inicial solo una vez cuando se inicia el flow
   useEffect(() => {
@@ -239,7 +229,7 @@ export default function FlowScreenPage() {
     try {
       const suggestions = updateSuggestionsForCurrentSpot(
         currentSpot,
-        userLocation,
+        baseLocation,
         spots,
         context,
         flow,
@@ -250,7 +240,7 @@ export default function FlowScreenPage() {
     } catch (error) {
       setSuggestedSpots([]);
     }
-  }, [flow, currentSpot, userLocation, spots, savedSpots, likedSpots, savedFlows, flows]);
+  }, [flow, currentSpot, baseLocation, spots, savedSpots, likedSpots, savedFlows, flows]);
 
   // Integrar geofencing con narration triggers - solo cuando usuario está cerca de spot
   useEffect(() => {
@@ -280,8 +270,8 @@ export default function FlowScreenPage() {
       });
 
       // Iniciar monitoreo con ubicación del usuario si está disponible
-      if (userLocation) {
-        geofencingSimulator.startMonitoring(userLocation, flowSpots);
+      if (baseLocation) {
+        geofencingSimulator.startMonitoring(baseLocation, flowSpots);
       } else if (flowSpots.length > 0) {
         // Fallback: usar primer spot del flow si no hay ubicación del usuario
         const initialLocation = {
@@ -302,7 +292,7 @@ export default function FlowScreenPage() {
     } catch (error) {
       console.error('Error in geofencing useEffect:', error);
     }
-  }, [flow, flowSpots, userLocation, narrationTriggers]);
+  }, [flow, flowSpots, baseLocation, narrationTriggers]);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info', icon?: string, undoAction?: () => void) => {
     setToastMessage(message);
@@ -320,7 +310,7 @@ export default function FlowScreenPage() {
   // Handler para abrir navegación (reutilizable en List y Map views)
   // Calcula ruta desde ubicación del usuario al primer spot disponible (actual o primero del flow)
   const handleOpenNavigation = useCallback(async () => {
-    if (!userLocation) {
+    if (!baseLocation) {
       Alert.alert(
         'Location needed',
         'Enable location to get directions. Go to Settings and allow location access.'
@@ -347,7 +337,7 @@ export default function FlowScreenPage() {
     try {
       const navigationMode = mapMovementModeToNavigationMode(flow.movementMode);
       const success = await openNavigationApp(
-        userLocation,
+        baseLocation,
         targetSpot.location,
         navigationMode
       );
@@ -365,7 +355,7 @@ export default function FlowScreenPage() {
         'An error occurred while opening navigation. Please try again.'
       );
     }
-  }, [userLocation, currentSpot, flowSpots, flow]);
+  }, [baseLocation, currentSpot, flowSpots, flow]);
 
   // SELF GUARD: Render nothing if no active flow
   // This is a secondary guard in case navigation hasn't completed yet
@@ -534,7 +524,7 @@ export default function FlowScreenPage() {
             <SpotInlineCard
               spot={currentSpot}
               state="active"
-              distance={userLocation ? calculateDistanceToSpot(userLocation, currentSpot.location) ?? undefined : undefined}
+              distance={currentSpotDistance}
               onPress={() => {
                 router.push(`/spot-detail?id=${currentSpot.id}`);
               }}
@@ -564,9 +554,7 @@ export default function FlowScreenPage() {
               const absoluteIndex = currentIndex + 1 + relativeIndex;
               const isFirst = relativeIndex === 0;
               const isLast = relativeIndex === futureSpots.length - 1;
-              const distance = userLocation
-                ? calculateDistanceToSpot(userLocation, spot.location) ?? undefined
-                : undefined;
+              const distance = getSpotDistance(spot, baseLocation);
               
               // Número de orden para el SpotCard (2, 3, 4, etc.)
               const orderNumber = absoluteIndex + 1;
@@ -603,10 +591,9 @@ export default function FlowScreenPage() {
                 <Text style={[styles.suggestedSectionTitle, { color: colors.text }]}>
                   More Suggestions
                 </Text>
-                {suggestedSpots.map((spot) => {
-                  const distance = userLocation
-                    ? calculateDistanceToSpot(userLocation, spot.location) ?? undefined
-                    : undefined;
+                {suggestedSpotsWithDistance.map((item) => {
+                  const spot = item.spot;
+                  const distance = item.distance;
                   return (
                     <SpotInlineCard
                       key={`suggested-${spot.id}`}
@@ -642,10 +629,9 @@ export default function FlowScreenPage() {
                 Suggestions
               </Text>
             </View>
-            {suggestedSpots.map((spot) => {
-              const distance = userLocation
-                ? calculateDistanceToSpot(userLocation, spot.location) ?? undefined
-                : undefined;
+            {suggestedSpotsWithDistance.map((item) => {
+              const spot = item.spot;
+              const distance = item.distance;
               return (
                 <SpotInlineCard
                   key={`suggested-${spot.id}`}
@@ -680,16 +666,16 @@ export default function FlowScreenPage() {
     // Calcular ruta punto a punto: desde ubicación del usuario hasta el primer spot disponible
     // Si hay un spot actual, usar ese; si no, usar el primer spot del flow
     const targetSpot = currentSpot || (flowSpots.length > 0 ? flowSpots[0] : null);
-    const routeFrom = userLocation;
+    const routeFrom = baseLocation;
     const routeTo = targetSpot ? targetSpot.location : null;
 
     // Calcular región inicial que incluya tanto spots como ubicación del usuario
     const calculateMapRegion = () => {
       const allPoints: { latitude: number; longitude: number }[] = [];
       
-      // Incluir ubicación del usuario si está disponible
-      if (userLocation) {
-        allPoints.push(userLocation);
+      // Incluir ubicación base si está disponible
+      if (baseLocation) {
+        allPoints.push(baseLocation);
       }
       
       // Incluir todos los spots del flow
@@ -723,7 +709,7 @@ export default function FlowScreenPage() {
     };
 
     // Key para forzar reencuadre cuando cambien los spots o la ubicación
-    const mapKey = `map-${flowSpots.length}-${userLocation ? `${userLocation.latitude.toFixed(4)}-${userLocation.longitude.toFixed(4)}` : 'no-location'}`;
+    const mapKey = `map-${flowSpots.length}-${baseLocation ? `${baseLocation.latitude.toFixed(4)}-${baseLocation.longitude.toFixed(4)}` : 'no-location'}`;
 
     return (
       <View style={styles.mapContainer}>
@@ -736,8 +722,8 @@ export default function FlowScreenPage() {
           }}
           showRoute={true}
           flowSpots={flowSpots}
-          showUserLocation={!!userLocation}
-          userLocation={userLocation}
+          showUserLocation={!!baseLocation}
+          userLocation={baseLocation}
           routeFrom={routeFrom}
           routeTo={routeTo}
           initialRegion={calculateMapRegion()}
@@ -745,7 +731,7 @@ export default function FlowScreenPage() {
           flowSpotsOrder={flowSpots}
         />
         {/* Map Controls Cluster - esquina inferior izquierda */}
-        {userLocation && flowSpots.length > 0 && (
+        {baseLocation && flowSpots.length > 0 && (
           <View style={styles.mapControlsCluster}>
             {/* Get directions - Acción principal */}
             <Tooltip text="Get directions">
@@ -840,7 +826,7 @@ export default function FlowScreenPage() {
             showAffinity={true}
             currentSpotId={currentSpotId ?? undefined}
             currentSpot={currentSpot}
-            userLocation={userLocation}
+            userLocation={baseLocation}
             flowSpots={flowSpots}
             flow={flow}
             nextSpotData={nextSpotData}

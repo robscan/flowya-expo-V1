@@ -2,11 +2,21 @@
  * Navigation Helpers
  * Utilities for opening external navigation apps (Apple Maps, Google Maps, etc.)
  * 
+ * POLÍTICA CANÓNICA: Este archivo SOLO construye URLs externas y abre apps del sistema.
+ * NO hace llamadas internas a APIs de Google Maps.
+ * NO consume Google Maps SDK.
+ * NO requiere API keys.
+ * 
  * Funcionalidades:
  * - Detectar plataforma (iOS, Android, Web)
- * - Construir URLs para apps de navegación externas
- * - Abrir la app correcta según plataforma
- * - Fallback si la app no está instalada
+ * - Construir URLs para apps de navegación externas (Google Maps, Apple Maps)
+ * - Abrir la app correcta según plataforma mediante deep links / URL schemes
+ * - Fallback si la app no está instalada (abre URL web)
+ * 
+ * Uso permitido:
+ * - ÚNICA forma válida de usar Google Maps en FLOWYA: como app externa
+ * - Se activa cuando el usuario toca "Get directions"
+ * - FLOWYA delega la navegación al sistema externo
  */
 
 import { Platform, Linking, Alert } from 'react-native';

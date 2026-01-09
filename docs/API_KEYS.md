@@ -2,46 +2,31 @@
 
 Este documento describe cómo configurar las API keys necesarias para FLOWYA.
 
-## Google Maps API Keys
+## Mapbox Access Token
 
-FLOWYA requiere API keys de Google Maps para funcionar en todas las plataformas (Android, iOS y Web).
+FLOWYA usa **Mapbox** como sistema principal de mapas y ubicación.
 
 ### Requisitos
 
-Necesitas crear tres API keys separadas:
-- `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY` - Para Android
-- `EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY` - Para iOS
-- `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY` - Para Web
+Necesitas un solo Access Token de Mapbox que funciona en todas las plataformas:
+- `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` - Para iOS, Android y Web
 
-### Cómo obtener las API keys
+### Cómo obtener el Access Token
 
-1. Ve a [Google Cloud Console](https://console.cloud.google.com/)
-2. Crea un nuevo proyecto o selecciona uno existente
-3. Habilita las siguientes APIs:
-   - **Maps SDK for Android** (para Android)
-   - **Maps SDK for iOS** (para iOS)
-   - **Maps JavaScript API** (para Web)
-   - **Places API** (opcional, para búsqueda de lugares)
-   - **Geocoding API** (opcional, para geocodificación)
-
-4. Crea credenciales (API keys):
-   - Ve a "APIs & Services" > "Credentials"
-   - Haz clic en "Create Credentials" > "API Key"
-   - Repite este proceso para crear 3 keys separadas (una para cada plataforma)
-
-5. Configura restricciones de las API keys:
-   - **Android**: Restringe por nombre del paquete de Android (ej: `com.flowya.app`)
-   - **iOS**: Restringe por Bundle ID (ej: `com.flowya.app`)
-   - **Web**: Restringe por dominio (ej: `flowya.vercel.app`, `*.vercel.app`)
+1. Ve a [Mapbox Account](https://account.mapbox.com/)
+2. Crea una cuenta o inicia sesión
+3. Navega a **Access Tokens**
+4. Crea un nuevo token o usa el token por defecto
+5. Configura las restricciones del token según tu app:
+   - Restringe por URL (para web)
+   - Restringe por Bundle ID/Package Name (para mobile)
 
 ### Configuración Local (Desarrollo)
 
 Crea un archivo `.env` en la raíz del proyecto:
 
 ```env
-EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY=tu_key_android_aqui
-EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY=tu_key_ios_aqui
-EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY=tu_key_web_aqui
+EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=tu_mapbox_token_aqui
 ```
 
 **Importante:** 
@@ -52,8 +37,8 @@ EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY=tu_key_web_aqui
 
 1. Ve a tu proyecto en [Vercel Dashboard](https://vercel.com/dashboard)
 2. Navega a Settings > Environment Variables
-3. Agrega las siguientes variables:
-   - `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY` - Valor: tu API key de Web
+3. Agrega la siguiente variable:
+   - `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` - Valor: tu Mapbox Access Token
 4. Selecciona los ambientes donde aplicar (Production, Preview, Development)
 5. Haz redeploy del proyecto para que los cambios surtan efecto
 
@@ -67,32 +52,38 @@ Para builds de producción en iOS y Android usando EAS Build:
 
 ### Verificación
 
-El sistema valida automáticamente si las API keys están configuradas:
+El sistema valida automáticamente si el Access Token está configurado:
 
-- En desarrollo: Se muestran advertencias en consola si faltan keys
-- En producción: El componente `MapViewWeb` muestra un mensaje de error amigable si falta la key de Web
+- En desarrollo: Se muestran advertencias en consola si falta el token
+- En producción: El componente `MapboxView` muestra un mensaje de error amigable si falta el token
 
 ### Troubleshooting
 
-**Error: "Google Maps API key not configured"**
+**Error: "Mapbox Access Token not configured"**
 - Verifica que la variable de entorno esté correctamente nombrada (debe empezar con `EXPO_PUBLIC_`)
 - En Vercel, asegúrate de haber hecho redeploy después de agregar la variable
-- Verifica que la key tenga las APIs correctas habilitadas
-- Verifica que las restricciones de la key permitan tu dominio/IP
+- Verifica que el token tenga los permisos correctos en Mapbox
 
-**Los mapas no se cargan en Web**
-- Verifica que `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY` esté configurada en Vercel
-- Verifica que la key tenga "Maps JavaScript API" habilitada
-- Verifica que las restricciones HTTP permitan tu dominio
-
-**Los mapas no se cargan en Mobile**
-- Verifica que las keys estén configuradas en `app.json` o en las variables de entorno de EAS
-- Verifica que las restricciones de la key permitan tu Bundle ID/Package Name
+**Los mapas no se cargan**
+- Verifica que `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` esté configurado
+- Verifica que las restricciones del token permitan tu dominio/Bundle ID
 
 ### Seguridad
 
-- **Nunca** commitees las API keys en el código
-- Usa restricciones de API keys en Google Cloud Console
-- Rota las keys periódicamente
-- Monitorea el uso de las keys en Google Cloud Console
+- **Nunca** commitees el Access Token en el código
+- Usa restricciones de tokens en Mapbox Account
+- Rota los tokens periódicamente
+- Monitorea el uso del token en Mapbox Account
+
+## Get Directions (Navegación Externa)
+
+FLOWYA permite obtener direcciones mediante apps externas (Google Maps, Apple Maps).
+
+**IMPORTANTE:** Esta funcionalidad NO requiere API keys.
+- FLOWYA construye URLs externas y abre la app del sistema
+- NO hace llamadas internas a Google Maps APIs
+- NO consume Google Maps SDK
+- Solo delega la navegación a la app externa instalada en el dispositivo
+
+Para más información sobre la implementación, ver `utils/navigationHelpers.ts`.
 

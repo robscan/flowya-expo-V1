@@ -17,15 +17,18 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 
-// En Expo, las variables de entorno pueden estar en process.env o en Constants.expoConfig.extra
+// ARQUITECTÓNICO: Priorizar Constants.expoConfig.extra para builds estáticos (expo export)
+// En builds estáticos, process.env se evalúa en build time y puede estar undefined
+// app.config.js inyecta las variables en expoConfig.extra, disponibles en runtime
 const getEnvVar = (key: string): string => {
-  // Primero intentar process.env (funciona en desarrollo y web)
-  if (process.env[key]) {
-    return process.env[key] || '';
-  }
-  // Fallback a Constants.expoConfig.extra (para builds nativos)
+  // PRIORIDAD 1: Constants.expoConfig.extra (build time injection desde app.config.js)
+  // Esto funciona en builds estáticos donde process.env puede estar congelado
   if (Constants.expoConfig?.extra?.[key]) {
     return Constants.expoConfig.extra[key] || '';
+  }
+  // PRIORIDAD 2: process.env (runtime, funciona en desarrollo con expo start)
+  if (process.env[key]) {
+    return process.env[key] || '';
   }
   return '';
 };

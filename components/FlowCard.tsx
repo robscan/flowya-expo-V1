@@ -77,7 +77,6 @@ const FlowCardDisplay = memo(function FlowCardDisplay({ flow, spots, onPress, di
             <InfoMeta
               chip={{ label: movementModeLabel }}
               distance={calculatedDistance}
-              duration={flow.estimatedDuration}
               size="large"
             />
           </View>

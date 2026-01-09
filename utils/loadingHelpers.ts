@@ -12,12 +12,13 @@ import { ReactNode } from 'react';
  * Determina si se debe mostrar skeleton basado en estado de carga y datos
  * 
  * @param isLoading - Si los datos están cargando
- * @param hasData - Si hay datos disponibles
+ * @param hasData - Si hay datos disponibles (usado para lógica futura si es necesario)
  * @returns true si se debe mostrar skeleton
  */
 export function shouldShowSkeleton(isLoading: boolean, hasData: boolean): boolean {
-  // Mostrar skeleton si está cargando O si no hay datos y aún está cargando (primera carga)
-  return isLoading || (!hasData && isLoading);
+  // Mostrar skeleton solo si está cargando (primera carga o refresh)
+  // ARQUITECTÓNICO: Simplificado - isLoading ya indica si debe mostrarse skeleton
+  return isLoading;
 }
 
 /**

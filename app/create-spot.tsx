@@ -1,64 +1,39 @@
 /**
  * Create Spot Screen
  * Full screen page for creating new spots
- * Converted from CreateSpotModal to full screen navigation
+ * Refactored to use canonical form components and useSpotForm hook
  */
 
-import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Image,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 
-import { FlowyaMapView } from '@/components/MapView';
+import { AIContentPreview } from '@/components/ui/AIContentPreview';
+import { FormField } from '@/components/ui/FormField';
+import { FormImagePicker } from '@/components/ui/FormImagePicker';
+import { FormLocationSelector } from '@/components/ui/FormLocationSelector';
+import { FormTextArea } from '@/components/ui/FormTextArea';
+import { FormTextInput } from '@/components/ui/FormTextInput';
+import { FormTypeSelector } from '@/components/ui/FormTypeSelector';
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
+import { useAuth } from '@/contexts/AuthContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { Spot, SpotType } from '@/data/spots';
+import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useImageUpload } from '@/hooks/useImageUpload';
+import { useSpotForm } from '@/hooks/useSpotForm';
 import { isAIConfigured } from '@/utils/aiConfig';
-import { generateSpotContent } from '@/utils/aiContentGenerator';
-
-const SPOT_TYPES: SpotType[] = [
-  'beach',
-  'cafe',
-  'viewpoint',
-  'museum',
-  'restaurant',
-  'park',
-  'monument',
-  'market',
-  'other',
-];
-
-function getSpotTypeLabel(type: SpotType): string {
-  const labels: Record<SpotType, string> = {
-    beach: 'Beach',
-    cafe: 'Café',
-    viewpoint: 'Viewpoint',
-    museum: 'Museum',
-    restaurant: 'Restaurant',
-    park: 'Park',
-    monument: 'Monument',
-    market: 'Market',
-    other: 'Other',
-  };
-  return labels[type] || 'Other';
-}
 
 export default function CreateSpotScreen() {
   const router = useRouter();
@@ -66,210 +41,147 @@ export default function CreateSpotScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { createSpot } = useSpot();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [type, setType] = useState<SpotType>('other');
-  const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [addressSearch, setAddressSearch] = useState('');
-  const [isSearchingAddress, setIsSearchingAddress] = useState(false);
+  // Ubicación base estable
+  const { baseLocation } = useBaseLocation();
+  
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
+  const [showAdvancedFields, setShowAdvancedFields] = useState(false);
+  const [showAIPreview, setShowAIPreview] = useState(false);
 
-  // Hook de optimización de imágenes
-  const {
-    uri: photo,
-    isOptimizing: isOptimizingImage,
-    pickFromGallery,
-    reset: resetImage,
-  } = useImageUpload({
-    allowsEditing: true,
-    aspect: [4, 3],
-    quality: 75,
-    onOptimized: (optimizedUri) => {
-      // La imagen ya está optimizada y lista para usar
-      console.log('✅ Imagen optimizada:', optimizedUri);
+  // Hook de gestión de estado del formulario
+  const form = useSpotForm({
+    onSave: (spotData) => {
+      const newSpot = createSpot(spotData);
+      setShowSuccessMessage(true);
+      // Redirigir a SpotDetail después de crear (no al mapa)
+      setTimeout(() => {
+        router.replace(`/spot-detail?id=${newSpot.id}`);
+      }, 1500);
     },
-    onError: (error) => {
-      console.error('Error optimizando imagen:', error);
-      Alert.alert('Error', 'No se pudo optimizar la imagen. Intenta de nuevo.');
+    onCancel: () => {
+      router.back();
     },
   });
 
-  // Initialize location from query params or user location
+  // Initialize location from query params or base location
   useEffect(() => {
-    (async () => {
-      // Get user location first
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({});
-          setUserLocation({
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          });
-        }
-      } catch (error) {
-        console.error('Error getting user location:', error);
-      }
-
-      // Initialize current location from params or user location
-      if (params.lat && params.lng) {
-        setCurrentLocation({
-          latitude: parseFloat(params.lat),
-          longitude: parseFloat(params.lng),
-        });
-      } else {
-        // Try to get user location as fallback
-        try {
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status === 'granted') {
-            const location = await Location.getCurrentPositionAsync({});
-            setCurrentLocation({
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-            });
-          }
-        } catch (error) {
-          console.error('Error getting location:', error);
-        }
-      }
-    })();
-  }, [params.lat, params.lng]);
-
-  // Search address and update location
-  const handleSearchAddress = async () => {
-    if (!addressSearch.trim()) return;
-
-    setIsSearchingAddress(true);
-    try {
-      const results = await Location.geocodeAsync(addressSearch);
-      if (results.length > 0) {
-        const firstResult = results[0];
-        setCurrentLocation({
-          latitude: firstResult.latitude,
-          longitude: firstResult.longitude,
-        });
-        setAddressSearch('');
-      } else {
-        Alert.alert('Not found', 'Could not find that address. Please try a different search.');
-      }
-    } catch (error) {
-      console.error('Error searching address:', error);
-      Alert.alert('Error', 'Couldn\'t search address. Try again.');
-    } finally {
-      setIsSearchingAddress(false);
+    // Initialize current location from params or base location
+    if (params.lat && params.lng) {
+      form.setLocation({
+        latitude: parseFloat(params.lat),
+        longitude: parseFloat(params.lng),
+      });
+    } else if (baseLocation) {
+      form.setLocation(baseLocation);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.lat, params.lng, baseLocation]);
 
-  // Handle location change from map
-  const handleLocationChange = (newLocation: { latitude: number; longitude: number }) => {
-    setCurrentLocation(newLocation);
-  };
-
-  // Handle generate content with AI
+  // Handle generate AI content
   const handleGenerateAI = async () => {
-    if (!currentLocation) {
-      Alert.alert('Error', 'Location is required to generate content');
+    // Validar que haya ubicación antes de generar (requerido por AI)
+    if (!form.location) {
+      // Podríamos mostrar un mensaje aquí, pero el botón no debería estar visible sin ubicación
+      // Esta validación es defensiva
       return;
     }
-
-    if (!isAIConfigured()) {
-      Alert.alert('AI not configured', 'OpenAI API key is not configured. Please set EXPO_PUBLIC_OPENAI_API_KEY in .env');
-      return;
+    const generatedContent = await form.generateContent();
+    if (generatedContent) {
+      setShowAIPreview(true);
     }
+  };
 
-    setIsGeneratingAI(true);
-    setAiError(null);
-
-    try {
-      // Crear un spot temporal para generar contenido
-      const tempSpot: Spot = {
-        id: 'temp',
-        name: name || undefined,
-        location: {
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-          adjustable: true,
-        },
-        photos: photo ? [photo] : [],
-        description: description || undefined,
-        type,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      const generatedContent = await generateSpotContent(tempSpot);
-
-      // Prellenar campos con contenido generado
-      if (generatedContent.whyItMatters && !description) {
-        setDescription(generatedContent.whyItMatters);
+  // Handle accept AI content
+  const handleAcceptAIContent = () => {
+    if (form.previewContent) {
+      if (form.previewContent.whyItMatters && !form.whyItMatters) {
+        form.setWhyItMatters(form.previewContent.whyItMatters);
+        form.setDescription(form.previewContent.whyItMatters);
       }
-      // Nota: culturalContext y howToVisit se pueden agregar a campos adicionales si se implementan en el formulario
-
-      Alert.alert('Content generated', 'Edit before creating.');
-    } catch (error: any) {
-      console.error('Error generating AI content:', error);
-      setAiError(error.message || 'Couldn\'t generate content. Try again.');
-      Alert.alert('Error', error.message || 'Couldn\'t generate content. Try again.');
-    } finally {
-      setIsGeneratingAI(false);
+      if (form.previewContent.culturalContext && !form.culturalContext) {
+        form.setCulturalContext(form.previewContent.culturalContext);
+      }
+      if (form.previewContent.howToVisit && !form.howToVisit) {
+        form.setHowToVisit(form.previewContent.howToVisit);
+      }
+      // Narration se guarda automáticamente cuando se genera (no visible en UI)
+      // Ya se guardó en generateContent, no necesita acción adicional aquí
     }
+    setShowAIPreview(false);
+    form.setPreviewContent(null);
   };
 
-  // Handle photo selection (usa hook de optimización)
-  const handlePickImage = async () => {
-    const optimizedUri = await pickFromGallery();
-    // El hook ya maneja la optimización y actualiza el estado 'photo'
-    // No necesitamos hacer nada más, la imagen ya está optimizada
+  // Handle reject AI content
+  const handleRejectAIContent = () => {
+    setShowAIPreview(false);
+    form.setPreviewContent(null);
   };
 
-  // Validación en tiempo real
-  const isFormValid = currentLocation && photo;
+  // Verificar autenticación - mostrar CTA si no está autenticado
+  if (!authLoading && !isAuthenticated) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={iconTouchableContainer.base}
+            activeOpacity={0.7}>
+            <Icon name="close" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[textStyles.heading3, { color: colors.text }]}>Create Spot</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={styles.overlay}>
+          <GlassView 
+            style={styles.authModal} 
+            intensity="strong" 
+            opacity="strong"
+            shadowLevel="strong"
+            enableGlow={true}
+            useGrayBackground={true}
+          >
+            <Icon name="profile" size={48} color={colors.tint} />
+            <Text style={[textStyles.heading4, { color: colors.text, marginTop: spacing.md, textAlign: 'center' }]}>
+              Create an account to add spots to FLOWYA
+            </Text>
+            <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, textAlign: 'center', marginBottom: spacing.lg }]}>
+              Sign up to contribute spots and share your favorite places with the community.
+            </Text>
+            <TouchableOpacity
+              style={[styles.authButton, { backgroundColor: colors.tint }]}
+              onPress={() => router.push('/(tabs)/signup')}
+              activeOpacity={0.7}>
+              <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Sign Up</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.authButton, { backgroundColor: colors.icon + '20', marginTop: spacing.sm }]}
+              onPress={() => router.push('/(tabs)/login')}
+              activeOpacity={0.7}>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Sign In</Text>
+            </TouchableOpacity>
+          </GlassView>
+        </View>
+      </View>
+    );
+  }
 
-  // Handle send (create spot)
-  const handleSend = () => {
-    if (!currentLocation) {
-      Alert.alert('Location required', 'Select a location on the map or search for an address');
-      return;
-    }
-
-    if (!photo) {
-      Alert.alert('Photo required', 'Add a photo of the place');
-      return;
-    }
-
-    const newSpot: Omit<Spot, 'id' | 'createdAt' | 'updatedAt'> = {
-      name: name || undefined,
-      location: {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        adjustable: true,
-      },
-      photos: [photo],
-      description: description || undefined,
-      type,
-    };
-
-    // Show success message first
-    setShowSuccessMessage(true);
-    
-    // Call createSpot after a brief delay
-    setTimeout(() => {
-      createSpot(newSpot);
-    }, 100);
-    
-    // Close after showing success message
-    setTimeout(() => {
-      router.back();
-    }, 2000);
-  };
-
-  const handleCancel = () => {
-    router.back();
-  };
+  // Mostrar loading mientras verifica autenticación
+  if (authLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.md }]}>
+            Loading...
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   // Show success message overlay
   if (showSuccessMessage) {
@@ -298,13 +210,13 @@ export default function CreateSpotScreen() {
     );
   }
 
-  if (!currentLocation && !userLocation) {
+  if (!form.location && !baseLocation) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={handleCancel}
+            onPress={form.handleCancel}
             style={iconTouchableContainer.base}
             activeOpacity={0.7}>
             <Icon name="close" size={24} color={colors.text} />
@@ -329,7 +241,7 @@ export default function CreateSpotScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={handleCancel}
+          onPress={form.handleCancel}
           style={iconTouchableContainer.base}
           activeOpacity={0.7}>
           <Icon name="close" size={24} color={colors.text} />
@@ -339,229 +251,175 @@ export default function CreateSpotScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Section 1: Photo */}
+        {/* Section 1: Photo (Required) */}
         <View style={styles.section}>
-          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.xs }]}>
-            Photo <Text style={{ color: colors.tint }}>*</Text>
-          </Text>
-          {photo ? (
-            <View style={styles.photoContainer}>
-              {isOptimizingImage ? (
-                <View style={[styles.photo, { justifyContent: 'center', alignItems: 'center' }]}>
-                  <ActivityIndicator size="large" color={colors.tint} />
-                </View>
-              ) : (
-                <Image source={{ uri: photo }} style={styles.photo} resizeMode="cover" />
-              )}
-              <TouchableOpacity
-                style={styles.removePhotoButton}
-                onPress={() => resetImage()}
-                activeOpacity={0.7}>
-                <Icon name="close" size={20} color={colors.background} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={[styles.photoPlaceholder, { backgroundColor: colors.icon + '10', borderColor: colors.icon + '30' }]}
-              onPress={handlePickImage}
-              activeOpacity={0.7}>
-              <Icon name="add" size={32} color={colors.icon} />
-              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
-                Add photo
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Section 2: Location */}
-        <View style={styles.section}>
-          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.xs }]}>
-            Location
-          </Text>
-          <Text style={[textStyles.caption, { color: colors.text, marginBottom: spacing.sm }]}>
-            Search by address or adjust the pin on the map
-          </Text>
-          
-          {/* Address search */}
-          <View style={styles.addressSearchContainer}>
-            <TextInput
-              style={[
-                styles.addressInput,
-                { backgroundColor: colors.background, color: colors.text, borderColor: colors.icon + '30' },
-              ]}
-              value={addressSearch}
-              onChangeText={setAddressSearch}
-              placeholder="Search by address"
-              placeholderTextColor={colors.icon}
-              onSubmitEditing={handleSearchAddress}
+          <FormField label="Photo" required error={form.errors.photo}>
+            <FormImagePicker
+              initialUri={form.photo}
+              onPickImage={form.pickImage}
+              onImageRemoved={form.removeImage}
+              height={200}
             />
+          </FormField>
+        </View>
+
+        {/* Section 2: Location (Required) */}
+        <View style={styles.section}>
+          <FormField label="Location" required error={form.errors.location}>
+            <FormLocationSelector
+              location={form.location}
+              onLocationChange={(loc) => {
+                form.setLocation(loc);
+                // El mapa se centra automáticamente cuando cambia la ubicación
+              }}
+              userLocation={baseLocation}
+              mapHeight={200}
+            />
+          </FormField>
+        </View>
+
+        {/* Section 3: Basic Info */}
+        <View style={styles.section}>
+          <FormField label="Name">
+            <FormTextInput
+              value={form.name}
+              onChangeText={form.setName}
+              placeholder="e.g. Main Square, Sunset Viewpoint..."
+            />
+          </FormField>
+
+          <FormField label="Description">
+            <FormTextArea
+              value={form.description}
+              onChangeText={form.setDescription}
+              placeholder="Brief description. e.g. A viewpoint with panoramic city views..."
+              numberOfLines={3}
+            />
+          </FormField>
+
+          <FormField label="Type">
+            <FormTypeSelector
+              selectedType={form.type}
+              onSelectType={form.setType}
+            />
+          </FormField>
+        </View>
+
+        {/* Progressive Disclosure: Advanced Fields */}
+        {!showAdvancedFields && (
+          <TouchableOpacity
+            style={styles.showAdvancedButton}
+            onPress={() => setShowAdvancedFields(true)}
+            activeOpacity={0.7}>
+            <Text style={[textStyles.bodyMedium, { color: colors.tint }]}>
+              Show advanced fields
+            </Text>
+            <Icon name="chevron-down" size={20} color={colors.tint} />
+          </TouchableOpacity>
+        )}
+
+        {showAdvancedFields && (
+          <View style={styles.section}>
             <TouchableOpacity
-              style={[styles.searchButton, { backgroundColor: colors.tint }]}
-              onPress={handleSearchAddress}
-              disabled={isSearchingAddress || !addressSearch.trim()}
+              style={styles.hideAdvancedButton}
+              onPress={() => setShowAdvancedFields(false)}
               activeOpacity={0.7}>
-              {isSearchingAddress ? (
-                <ActivityIndicator size="small" color={colors.background} />
-              ) : (
-                <Icon name="search" size={20} color={colors.background} />
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {/* Map */}
-          {currentLocation && (
-            <>
-              <View style={styles.mapContainer}>
-                      <FlowyaMapView
-                  spots={[{
-                    id: 'temp-spot',
-                    name: 'New Spot',
-                    location: currentLocation,
-                    photos: [],
-                    type: 'other',
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                  }]}
-                  onSpotPress={() => {}}
-                  onLongPress={handleLocationChange}
-                  initialRegion={{
-                    latitude: currentLocation.latitude,
-                    longitude: currentLocation.longitude,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
-                  userLocation={userLocation}
-                        showUserLocation={!!userLocation}
-                />
-              </View>
-              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
-                {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
+              <Text style={[textStyles.bodyMedium, { color: colors.icon }]}>
+                Hide advanced fields
               </Text>
-            </>
-          )}
-        </View>
+              <Icon name="minus" size={20} color={colors.icon} />
+            </TouchableOpacity>
 
-        {/* Section 3: Name and Description */}
-        <View style={styles.section}>
-          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.xs }]}>
-            Name
-          </Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.icon + '30' }]}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Main Square, Sunset Viewpoint..."
-            placeholderTextColor={colors.icon}
-          />
-        </View>
+            <FormField label="Why it matters">
+              <FormTextArea
+                value={form.whyItMatters}
+                onChangeText={form.setWhyItMatters}
+                placeholder="What makes this place special?"
+                numberOfLines={4}
+              />
+            </FormField>
 
-        <View style={styles.section}>
-          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.xs }]}>
-            Description
-          </Text>
-          <TextInput
-            style={[
-              styles.input,
-              styles.textArea,
-              { backgroundColor: colors.background, color: colors.text, borderColor: colors.icon + '30' },
-            ]}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Brief description. e.g. A viewpoint with panoramic city views..."
-            placeholderTextColor={colors.icon}
-            multiline
-            numberOfLines={3}
-          />
-        </View>
-
-        {/* Section 4: Type */}
-        <View style={styles.section}>
-          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.xs }]}>
-            Type
-          </Text>
-          <View style={styles.typeContainer}>
-            {SPOT_TYPES.map((spotType) => (
-              <TouchableOpacity
-                key={spotType}
-                style={[
-                  styles.typeButton,
-                  {
-                    backgroundColor: type === spotType ? colors.tint + '20' : colors.icon + '10',
-                    borderColor: type === spotType ? colors.tint : 'transparent',
-                  },
-                ]}
-                onPress={() => setType(spotType)}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    textStyles.caption,
-                    { color: type === spotType ? colors.tint : colors.text },
-                  ]}>
-                  {getSpotTypeLabel(spotType)}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            <FormField label="Cultural context">
+              <FormTextArea
+                value={form.culturalContext}
+                onChangeText={form.setCulturalContext}
+                placeholder="Cultural and historical context..."
+                numberOfLines={4}
+              />
+            </FormField>
           </View>
-        </View>
+        )}
       </ScrollView>
 
       {/* Actions */}
       <View style={styles.actions}>
         <TouchableOpacity
           style={[styles.cancelButton, { backgroundColor: colors.icon + '20' }]}
-          onPress={handleCancel}
+          onPress={form.handleCancel}
           activeOpacity={0.7}>
           <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
         </TouchableOpacity>
         
-        {/* Generate with AI button - only show if AI is configured and location is available */}
-        {isAIConfigured() && currentLocation && (
-          <View style={{ marginRight: spacing.sm }}>
-            <TouchableOpacity
-              style={[
-                styles.aiButton,
-                {
-                  backgroundColor: isGeneratingAI ? colors.icon + '40' : colors.tint + '20',
-                  borderColor: colors.tint,
-                  borderWidth: 1,
-                },
-              ]}
-              onPress={handleGenerateAI}
-              disabled={isGeneratingAI}
-              activeOpacity={0.7}>
-              {isGeneratingAI ? (
-                <ActivityIndicator size="small" color={colors.tint} />
-              ) : (
-                <>
-                  <Icon name="star" size={16} color={colors.tint} />
-                  <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
-                    AI
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
+        {isAIConfigured() && (
+          <TouchableOpacity
+            style={[
+              styles.aiButton, 
+              { 
+                backgroundColor: colors.tint + '20', 
+                borderColor: colors.tint,
+                opacity: form.location ? 1 : 0.5,
+              }
+            ]}
+            onPress={handleGenerateAI}
+            disabled={form.isGeneratingAI || !form.location}
+            activeOpacity={0.7}>
+            {form.isGeneratingAI ? (
+              <ActivityIndicator size="small" color={colors.tint} />
+            ) : (
+              <>
+                <Icon name="star" size={16} color={colors.tint} />
+                <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
+                  Enrich with AI
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
         )}
         
         <TouchableOpacity
           style={[
             styles.sendButton,
-            { backgroundColor: isFormValid ? colors.tint : colors.icon + '40' },
+            { backgroundColor: form.isValid ? colors.tint : colors.icon + '40' },
           ]}
-          onPress={handleSend}
-          disabled={!isFormValid}
+          onPress={form.handleSave}
+          disabled={!form.isValid}
           activeOpacity={0.7}>
-          <Text style={[textStyles.bodyMedium, { color: isFormValid ? colors.background : colors.icon }]}>
+          <Text style={[textStyles.bodyMedium, { color: form.isValid ? colors.background : colors.icon }]}>
             Send
           </Text>
         </TouchableOpacity>
       </View>
       
       {/* AI Error message */}
-      {aiError && (
+      {form.aiError && (
         <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
-          <Text style={[textStyles.caption, { color: '#FF6B6B' }]}>{aiError}</Text>
+          <Text style={[textStyles.caption, { color: '#FF6B6B' }]}>{form.aiError}</Text>
         </View>
+      )}
+
+      {/* AI Content Preview */}
+      {form.previewContent && (
+        <AIContentPreview
+          content={form.previewContent}
+          visible={showAIPreview}
+          onAccept={handleAcceptAIContent}
+          onReject={handleRejectAIContent}
+          onEdit={() => {
+            handleAcceptAIContent();
+            setShowAdvancedFields(true);
+          }}
+          title="Generated Content"
+        />
       )}
     </View>
   );
@@ -586,88 +444,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginBottom: spacing.lg,
   },
-  photoContainer: {
-    position: 'relative',
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  photo: {
-    width: '100%',
-    height: '100%',
-  },
-  removePhotoButton: {
-    position: 'absolute',
-    top: spacing.xs,
-    right: spacing.xs,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  photoPlaceholder: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addressSearchContainer: {
+  descriptionHeader: {
     flexDirection: 'row',
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  addressInput: {
-    flex: 1,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    fontFamily: 'Inter-Regular',
-    fontSize: 14,
-  },
-  searchButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  mapContainer: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    overflow: 'hidden',
     marginBottom: spacing.xs,
   },
-  input: {
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    fontFamily: 'Inter-Regular',
-    fontSize: 14,
-  },
-  textArea: {
-    height: 100,
-    paddingTop: spacing.sm,
-    textAlignVertical: 'top',
-  },
-  typeContainer: {
+  showAdvancedButton: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
     gap: spacing.xs,
   },
-  typeButton: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: 8,
-    borderWidth: 1,
+  hideAdvancedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+    gap: spacing.xs,
   },
   actions: {
     flexDirection: 'row',
@@ -682,20 +478,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  aiButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginRight: spacing.sm,
+    minWidth: 140,
+  },
   sendButton: {
     flex: 1,
     height: 48,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  aiButton: {
-    height: 48,
-    paddingHorizontal: spacing.md,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
   },
   errorContainer: {
     paddingHorizontal: spacing.md,
@@ -719,5 +518,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  authModal: {
+    padding: spacing.xl,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 280,
+    maxWidth: 400,
+  },
+  authButton: {
+    width: '100%',
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
-

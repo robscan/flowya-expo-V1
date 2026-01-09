@@ -1,14 +1,14 @@
 import { useOverlay } from '@/contexts/OverlayContext';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, ViewStyle } from 'react-native';
 
 import { Icon } from '@/components/ui/Icon';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamily, fontSize } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { glassColors, glowColors, shadows } from '@/utils/glassStyles';
+import { glassColors } from '@/utils/glassStyles';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -17,7 +17,6 @@ export default function TabLayout() {
   // Tab bar background con efecto glass (BlurView en iOS/Android, transparencia en web)
   // Fondo gris sutil con blur
   const colors = glassColors[colorScheme ?? 'light'];
-  const shadow = shadows.strong; // Sombra fuerte para TabBar (como modales) - efecto envolvente
   
   const tabBarBackground = () => {
     if (Platform.OS === 'web') {
@@ -48,29 +47,40 @@ export default function TabLayout() {
     );
   };
 
-  // Estilos glass para el tab bar: se actualiza dinámicamente desde el contexto
-  const glassTabBarStyle = {
+  // Estilos para el tab bar: diseño plano y estable, consistente con Header
+  // ARQUITECTÓNICO: Tab Bar plano sin bordes redondeados, sin sombras, con línea divisoria superior
+  // Cuando está oculto, height = 0 para que no reserve espacio en el layout
+  // Línea divisoria superior usa el mismo estilo que el Header (borderBottom)
+  const tabBarDividerColor = colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+  
+  // Construir estilo base sin sombras ni bordes redondeados
+  const baseTabBarStyle: ViewStyle = {
     backgroundColor: 'transparent',
-    borderTopWidth: 1,
-    borderTopColor: glowColors[colorScheme ?? 'light'].contour, // Glow en borde superior (usando tokens)
-    paddingBottom: contextTabBarHeight === 88 ? 20 : 10, // Padding dinámico según altura
-    paddingTop: 8, // Padding superior sutil
-    height: contextTabBarHeight, // Altura dinámica desde contexto (88 o 58)
-    borderTopLeftRadius: 20, // Bordes redondeados superiores para efecto flotante
-    borderTopRightRadius: 20,
-    ...shadow, // Sombra media para elevación
-    ...(isTabBarVisible ? {} : { display: 'none' }), // Ocultar TabBar completo cuando isTabBarVisible es false
+    borderTopWidth: isTabBarVisible ? 1 : 0, // Línea divisoria superior (mismo estilo que Header)
+    borderTopColor: isTabBarVisible ? tabBarDividerColor : 'transparent', // Color gris sutil consistente con Header
+    paddingBottom: isTabBarVisible ? (contextTabBarHeight === 88 ? 20 : 10) : 0, // Sin padding cuando está oculto
+    paddingTop: isTabBarVisible ? 8 : 0, // Sin padding cuando está oculto
+    height: isTabBarVisible ? contextTabBarHeight : 0, // Altura 0 cuando está oculto - NO reserva espacio
+    borderTopLeftRadius: 0, // SIN bordes redondeados - Tab Bar plano
+    borderTopRightRadius: 0, // SIN bordes redondeados - Tab Bar plano
+    elevation: 0, // SIN elevación - Tab Bar plano (Android)
+    opacity: isTabBarVisible ? 1 : 0, // Opacity para transición suave
+    pointerEvents: isTabBarVisible ? 'auto' : 'none', // Deshabilitar interacción cuando está oculto
+    overflow: 'hidden', // Asegurar que cuando height = 0, el contenido no se vea
   };
+
+  const glassTabBarStyle: ViewStyle = baseTabBarStyle;
 
   return (
       <View style={styles.container}>
+        {/* ARQUITECTÓNICO: Tab Bar simplificado, plano y estable */}
         <Tabs
-          screenOptions={{
-            tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-            tabBarInactiveTintColor: Colors[colorScheme ?? 'light'].icon,
-            headerShown: false,
-          tabBarBackground: tabBarBackground,
-          tabBarStyle: glassTabBarStyle,
+            screenOptions={{
+              tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+              tabBarInactiveTintColor: Colors[colorScheme ?? 'light'].icon,
+              headerShown: false,
+            tabBarBackground: tabBarBackground,
+            tabBarStyle: glassTabBarStyle,
             tabBarShowLabel: isTabBarLabelsVisible, // Mostrar/ocultar labels según contexto
             tabBarLabelStyle: {
               fontFamily,

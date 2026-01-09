@@ -3,21 +3,19 @@
  * Section within Profile to show spots liked from player
  */
 
-import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, FlatList, Dimensions } from 'react-native';
-import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
-
-import { Colors } from '@/constants/theme';
-import { spacing } from '@/constants/spacing';
-import { textStyles, fontSize, lineHeight, fontFamilyMedium } from '@/constants/typography';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { SpotMediaCard } from '@/components/SpotMediaCard';
-import { useSpot } from '@/contexts/SpotContext';
+import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
+import { spacing } from '@/constants/spacing';
+import { Colors } from '@/constants/theme';
+import { fontFamilyMedium, fontSize, lineHeight, textStyles } from '@/constants/typography';
 import { useSaved } from '@/contexts/SavedContext';
-import { calculateDistanceToSpot } from '@/utils/distance';
+import { useSpot } from '@/contexts/SpotContext';
 import { Spot } from '@/data/spots';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useBaseLocation } from '@/hooks/useBaseLocation';
+import { useSpotsWithDistance } from '@/hooks/useSpotsWithDistance';
+import { useRouter } from 'expo-router';
+import { Dimensions, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(SCREEN_WIDTH * 0.75, 400); // 75% of screen width, max 400px for desktop
@@ -28,31 +26,15 @@ export default function LikedSpotsScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const { spots } = useSpot();
   const { likedSpotsFromPlayer } = useSaved();
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-
-  // Get user location
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          console.log('Location permissions denied');
-          return;
-        }
-
-        const location = await Location.getCurrentPositionAsync({});
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-      } catch (error) {
-        console.error('Error getting location:', error);
-      }
-    })();
-  }, []);
+  
+  // Ubicación base estable
+  const { baseLocation } = useBaseLocation();
 
   // Get liked spots from player
   const likedSpotsFromPlayerData = spots.filter((spot) => (likedSpotsFromPlayer || []).includes(spot.id));
+  
+  // Preparar datos con distancia (memoizado)
+  const likedSpotsWithDistance = useSpotsWithDistance(likedSpotsFromPlayerData, baseLocation);
 
   // Handle Spot selection
   const handleSpotPress = (spot: Spot) => {
@@ -97,20 +79,19 @@ export default function LikedSpotsScreen() {
           Spots you liked while navigating
         </Text>
         <FlatList
-          data={likedSpotsFromPlayerData}
+          data={likedSpotsWithDistance}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.sliderContent}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item: spot }) => {
-            const distance = calculateDistanceToSpot(userLocation, spot.location);
+          keyExtractor={(item) => item.spot.id}
+          renderItem={({ item: itemWithDistance }) => {
             return (
               <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
                 <SpotMediaCard
-                  spot={spot}
+                  spot={itemWithDistance.spot}
                   size="large"
-                  distance={distance || undefined}
-                  onPress={() => handleSpotPress(spot)}
+                  distance={itemWithDistance.distance}
+                  onPress={() => handleSpotPress(itemWithDistance.spot)}
                 />
               </View>
             );

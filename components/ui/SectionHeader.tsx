@@ -14,7 +14,8 @@
  * - small: Título pequeño
  */
 
-import { useEffect, useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Icon, IconName } from '@/components/ui/Icon';
@@ -69,7 +70,7 @@ export function SectionHeader({
   // TextInput ref for autofocus
   const textInputRef = useRef<TextInput>(null);
 
-  // Auto-focus for search variant
+  // Auto-focus for search variant on mount
   useEffect(() => {
     if (variant === 'search' && autoFocus && textInputRef.current) {
       // Delay to ensure component is mounted
@@ -78,6 +79,18 @@ export function SectionHeader({
       }, 100);
     }
   }, [variant, autoFocus]);
+
+  // Auto-focus for search variant when screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      if (variant === 'search' && autoFocus && textInputRef.current) {
+        // Pequeño delay para asegurar que el componente esté completamente montado
+        setTimeout(() => {
+          textInputRef.current?.focus();
+        }, 100);
+      }
+    }, [variant, autoFocus])
+  );
 
   const getVariantStyles = () => {
     if (variant === 'small') {
@@ -99,15 +112,21 @@ export function SectionHeader({
 
   const variantStyles = getVariantStyles();
 
-  // Search variant: render title-style search input (no container, no borders, no background)
+  // Search variant: render title-style search input (header-integrated, no borders, no background)
   if (variant === 'search') {
     return (
-      <View style={styles.searchContainer}>
+      <View style={[
+        styles.searchContainer,
+        {
+          borderBottomColor:
+            colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+        },
+      ]}>
         <View style={styles.searchInputContainer}>
-          <Icon name="search" size={variantStyles.fontSize} color={colors.icon} style={styles.searchIcon} />
+          <Icon name="search" size={20} color={colors.icon} style={styles.searchIcon} />
           <TextInput
             ref={textInputRef}
-            style={[styles.searchInput, { color: colors.text }, variantStyles]}
+            style={[styles.searchInput, textStyles.heading3, { color: colors.text }]}
             value={searchValue || ''}
             onChangeText={onSearchChange || (() => {})}
             placeholder={searchPlaceholder}
@@ -181,8 +200,11 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   searchContainer: {
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    marginBottom: spacing.sm,
   },
   searchInputContainer: {
     flexDirection: 'row',
@@ -194,7 +216,6 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontFamily: fontFamilyMedium,
     padding: 0,
     margin: 0,
     includeFontPadding: false,

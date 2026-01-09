@@ -3,19 +3,18 @@
  * Componente canónico para información secundaria debajo de títulos
  * 
  * Responsabilidad:
- * - Renderizar información secundaria (chip, distancia, duración, rating)
+ * - Renderizar información secundaria (chip, distancia, rating)
  * - Mantener jerarquía clara y consistente
  * - NO maneja navegación
  * - NO maneja estado global
  * - NO calcula datos de negocio complejos
  * 
  * Reglas por tamaño:
- * - large: Chip (si existe), Distancia (con icono), Duración (con icono), Rating (solo si se pasa)
- * - small: Distancia (con icono), sin Duración, sin Rating, sin Chip (salvo casos explícitos)
+ * - large: Chip (si existe), Distancia (con icono), Rating (solo si se pasa)
+ * - small: Distancia (con icono), sin Rating, sin Chip (salvo casos explícitos)
  * 
  * Iconografía:
  * - Distancia → siempre con icono "map"
- * - Duración → siempre con icono "clock"
  * - Rating → siempre con icono "star"
  * - Chip → sin icono obligatorio
  */
@@ -27,7 +26,7 @@ import { Chip } from '@/components/ui/Chip';
 import { Icon } from '@/components/ui/Icon';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
-import { fontSize, lineHeight, textStyles } from '@/constants/typography';
+import { fontSize, lineHeight } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatDistance } from '@/utils/distance';
 
@@ -36,7 +35,6 @@ export type InfoMetaSize = 'large' | 'small';
 export interface InfoMetaProps {
   chip?: { label: string };
   distance?: number; // En metros
-  duration?: number; // En minutos
   rating?: { value: number; count?: number }; // Puntaje con opcional conteo de reviews
   size?: InfoMetaSize;
 }
@@ -44,7 +42,6 @@ export interface InfoMetaProps {
 export function InfoMeta({
   chip,
   distance,
-  duration,
   rating,
   size = 'large',
 }: InfoMetaProps) {
@@ -84,34 +81,6 @@ export function InfoMeta({
     );
   };
 
-  const renderDuration = () => {
-    if (duration === undefined || duration === null) return null;
-    
-    // En small, no mostrar duración
-    if (size === 'small') return null;
-
-    const formatDuration = (minutes: number): string => {
-      if (minutes < 60) {
-        return `${Math.round(minutes)} min`;
-      }
-      const hours = Math.floor(minutes / 60);
-      const mins = Math.round(minutes % 60);
-      if (mins === 0) {
-        return `${hours} ${hours === 1 ? 'hr' : 'hrs'}`;
-      }
-      return `${hours} ${hours === 1 ? 'hr' : 'hrs'} ${mins} min`;
-    };
-
-    return (
-      <View style={styles.metricItem}>
-        <Icon name="clock" size={16} color={colors.icon} />
-        <Text style={[styles.metricText, { color: colors.text }]}>
-          {formatDuration(duration)}
-        </Text>
-      </View>
-    );
-  };
-
   const renderRating = () => {
     if (rating === undefined || rating === null) return null;
     
@@ -133,7 +102,6 @@ export function InfoMeta({
   const items = [
     renderChip(),
     renderDistance(),
-    renderDuration(),
     renderRating(),
   ].filter(Boolean);
 

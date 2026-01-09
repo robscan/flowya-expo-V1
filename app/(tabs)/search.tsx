@@ -10,9 +10,8 @@
  * - Add New Spot: secondary button after results
  */
 
-import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { FlowCard } from '@/components/FlowCard';
@@ -28,7 +27,8 @@ import { usePath } from '@/contexts/PathContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Spot, SpotType } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { calculateDistanceToSpot } from '@/utils/distance';
+import { useBaseLocation } from '@/hooks/useBaseLocation';
+import { getSpotDistance } from '@/hooks/useSpotDistance';
 import { anyLoading, shouldShowSkeleton } from '@/utils/loadingHelpers';
 import { searchAll } from '@/utils/searchLogic';
 
@@ -39,7 +39,9 @@ export default function SearchScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Ubicación base estable
+  const { baseLocation } = useBaseLocation();
 
   const { spots, isLoading: isLoadingSpots } = useSpot();
   const { paths, isLoading: isLoadingPaths } = usePath();
@@ -48,63 +50,45 @@ export default function SearchScreen() {
   // Combinar estados de carga para sugerencias iniciales
   const isLoading = anyLoading(isLoadingSpots, isLoadingPaths);
 
-  // Get user location
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          console.log('Location permissions denied');
-          return;
-        }
-
-        const location = await Location.getCurrentPositionAsync({});
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-      } catch (error) {
-        console.error('Error getting location:', error);
-      }
-    })();
-  }, []);
-
 
 
   // CANONICAL: Suggested/Nearby spots when input is empty (same layout as results)
-  const suggestedSpots = useMemo(() => {
+  const suggestedSpotsWithDistance = useMemo(() => {
     // Show suggested spots when query is empty
     if (searchQuery.trim().length > 0) {
       return [];
     }
     
-    let suggested: Spot[] = [];
+    let suggested: { spot: Spot; distance?: number }[] = [];
     
-    if (userLocation) {
+    if (baseLocation) {
       // Prioritize proximity and variety
       const spotsWithDistance = spots
-        .map((spot) => ({
-          spot,
-          distance: calculateDistanceToSpot(userLocation, spot.location) || Infinity,
-        }))
+        .map((spot) => {
+          const distance = getSpotDistance(spot, baseLocation);
+          return {
+            spot,
+            distance: distance !== undefined ? distance : Infinity,
+          };
+        })
         .sort((a, b) => a.distance - b.distance);
       
       // Select varied spots (different types)
       const usedTypes = new Set<SpotType>();
-      for (const { spot } of spotsWithDistance) {
+      for (const { spot, distance } of spotsWithDistance) {
         if (suggested.length >= 6) break;
         if (!usedTypes.has(spot.type) || suggested.length < 3) {
-          suggested.push(spot);
+          suggested.push({ spot, distance: distance !== Infinity ? distance : undefined });
           usedTypes.add(spot.type);
         }
       }
       
       // If not enough, add more nearby
       if (suggested.length < 6) {
-        for (const { spot } of spotsWithDistance) {
+        for (const { spot, distance } of spotsWithDistance) {
           if (suggested.length >= 6) break;
-          if (!suggested.find((s) => s.id === spot.id)) {
-            suggested.push(spot);
+          if (!suggested.find((s) => s.spot.id === spot.id)) {
+            suggested.push({ spot, distance: distance !== Infinity ? distance : undefined });
           }
         }
       }
@@ -114,14 +98,18 @@ export default function SearchScreen() {
       for (const spot of spots) {
         if (suggested.length >= 6) break;
         if (!usedTypes.has(spot.type) || suggested.length < 3) {
-          suggested.push(spot);
+          suggested.push({ spot, distance: undefined });
           usedTypes.add(spot.type);
         }
       }
     }
     
     return suggested;
-  }, [spots, userLocation, searchQuery]);
+  }, [spots, baseLocation, searchQuery]);
+  
+  const suggestedSpots = useMemo(() => {
+    return suggestedSpotsWithDistance.map(item => item.spot);
+  }, [suggestedSpotsWithDistance]);
 
   // CANONICAL: Search results (only when query has 2+ characters)
   const searchResults = useMemo(() => {
@@ -135,12 +123,12 @@ export default function SearchScreen() {
     });
     
     // Add distance and sort by relevance + proximity
-    if (userLocation) {
+    if (baseLocation) {
       results.spots = results.spots
         .map((result) => {
           if (result.spot) {
-            const distance = calculateDistanceToSpot(userLocation, result.spot.location);
-            return { ...result, distance: distance || undefined };
+            const distance = getSpotDistance(result.spot, baseLocation);
+            return { ...result, distance };
           }
           return result;
         })
@@ -159,7 +147,7 @@ export default function SearchScreen() {
     }
     
     return results;
-  }, [searchQuery, spots, paths, userLocation]);
+  }, [searchQuery, spots, paths, baseLocation]);
 
   // CANONICAL: Determine what to show
   const hasQuery = searchQuery.trim().length >= 2;
@@ -187,8 +175,8 @@ export default function SearchScreen() {
 
   // Manejar creación de Spot desde búsqueda
   const handleCreateSpotFromSearch = () => {
-    // Usar ubicación del usuario si está disponible, sino usar ubicación por defecto
-    const location = userLocation || {
+    // Usar ubicación base si está disponible, sino usar ubicación por defecto
+    const location = baseLocation || {
         latitude: -12.0464,
         longitude: -77.0428,
     };
@@ -211,7 +199,7 @@ export default function SearchScreen() {
             variant="search"
             searchValue={searchQuery}
             onSearchChange={handleSearchChange}
-            searchPlaceholder="Search places..."
+            searchPlaceholder="Search spots and flows"
             autoFocus={Platform.OS !== 'web'}
           />
           
@@ -235,6 +223,7 @@ export default function SearchScreen() {
               {/* Spots - 2-column grid */}
               {searchResults.spots.length > 0 && (
                 <View style={styles.section}>
+                  <SectionHeader title="Spots" variant="large" />
                   <FlatList
                     data={searchResults.spots as { type: 'spot'; spot: Spot; relevanceScore: number; distance?: number }[]}
                     numColumns={2}
@@ -242,19 +231,18 @@ export default function SearchScreen() {
                     columnWrapperStyle={styles.gridRow}
                     contentContainerStyle={styles.gridContent}
                     scrollEnabled={false}
-                    windowSize={10}
-                    initialNumToRender={6}
-                    maxToRenderPerBatch={6}
-                    removeClippedSubviews={true}
+                    windowSize={21}
+                    initialNumToRender={10}
+                    maxToRenderPerBatch={10}
+                    removeClippedSubviews={false}
                     renderItem={({ item: result }) => {
                       if (!result.spot) return null;
-                      const distance = result.distance || calculateDistanceToSpot(userLocation, result.spot.location);
                       return (
                         <View style={styles.gridItem}>
                           <SpotMediaCard
                             spot={result.spot}
                             size="small"
-                            distance={distance === null ? undefined : distance}
+                            distance={result.distance}
                             onPress={() => handleSpotPress(result.spot!)}
                           />
                         </View>
@@ -267,21 +255,22 @@ export default function SearchScreen() {
               {/* Flows - Single column list */}
               {searchResults.paths.length > 0 && (
                 <View style={styles.section}>
+                  <SectionHeader title="Flows" variant="large" />
                   <View style={styles.pathsList}>
                     {searchResults.paths.map((result) => {
                       if (!result.path) return null;
                       const pathSpots = result.path.spots
                         .map((spotId) => spots.find((s) => s.id === spotId))
                         .filter((s): s is Spot => s !== undefined);
-                      const distance = (pathSpots.length > 0 && userLocation)
-                        ? calculateDistanceToSpot(userLocation, pathSpots[0].location)
+                      const distance = pathSpots.length > 0
+                        ? getSpotDistance(pathSpots[0], baseLocation)
                         : undefined;
                       return (
                         <FlowCard.Display
                           key={`path-${result.path.id}`}
                           flow={result.path}
                           spots={spots}
-                          distance={distance || undefined}
+                          distance={distance}
                           onPress={() => handlePathPress(result.path!.id)}
                         />
                       );
@@ -296,7 +285,10 @@ export default function SearchScreen() {
                   style={[styles.addSpotButton, { borderColor: colors.icon + '30' }]}
                   onPress={handleCreateSpotFromSearch}
                   activeOpacity={0.7}>
-                  <Text style={[textStyles.bodyMedium, { color: colors.text }]}>+ Add a new spot</Text>
+                  <View style={styles.addSpotButtonContent}>
+                    <Icon name="add-location" size={18} color={colors.text} />
+                    <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.xs }]}>Add a new spot</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
             </>
@@ -316,7 +308,10 @@ export default function SearchScreen() {
                 style={[styles.addSpotButton, { borderColor: colors.icon + '30', marginTop: spacing.md }]}
                 onPress={handleCreateSpotFromSearch}
                 activeOpacity={0.7}>
-                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>+ Add a new spot</Text>
+                <View style={styles.addSpotButtonContent}>
+                  <Icon name="add-location" size={18} color={colors.text} />
+                  <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.xs }]}>Add a new spot</Text>
+                </View>
               </TouchableOpacity>
             </View>
           )}
@@ -334,25 +329,24 @@ export default function SearchScreen() {
                 />
               ) : (
                 <FlatList
-                  data={suggestedSpots}
+                  data={suggestedSpotsWithDistance}
                   numColumns={2}
-                  keyExtractor={(item) => item.id}
+                  keyExtractor={(item) => item.spot.id}
                   columnWrapperStyle={styles.gridRow}
                   contentContainerStyle={styles.gridContent}
                   scrollEnabled={false}
-                  windowSize={10}
-                  initialNumToRender={6}
-                  maxToRenderPerBatch={6}
-                  removeClippedSubviews={true}
-                  renderItem={({ item: spot }) => {
-                    const distance = calculateDistanceToSpot(userLocation, spot.location);
+                  windowSize={21}
+                  initialNumToRender={10}
+                  maxToRenderPerBatch={10}
+                  removeClippedSubviews={false}
+                  renderItem={({ item: itemWithDistance }) => {
                     return (
                       <View style={styles.gridItem}>
                         <SpotMediaCard
-                          spot={spot}
+                          spot={itemWithDistance.spot}
                           size="small"
-                          distance={distance || undefined}
-                          onPress={() => handleSpotPress(spot)}
+                          distance={itemWithDistance.distance}
+                          onPress={() => handleSpotPress(itemWithDistance.spot)}
                         />
                       </View>
                     );
@@ -369,7 +363,10 @@ export default function SearchScreen() {
                 style={[styles.addSpotButton, { borderColor: colors.icon + '30' }]}
                 onPress={handleCreateSpotFromSearch}
                 activeOpacity={0.7}>
-                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>+ Add a new spot</Text>
+                <View style={styles.addSpotButtonContent}>
+                  <Icon name="add-location" size={18} color={colors.text} />
+                  <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.xs }]}>Add a new spot</Text>
+                </View>
               </TouchableOpacity>
             </View>
           )}
@@ -443,5 +440,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
+  },
+  addSpotButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

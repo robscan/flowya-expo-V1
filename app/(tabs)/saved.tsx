@@ -8,17 +8,17 @@
  * - Cards con estilo glass
  */
 
-import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, FlatList, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
 
 import { FlowCard } from '@/components/FlowCard';
 import { SpotMediaCard } from '@/components/SpotMediaCard';
 import { Icon } from '@/components/ui/Icon';
+import { SavedFilterHeader, SavedFilterType } from '@/components/ui/SavedFilterHeader';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { SkeletonCard } from '@/components/ui/SkeletonCard';
+import { SkeletonList } from '@/components/ui/SkeletonList';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
@@ -29,9 +29,12 @@ import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Flow } from '@/data/flows';
 import { Spot } from '@/data/spots';
-import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { calculateDistanceToSpot } from '@/utils/distance';
+import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
+import { useBaseLocation } from '@/hooks/useBaseLocation';
+import { getSpotDistance } from '@/hooks/useSpotDistance';
+import { useSpotsWithDistance } from '@/hooks/useSpotsWithDistance';
+import { type SpotWithDistance } from '@/utils/dataPreparation';
 import { anyLoading, renderContentSkeletonOrEmpty, shouldShowSkeleton } from '@/utils/loadingHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -43,7 +46,9 @@ export default function SavedScreen() {
   const router = useRouter();
   const { setIsTabBarVisible } = useOverlay();
   const colors = Colors[colorScheme ?? 'light'];
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  
+  // Ubicación base estable
+  const { baseLocation } = useBaseLocation();
   
   // Centralized scroll visibility control
   const { isHeaderVisible, isBottomNavVisible, handleScroll } = useScrollVisibility({ threshold: 24 });
@@ -53,14 +58,24 @@ export default function SavedScreen() {
   const { savedSpots, savedPaths, getFlowCustomName, isLoading: isLoadingSaved } = useSaved();
   const { startFlow } = useFlow();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [currentFilter, setCurrentFilter] = useState<SavedFilterType>('all');
 
   // Combinar estados de carga (cualquiera cargando)
   const isLoading = anyLoading(isLoadingSpots, isLoadingPaths, isLoadingSaved);
   const savedSpotsData = spots.filter((spot) => savedSpots.includes(spot.id));
   const savedPathsData = paths.filter((path) => savedPaths.includes(path.id));
-  const hasData = savedSpotsData.length > 0 || savedPathsData.length > 0;
   
-  // Durante refresh, mantener contenido visible si hay datos (no mostrar skeleton)
+  // Preparar datos con distancia (memoizado)
+  const savedSpotsWithDistance = useSpotsWithDistance(savedSpotsData, baseLocation);
+  
+  // Preparar flows con distancia (memoizado)
+  const savedFlowsWithDistance = useMemo(() => {
+    return savedPathsData.map((flow) => {
+      const firstSpot = spots.find((s) => s.id === flow.spots[0]);
+      const distance = firstSpot ? getSpotDistance(firstSpot, baseLocation) : undefined;
+      return { flow, distance };
+    });
+  }, [savedPathsData, spots, baseLocation]);
 
   // Enable LayoutAnimation on Android
   useEffect(() => {
@@ -69,52 +84,30 @@ export default function SavedScreen() {
     }
   }, []);
 
-  // Sync bottomNav visibility with hook state
+  // ARQUITECTÓNICO: Sincronizar solo cuando cambia el valor, usando useRef para evitar re-renders innecesarios
+  const lastBottomNavVisibleRef = useRef(isBottomNavVisible);
   useEffect(() => {
-    setIsTabBarVisible(isBottomNavVisible);
+    if (lastBottomNavVisibleRef.current !== isBottomNavVisible) {
+      lastBottomNavVisibleRef.current = isBottomNavVisible;
+      setIsTabBarVisible(isBottomNavVisible);
+    }
   }, [isBottomNavVisible, setIsTabBarVisible]);
 
-  // Get user location
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          console.log('Location permissions denied');
-          return;
-        }
-
-        const location = await Location.getCurrentPositionAsync({});
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-      } catch (error) {
-        console.error('Error getting location:', error);
-      }
-    })();
-  }, []);
-
   // Header con icono Profile
-  const handleProfilePress = () => {
+  const handleProfilePress = useCallback(() => {
     router.push('/(tabs)/profile');
-  };
+  }, [router]);
 
-  // Manejar selección de Spot
-  const handleSpotPress = (spot: Spot) => {
-    router.push(`/spot-detail?id=${spot.id}`);
-  };
-
-  // Render skeleton para slider de spots
+  // Render skeleton para grid de spots
   const renderSpotSliderSkeleton = () => {
     return (
-      <View style={styles.sliderContent}>
-        {Array.from({ length: 3 }).map((_, index) => (
-          <View key={index} style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-            <SkeletonCard size="large" />
-          </View>
-        ))}
-      </View>
+      <SkeletonList
+        count={6}
+        layout="grid"
+        variant="card"
+        cardProps={{ size: 'small' }}
+        style={styles.gridContent}
+      />
     );
   };
 
@@ -131,85 +124,93 @@ export default function SavedScreen() {
     );
   };
 
-  // Render horizontal slider of spots
-  const renderSpotSlider = (title: string, spots: Spot[]) => {
+  // Handlers memoizados
+  const handleSpotPress = useCallback((spot: Spot) => {
+    router.push(`/spot-detail?id=${spot.id}`);
+  }, [router]);
+
+  // Render grid de spots (igual que Search)
+  const renderSpotSlider = useCallback((title: string, spotsWithDistance: SpotWithDistance[], showTitle: boolean = false) => {
     // Durante refresh con datos existentes, mostrar contenido (no skeleton)
-    const showSkeleton = shouldShowSkeleton(isLoading && !isRefreshing, spots.length > 0);
+    const showSkeleton = shouldShowSkeleton(isLoading && !isRefreshing, spotsWithDistance.length > 0);
+    
+    const keyExtractor = (item: SpotWithDistance) => item.spot.id;
+    
+    const renderItem = ({ item }: { item: SpotWithDistance }) => {
+      return (
+        <View style={styles.gridItem}>
+          <SpotMediaCard
+            spot={item.spot}
+            size="small"
+            distance={item.distance}
+            onPress={() => handleSpotPress(item.spot)}
+          />
+        </View>
+      );
+    };
+    
     return (
       <View style={styles.section}>
-        <SectionHeader title={title} variant="large" />
+        {showTitle && title && <SectionHeader title={title} variant="large" />}
         {showSkeleton ? (
           renderSpotSliderSkeleton()
-        ) : spots.length > 0 ? (
+        ) : spotsWithDistance.length > 0 ? (
           <FlatList
-            data={spots}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.sliderContent}
-            keyExtractor={(item) => item.id}
-            windowSize={5}
-            initialNumToRender={3}
-            maxToRenderPerBatch={3}
-            removeClippedSubviews={true}
-            renderItem={({ item: spot }) => {
-              const distance = calculateDistanceToSpot(userLocation, spot.location);
-              return (
-                <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-                  <SpotMediaCard
-                    spot={spot}
-                    size="large"
-                    distance={distance || undefined}
-                    onPress={() => handleSpotPress(spot)}
-                  />
-                </View>
-              );
-            }}
-            snapToInterval={CARD_WIDTH + spacing.sm}
-            decelerationRate="fast"
-            pagingEnabled={false}
+            data={spotsWithDistance}
+            numColumns={2}
+            keyExtractor={keyExtractor}
+            columnWrapperStyle={styles.gridRow}
+            contentContainerStyle={styles.gridContent}
+            scrollEnabled={false}
+            windowSize={21}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            removeClippedSubviews={false}
+            renderItem={renderItem}
           />
         ) : null}
       </View>
     );
-  };
+  }, [isLoading, isRefreshing, handleSpotPress]);
 
   // Render horizontal slider of paths
-  const renderPathSlider = (title: string, paths: Flow[]) => {
+  const renderPathSlider = useCallback((title: string, flowsWithDistance: { flow: Flow; distance?: number }[], showTitle: boolean = false) => {
     // Durante refresh con datos existentes, mostrar contenido (no skeleton)
-    const showSkeleton = shouldShowSkeleton(isLoading && !isRefreshing, paths.length > 0);
+    const showSkeleton = shouldShowSkeleton(isLoading && !isRefreshing, flowsWithDistance.length > 0);
+    
+    const keyExtractor = (item: { flow: Flow; distance?: number }) => item.flow.id;
+    
+    const renderItem = ({ item }: { item: { flow: Flow; distance?: number } }) => {
+      return (
+        <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
+          <FlowCard.Display
+            flow={item.flow}
+            spots={spots}
+            distance={item.distance}
+            customName={getFlowCustomName(item.flow.id)}
+            onPress={() => startFlow(item.flow.id)}
+          />
+        </View>
+      );
+    };
+    
     return (
       <View style={styles.section}>
-        <SectionHeader title={title} variant="large" />
+        {showTitle && title && <SectionHeader title={title} variant="large" />}
         {showSkeleton ? (
           renderPathSliderSkeleton()
-        ) : paths.length > 0 ? (
+        ) : flowsWithDistance.length > 0 ? (
           <FlatList
-            data={paths}
+            data={flowsWithDistance}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.sliderContent}
-            keyExtractor={(item) => item.id}
-            windowSize={5}
-            initialNumToRender={3}
-            maxToRenderPerBatch={3}
-            removeClippedSubviews={true}
-            renderItem={({ item: path }) => {
-              const distance = calculateDistanceToSpot(
-                userLocation,
-                spots.find((s) => s.id === path.spots[0])?.location || { latitude: 0, longitude: 0 }
-              );
-              return (
-                <View style={[styles.sliderCard, { width: CARD_WIDTH }]}>
-                  <FlowCard.Display
-                    flow={path}
-                    spots={spots}
-                    distance={distance || undefined}
-                    customName={getFlowCustomName(path.id)}
-                    onPress={() => startFlow(path.id)}
-                  />
-                </View>
-              );
-            }}
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
+            windowSize={21}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            removeClippedSubviews={false}
             snapToInterval={CARD_WIDTH + spacing.sm}
             decelerationRate="fast"
             pagingEnabled={false}
@@ -217,7 +218,7 @@ export default function SavedScreen() {
         ) : null}
       </View>
     );
-  };
+  }, [isLoading, isRefreshing, spots, getFlowCustomName, startFlow]);
 
 
   // Render empty state for Saved tab
@@ -246,28 +247,39 @@ export default function SavedScreen() {
     return (
       <View style={styles.savedContent}>
         <View style={styles.section}>
-          <SectionHeader title="Saved places" variant="large" />
           {renderSpotSliderSkeleton()}
         </View>
         <View style={styles.section}>
-          <SectionHeader title="Saved flows" variant="large" />
           {renderPathSliderSkeleton()}
         </View>
       </View>
     );
   };
 
-  // Render content
+  // Render content con filtrado
   const renderContent = () => {
     // Durante refresh, mantener contenido visible si hay datos (no mostrar skeleton)
     const effectiveIsLoading = isLoading && !isRefreshing;
+    
+    // Filtrar contenido según el filtro seleccionado
+    const showSpots = currentFilter === 'spots' || currentFilter === 'all';
+    const showFlows = currentFilter === 'flows' || currentFilter === 'all';
+    const showTitles = currentFilter === 'all'; // Solo mostrar títulos en modo "All"
+    
+    // Verificar si hay datos según el filtro
+    const hasFilteredData = 
+      (showSpots && savedSpotsWithDistance.length > 0) ||
+      (showFlows && savedFlowsWithDistance.length > 0);
+    
     return renderContentSkeletonOrEmpty(
       effectiveIsLoading,
-      hasData,
+      hasFilteredData,
       () => (
         <View style={styles.savedContent}>
-          {savedSpotsData.length > 0 && renderSpotSlider('Saved places', savedSpotsData)}
-          {savedPathsData.length > 0 && renderPathSlider('Saved flows', savedPathsData)}
+          {showSpots && savedSpotsWithDistance.length > 0 && 
+            renderSpotSlider('Spots', savedSpotsWithDistance, showTitles)}
+          {showFlows && savedFlowsWithDistance.length > 0 && 
+            renderPathSlider('Flows', savedFlowsWithDistance, showTitles)}
         </View>
       ),
       renderSkeletonContent,
@@ -277,6 +289,18 @@ export default function SavedScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header as absolute overlay (doesn't affect layout) */}
+      <SavedFilterHeader
+        currentFilter={currentFilter}
+        onFilterSelect={setCurrentFilter}
+        rightAction={{
+          icon: 'profile',
+          onPress: handleProfilePress,
+        }}
+        visible={isHeaderVisible}
+        absolute
+      />
+
       <ScrollView
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
@@ -294,16 +318,8 @@ export default function SavedScreen() {
               tintColor={colors.tint}
             />
           }>
-          {/* Header inside ScrollView (hides/shows with scroll) */}
-          <ScreenHeader
-            title="Saved"
-            rightAction={{
-              icon: 'profile',
-              onPress: handleProfilePress,
-            }}
-            visible={isHeaderVisible}
-          />
-
+          {/* Spacer for absolute header (prevents content from going under header) */}
+          <View style={styles.headerSpacer} />
 
           {/* Content */}
           {renderContent()}
@@ -324,11 +340,29 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingBottom: spacing.xl,
   },
+  headerSpacer: {
+    height: 70, // Altura aproximada del header (padding + text + border)
+    marginBottom: spacing.sm,
+  },
   savedContent: {
+    paddingTop: spacing.md, // CANONICAL: Espacio superior consistente con Home
     // No paddingHorizontal - se aplica en SectionHeader, sliderContent y pathsList
   },
   section: {
     marginBottom: spacing.xl,
+  },
+  gridContent: {
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  gridRow: {
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  gridItem: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '50%',
   },
   sliderContent: {
     paddingHorizontal: spacing.md,

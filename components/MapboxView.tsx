@@ -1,7 +1,9 @@
 /**
  * Mapbox View Component
  * Componente de mapa usando @rnmapbox/maps para iOS/Android
- * Reemplaza Google Maps con Mapbox debido a problemas de facturación
+ * 
+ * POLÍTICA CANÓNICA: FLOWYA usa Mapbox como sistema principal de mapas.
+ * Google Maps solo se usa como app externa para "Get directions" (ver utils/navigationHelpers.ts).
  */
 
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
@@ -42,6 +44,7 @@ export interface MapboxViewRef {
   centerOnSpot: (spotId: string) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  resize: () => void;
 }
 
 // Calcular región inicial basada en ubicación del usuario o spots
@@ -217,6 +220,11 @@ const MapboxViewComponent = forwardRef<MapboxViewRef, MapboxViewProps>(({
         zoomLevel: newZoom,
         animationDuration: 200,
       });
+    },
+    resize: () => {
+      // En React Native, el mapa se recalcula automáticamente cuando cambian las dimensiones
+      // Este método es principalmente para mantener consistencia con la API de web
+      // No-op en móvil ya que el layout se actualiza automáticamente
     },
   }), [userLocation, spots]);
 

@@ -12,7 +12,7 @@
  * - States: active (indicator), next (number), default
  */
 
-import React from 'react';
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
@@ -22,6 +22,7 @@ import { borderRadius } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
+import { useSpot } from '@/contexts/SpotContext';
 import { Spot, SpotType } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -73,7 +74,13 @@ export function SpotInlineCard({
 }: SpotInlineCardProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const { markSpotAsSeen } = useSpot();
   const spotTypeLabel = getSpotTypeLabel(spot.type);
+
+  // Marcar Spot como 'seen' al montar (automáticamente)
+  useEffect(() => {
+    markSpotAsSeen(spot.id);
+  }, [spot.id, markSpotAsSeen]);
 
   const handleRemovePress = (e: any) => {
     e.stopPropagation();

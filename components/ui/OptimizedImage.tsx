@@ -16,13 +16,16 @@
  * @component
  */
 
-import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useEffect, useMemo, useState } from 'react';
-import { Image, ImageProps, ImageSourcePropType, StyleSheet, View, ViewStyle } from 'react-native';
+import { useImageLoadState } from '@/hooks/useImageLoadState';
+import { useEffect, useMemo, useRef } from 'react';
+import { Animated, Image, ImageProps, ImageSourcePropType, StyleSheet, View, ViewStyle } from 'react-native';
 import { Icon } from './Icon';
 import { SkeletonImage, SkeletonImageProps } from './SkeletonImage';
+
+// Crear componente Image animado para transiciones suaves
+const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 export interface OptimizedImageProps extends Omit<ImageProps, 'source' | 'style'> {
   /** URI de la imagen o ImageSourcePropType */
@@ -54,12 +57,17 @@ export interface OptimizedImageProps extends Omit<ImageProps, 'source' | 'style'
 /**
  * OptimizedImage - Componente optimizado para carga de imágenes
  * 
+ * CANONICAL: Sistema de carga con cache-aware y estados explícitos
+ * 
  * Características:
- * - Skeleton durante carga de imagen
+ * - Modelo de estados explícito: not_requested, loading, available, error
+ * - Cache-aware: Verifica cache antes de mostrar skeleton
+ * - Skeleton solo aparece cuando hay carga real pendiente
  * - Fade-in suave cuando carga completa (200ms)
  * - Error state visual si falla la carga
  * - Placeholder estático sólido si no hay imagen
- * - Cache: Cache nativo de React Native
+ * - Cache en memoria persiste durante sesión (sobrevive a unmount/remount)
+ * - Cache navegador/nativo se verifica antes de renderizar
  * - Tamaños explícitos: Requiere width/height
  * - Fallback: Placeholder cuando no hay imagen
  */
@@ -83,19 +91,21 @@ export function OptimizedImage({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
-  // Estados internos de carga
-  const [imageLoading, setImageLoading] = useState(true);
-  const [imageError, setImageError] = useState(false);
-
   // Memoizar source para evitar recreaciones innecesarias y prevenir re-renders
-  // Extraer URI para dependencia estable
+  // Extraer URI para dependencia estable (comparar por valor, no por referencia)
   const sourceUri = useMemo(() => {
     if (!source) return null;
     if (typeof source === 'object' && source !== null && 'uri' in source) {
-      return source.uri;
+      return String(source.uri);
     }
+    // Si es ImageSourcePropType (require), retornar null (no hay URI)
     return null;
-  }, [source]);
+  }, [
+    // Comparar por valor del URI, no por referencia del objeto
+    source && typeof source === 'object' && source !== null && 'uri' in source 
+      ? String(source.uri) 
+      : null
+  ]);
 
   const memoizedSource = useMemo(() => {
     if (!source) return null;
@@ -105,37 +115,146 @@ export function OptimizedImage({
     return source;
   }, [sourceUri]);
 
-  // Resetear estados cuando cambia el source
+  // CANONICAL: Usar hook de estado de carga con cache en memoria
+  const [loadState, setLoadState] = useImageLoadState(sourceUri);
+  
+  // Derivar estados booleanos del estado canónico
+  const imageLoading = loadState === 'loading';
+  const imageError = loadState === 'error';
+  const imageAvailable = loadState === 'available';
+  
+  // Iniciar carga cuando hay sourceUri y el estado es 'not_requested'
+  // Esto se hace en handleLoadStart que se dispara automáticamente cuando el Image se renderiza
+  // NO usar useEffect - el handler onLoadStart maneja esto
+  
+  // Ref para rastrear la URI actual que se está cargando y evitar reinicios innecesarios
+  const currentLoadingUriRef = useRef<string | null>(null);
+  
+  // Ref para rastrear el estado actual sin depender de él en dependencias
+  const loadStateRef = useRef(loadState);
+  
+  // Actualizar ref cuando cambia el estado
   useEffect(() => {
-    if (memoizedSource) {
-      setImageLoading(true);
-      setImageError(false);
-    } else {
-      // Si no hay source, resetear estados
-      setImageLoading(false);
-      setImageError(false);
+    loadStateRef.current = loadState;
+  }, [loadState]);
+  
+  // Animaciones para transición suave skeleton → imagen
+  const skeletonOpacity = useRef(new Animated.Value(1)).current;
+  const imageOpacity = useRef(new Animated.Value(0)).current;
+
+  // CANONICAL: Resetear animaciones cuando no hay source
+  // Los handlers onLoadStart, onLoad, onError ya manejan los cambios de estado
+  // No necesitamos un useEffect que llame a setLoadState - eso causa loops
+  useEffect(() => {
+    if (!sourceUri) {
+      skeletonOpacity.setValue(0);
+      imageOpacity.setValue(0);
     }
-  }, [sourceUri, memoizedSource]);
+  }, [sourceUri, skeletonOpacity, imageOpacity]);
 
   // Verificar si hay imagen válida
   const hasValidSource = memoizedSource !== null;
 
-  // Handlers para eventos de carga
+  // CANONICAL: Sincronizar animaciones con estado de carga
+  // loadState controla solo UI auxiliar (skeleton, opacity), nunca la existencia del Image
+  useEffect(() => {
+    if (loadState === 'loading' || loadState === 'not_requested') {
+      // Mostrar skeleton mientras carga o está en estado inicial
+      // Imagen con opacity 0 hasta que cargue
+      Animated.parallel([
+        Animated.timing(skeletonOpacity, {
+          toValue: 1,
+          duration: 0, // Cambio inmediato
+          useNativeDriver: true,
+        }),
+        Animated.timing(imageOpacity, {
+          toValue: 0,
+          duration: 0, // Cambio inmediato
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else if (loadState === 'available') {
+      // Ocultar skeleton, mostrar imagen con fade-in
+      Animated.parallel([
+        Animated.timing(skeletonOpacity, {
+          toValue: 0,
+          duration: 200, // Fade-out suave
+          useNativeDriver: true,
+        }),
+        Animated.timing(imageOpacity, {
+          toValue: 1,
+          duration: 200, // Fade-in suave
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else if (loadState === 'error') {
+      // Ocultar skeleton e imagen en caso de error
+      Animated.parallel([
+        Animated.timing(skeletonOpacity, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+        Animated.timing(imageOpacity, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState]); // Solo dependencia de loadState, las refs son estables
+
+  // CANONICAL: Handlers para eventos de carga
+  // CANONICAL: Handlers para eventos de carga
+  // Usar refs para evitar dependencias que causen loops
+  const sourceUriRef = useRef(sourceUri);
+  const hasLoadedRef = useRef<string | null>(null); // Rastrear qué URI ya cargó para evitar múltiples llamadas
+  
+  useEffect(() => {
+    sourceUriRef.current = sourceUri;
+    currentLoadingUriRef.current = sourceUri;
+    // Resetear flag cuando cambia la URI
+    if (sourceUri !== hasLoadedRef.current) {
+      hasLoadedRef.current = null;
+    }
+  }, [sourceUri]);
+
   const handleLoadStart = () => {
-    setImageLoading(true);
-    setImageError(false);
+    // onLoadStart se ejecuta cuando la imagen inicia carga
+    // Actualizar a 'loading' si el estado actual es 'not_requested' o 'error'
+    // Esto inicia la carga automáticamente cuando el Image se renderiza
+    if (sourceUriRef.current && sourceUriRef.current === currentLoadingUriRef.current) {
+      const currentState = loadStateRef.current;
+      if (currentState === 'not_requested' || currentState === 'error') {
+        setLoadState('loading');
+      }
+    }
   };
 
   const handleLoad = (e: any) => {
-    setImageLoading(false);
-    setImageError(false);
-    onLoad?.(e);
+    // onLoad se ejecuta cuando la imagen carga completa
+    // En web, si la imagen está en caché, onLoad puede ejecutarse inmediatamente sin onLoadStart
+    // Manejar tanto 'not_requested' (cache) como 'loading' (carga normal)
+    // Solo actualizar si la URI actual coincide y no se ha cargado ya (evita loops)
+    if (sourceUriRef.current && 
+        sourceUriRef.current === currentLoadingUriRef.current &&
+        hasLoadedRef.current !== sourceUriRef.current) {
+      hasLoadedRef.current = sourceUriRef.current;
+      // Actualizar a 'available' independientemente del estado actual
+      // (puede ser 'not_requested' si está en cache o 'loading' si es carga normal)
+      setLoadState('available');
+      onLoad?.(e);
+    }
   };
 
   const handleError = (e: any) => {
-    setImageLoading(false);
-    setImageError(true);
-    onError?.(e);
+    // onError se ejecuta cuando la imagen falla
+    // Solo actualizar si la URI actual coincide (evita estados de error obsoletos de URIs anteriores)
+    if (sourceUriRef.current && sourceUriRef.current === currentLoadingUriRef.current) {
+      setLoadState('error');
+      onError?.(e);
+    }
   };
 
   // Si no hay imagen y showFallback es true, mostrar fallback estático
@@ -178,16 +297,23 @@ export function OptimizedImage({
         },
         style,
       ]}>
-      {/* Skeleton durante carga */}
-      {imageLoading && showSkeleton && (
-        <View style={styles.skeletonContainer}>
+      {/* CANONICAL: Skeleton aparece cuando está cargando o en estado inicial (not_requested) */}
+      {(imageLoading || loadState === 'not_requested') && showSkeleton && (
+        <Animated.View 
+          style={[
+            styles.skeletonContainer,
+            { 
+              opacity: skeletonOpacity,
+              pointerEvents: 'auto'
+            }
+          ]}>
           <SkeletonImage
             width={width}
             height={height}
             borderRadius={borderRadius}
             {...skeletonProps}
           />
-        </View>
+        </Animated.View>
       )}
 
       {/* Error state visual */}
@@ -199,9 +325,9 @@ export function OptimizedImage({
         </View>
       )}
 
-      {/* Imagen (oculta durante carga si hay skeleton, visible si no hay error) */}
-      {!imageError && (
-        <Image
+      {/* CANONICAL: Imagen SIEMPRE renderizada si hay source (loadState controla solo UI auxiliar) */}
+      {hasValidSource && (
+        <AnimatedImage
           key={sourceUri || 'static'}
           source={memoizedSource as ImageSourcePropType}
           style={[
@@ -209,16 +335,17 @@ export function OptimizedImage({
             {
               width,
               height,
-              opacity: imageLoading && showSkeleton ? 0 : 1,
+              opacity: imageOpacity,
             },
             imageStyle,
           ]}
           resizeMode={resizeMode}
-          fadeDuration={200} // Fade-in suave (200ms)
+          fadeDuration={0} // Deshabilitar fade nativo, manejamos opacidad con Animated
           onLoadStart={handleLoadStart}
           onLoad={handleLoad}
           onError={handleError}
           // Cache: React Native maneja cache automáticamente para imágenes remotas
+          // En web, si la imagen está en caché, onLoad puede ejecutarse inmediatamente sin onLoadStart
           {...props}
         />
       )}

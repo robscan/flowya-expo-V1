@@ -20,8 +20,15 @@ import { FlowSpotNumberedMarker } from '@/components/FlowSpotNumberedMarker';
 import { MapSpotMarker } from '@/components/MapSpotMarker';
 import { SpotInlineCard } from '@/components/SpotInlineCard';
 import { SpotMediaCard } from '@/components/SpotMediaCard';
+import { AIGenerateButton } from '@/components/ui/AIGenerateButton';
 import { Chip } from '@/components/ui/Chip';
 import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
+import { FormField } from '@/components/ui/FormField';
+import { FormImagePicker } from '@/components/ui/FormImagePicker';
+import { FormLocationSelector } from '@/components/ui/FormLocationSelector';
+import { FormTextArea } from '@/components/ui/FormTextArea';
+import { FormTextInput } from '@/components/ui/FormTextInput';
+import { FormTypeSelector } from '@/components/ui/FormTypeSelector';
 import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { InfoMeta } from '@/components/ui/InfoMeta';
@@ -663,6 +670,101 @@ export default function DesignSystemScreen() {
           </View>
         </View>
       </View>
+
+      {/* Form Components */}
+      <View style={styles.componentGroup}>
+        <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.sm }]}>
+          Form Components
+        </Text>
+        <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.md }]}>
+          CANONICAL: Componentes reutilizables para formularios. Usan tokens del Design System (spacing, colors, typography).
+        </Text>
+        
+        <View style={styles.componentExamples}>
+          {/* FormField */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              FormField (base)
+            </Text>
+            <FormField label="Name" required>
+              <FormTextInput placeholder="Enter name" />
+            </FormField>
+            <FormField label="Description" error="This field is required">
+              <FormTextArea placeholder="Enter description" />
+            </FormField>
+          </View>
+
+          {/* FormTextInput */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              FormTextInput
+            </Text>
+            <FormTextInput placeholder="Default input" />
+            <FormTextInput placeholder="With left icon" leftIcon="search" style={{ marginTop: spacing.sm }} />
+            <FormTextInput placeholder="With error" error style={{ marginTop: spacing.sm }} />
+            <FormTextInput placeholder="Disabled" disabled style={{ marginTop: spacing.sm }} />
+          </View>
+
+          {/* FormTextArea */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              FormTextArea
+            </Text>
+            <FormTextArea placeholder="Enter multiline text" numberOfLines={3} />
+          </View>
+
+          {/* FormTypeSelector */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              FormTypeSelector
+            </Text>
+            <FormTypeSelector selectedType="beach" onSelectType={() => {}} />
+          </View>
+
+          {/* FormImagePicker */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              FormImagePicker
+            </Text>
+            <FormImagePicker height={150} onImageSelected={() => {}} />
+          </View>
+
+          {/* AIGenerateButton */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              AIGenerateButton
+            </Text>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <AIGenerateButton onPress={() => {}} size="small" />
+              <AIGenerateButton onPress={() => {}} size="medium" />
+              <AIGenerateButton onPress={() => {}} size="large" />
+            </View>
+            <AIGenerateButton onPress={() => {}} isGenerating style={{ marginTop: spacing.sm }} />
+          </View>
+
+          {/* FormLocationSelector */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              FormLocationSelector (CANONICAL)
+            </Text>
+            <FormLocationSelector
+              location={{ latitude: 20.6170, longitude: -87.0798 }}
+              onLocationChange={() => {}}
+              mapHeight={200}
+            />
+          </View>
+
+          {/* FormIconSelector */}
+          <View style={styles.componentExample}>
+            <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
+              FormIconSelector
+            </Text>
+            <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
+              (Modal component - see usage in spot-detail.tsx)
+            </Text>
+          </View>
+        </View>
+      </View>
     </View>
   );
 
@@ -932,7 +1034,7 @@ export default function DesignSystemScreen() {
             {/* InfoMeta large */}
             <View style={styles.componentExample}>
               <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
-                size="large" (con chip, distancia, duración, rating)
+                size="large" (con chip, distancia, rating)
               </Text>
               <View style={[styles.patternExample, { borderColor: colors.icon + '20', padding: spacing.md }]}>
                 <Text style={[textStyles.heading, { color: colors.text, marginBottom: spacing.sm }]}>
@@ -941,7 +1043,6 @@ export default function DesignSystemScreen() {
                 <InfoMeta
                   chip={{ label: 'Beach' }}
                   distance={1250}
-                  duration={45}
                   rating={{ value: 4.8, count: 128 }}
                   size="large"
                 />
@@ -951,7 +1052,7 @@ export default function DesignSystemScreen() {
             {/* InfoMeta large sin rating */}
             <View style={styles.componentExample}>
               <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
-                size="large" (chip, distancia, duración)
+                size="large" (chip, distancia)
               </Text>
               <View style={[styles.patternExample, { borderColor: colors.icon + '20', padding: spacing.md }]}>
                 <Text style={[textStyles.heading, { color: colors.text, marginBottom: spacing.sm }]}>
@@ -960,7 +1061,6 @@ export default function DesignSystemScreen() {
                 <InfoMeta
                   chip={{ label: 'WALKING' }}
                   distance={3500}
-                  duration={120}
                   size="large"
                 />
               </View>

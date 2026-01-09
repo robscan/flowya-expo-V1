@@ -11,6 +11,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+    "types": [],
     "paths": {
       "@/*": [
         "./*"
@@ -26,9 +27,7 @@
   ],
   "exclude": [
     "node_modules",
-    "**/node_modules/@types/node",
-    "node_modules/@types/node/**/*",
-    "**/node_modules/@types/node/**/*.d.ts"
+    "**/node_modules/@types/node/**/*"
   ],
   "extends": "expo/tsconfig.base"
 }
