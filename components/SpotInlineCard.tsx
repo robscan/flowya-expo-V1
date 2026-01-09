@@ -13,7 +13,7 @@
  */
 
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
@@ -119,12 +119,16 @@ export function SpotInlineCard({
         // Estado SIGUIENTE: Número de orden o icono de eliminar en modo edición
         if (isEditMode) {
           return (
-            <TouchableOpacity
-              style={[styles.leftSlot, styles.removeButton, { backgroundColor: colors.background + '80' }]}
-              onPress={handleRemovePress}
-              activeOpacity={0.7}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.leftSlot,
+                styles.removeButton,
+                { backgroundColor: colors.background + '80' },
+                pressed && { opacity: 0.7 }
+              ]}
+              onPress={handleRemovePress}>
               <Icon name="close" size={18} color={colors.error || '#FF3B30'} />
-            </TouchableOpacity>
+            </Pressable>
           );
         }
         return (
@@ -138,12 +142,16 @@ export function SpotInlineCard({
       case 'add':
         // Estado PARA AGREGAR: Icono "add"
         return (
-          <TouchableOpacity
-            style={[styles.leftSlot, styles.addButton, { backgroundColor: colors.tint }]}
-            onPress={handleAddPress}
-            activeOpacity={0.8}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.leftSlot,
+              styles.addButton,
+              { backgroundColor: colors.tint },
+              pressed && { opacity: 0.8 }
+            ]}
+            onPress={handleAddPress}>
             <Icon name="add" size={20} color="#fff" />
-          </TouchableOpacity>
+          </Pressable>
         );
       
       case 'default':
@@ -192,36 +200,36 @@ export function SpotInlineCard({
           {/* Metadata: Controles de edición (solo para estado 'next' en modo edición) */}
           {isEditMode && state === 'next' && (
             <View style={styles.editControls}>
-              <TouchableOpacity
+              <Pressable
                 onPress={handleMoveUpPress}
                 disabled={isFirst}
-                style={[
+                style={({ pressed }) => [
                   styles.editButton,
                   { backgroundColor: colors.background + '80' },
-                  isFirst && styles.editButtonDisabled
-                ]}
-                activeOpacity={0.7}>
+                  isFirst && styles.editButtonDisabled,
+                  pressed && !isFirst && { opacity: 0.7 }
+                ]}>
                 <Icon 
                   name="arrow-up" 
                   size={18} 
                   color={isFirst ? colors.icon + '40' : colors.text} 
                 />
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 onPress={handleMoveDownPress}
                 disabled={isLast}
-                style={[
+                style={({ pressed }) => [
                   styles.editButton,
                   { backgroundColor: colors.background + '80' },
-                  isLast && styles.editButtonDisabled
-                ]}
-                activeOpacity={0.7}>
+                  isLast && styles.editButtonDisabled,
+                  pressed && !isLast && { opacity: 0.7 }
+                ]}>
                 <Icon 
                   name="arrow-down" 
                   size={18} 
                   color={isLast ? colors.icon + '40' : colors.text} 
                 />
-              </TouchableOpacity>
+              </Pressable>
             </View>
           )}
         </View>

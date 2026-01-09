@@ -218,10 +218,9 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       const spot = spots.find(s => s.id === spotId);
       if (spot) {
         setCurrentZoom(15);
-        mapInstanceRef.current.flyTo({
+        mapInstanceRef.current.jumpTo({
           center: [spot.location.longitude, spot.location.latitude],
           zoom: 15, // Zoom cercano para contexto urbano (calles legibles)
-          duration: 500,
         });
       }
     },
@@ -592,20 +591,13 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
         onSpotPress(spot);
       });
 
-      // Mostrar popup si está destacado
+      // Mostrar popup si está destacado (el centrado ya lo maneja centerOnSpot)
       if (isHighlighted) {
         const popup = new mapboxgl.Popup({ offset: 25, closeButton: false })
           .setLngLat([spot.location.longitude, spot.location.latitude])
           .setHTML(`<div style="padding: 8px; font-size: 14px; font-weight: 600; color: ${colors.text};">${spot.name}</div>`)
           .addTo(mapInstanceRef.current);
         popupRef.current = popup;
-
-        // Centrar en el spot destacado
-        mapInstanceRef.current.flyTo({
-          center: [spot.location.longitude, spot.location.latitude],
-          zoom: 13,
-          duration: 500,
-        });
       }
 
       return marker;

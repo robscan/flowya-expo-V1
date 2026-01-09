@@ -14,7 +14,7 @@
 
 import { useRouter } from 'expo-router';
 import { memo, useCallback, useEffect, useMemo } from 'react';
-import { GestureResponderEvent, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { GestureResponderEvent, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Chip } from '@/components/ui/Chip';
 import { GlassView } from '@/components/ui/GlassView';
@@ -157,16 +157,18 @@ export const SpotMediaCard = memo(function SpotMediaCard({
                     colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)',
                 },
               ]}>
-              <TouchableOpacity
+              <Pressable
                 onPress={handleSavePress}
-                style={iconTouchableContainer.base}
-                activeOpacity={0.7}>
+                style={({ pressed }) => [
+                  iconTouchableContainer.base,
+                  pressed && { opacity: 0.7 }
+                ]}>
                 <Icon
                   name="bookmark"
                   size={24}
                   color={isSaved ? colors.tint : colors.text}
                 />
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -216,16 +218,18 @@ export const SpotMediaCard = memo(function SpotMediaCard({
                     colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)',
                 },
               ]}>
-              <TouchableOpacity
+              <Pressable
                 onPress={handleSavePress}
-                style={iconTouchableContainer.base}
-                activeOpacity={0.7}>
+                style={({ pressed }) => [
+                  iconTouchableContainer.base,
+                  pressed && { opacity: 0.7 }
+                ]}>
                 <Icon
                   name="bookmark"
                   size={24}
                   color={isSaved ? colors.tint : colors.text}
                 />
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>

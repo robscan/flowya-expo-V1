@@ -151,15 +151,11 @@ export default function MapScreen() {
     // Establecer highlightedSpotId primero para que el mapa pueda mostrarlo
     setHighlightedSpotId(params.spotId);
 
-    // Pequeño delay para asegurar que el mapa esté listo antes de centrar
-    const timer = setTimeout(() => {
-      if (mapViewRef.current) {
-        mapViewRef.current.centerOnSpot(params.spotId!);
-      }
-      // El card solo aparecerá si el usuario toca explícitamente el marker
-    }, 500);
-
-    return () => clearTimeout(timer);
+    // Centrar inmediatamente sin animación ni delay
+    if (mapViewRef.current) {
+      mapViewRef.current.centerOnSpot(params.spotId!);
+    }
+    // El card solo aparecerá si el usuario toca explícitamente el marker
   }, [params.spotId, spots, spotsLoading]);
 
   // Limpiar selección cuando cambia highlightedSpotId desde params

@@ -5,7 +5,7 @@
  */
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { spacing } from '@/constants/spacing';
 import { textStyles, fontSize } from '@/constants/typography';
@@ -23,21 +23,6 @@ export function Tooltip({ text, children, position = 'bottom', delay = 500 }: To
   const colors = Colors[colorScheme ?? 'light'];
   const [isVisible, setIsVisible] = useState(false);
   const [timer, setTimer] = useState<NodeJS.Timeout | null>(null);
-
-  const handlePressIn = () => {
-    const timeout = setTimeout(() => {
-      setIsVisible(true);
-    }, delay);
-    setTimer(timeout);
-  };
-
-  const handlePressOut = () => {
-    if (timer) {
-      clearTimeout(timer);
-      setTimer(null);
-    }
-    setIsVisible(false);
-  };
 
   const handleHover = (hovering: boolean) => {
     if (Platform.OS === 'web') {
@@ -76,13 +61,12 @@ export function Tooltip({ text, children, position = 'bottom', delay = 500 }: To
           {children}
         </View>
       ) : (
-        // En móvil, usar Pressable para long press
-        <Pressable
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          style={styles.trigger}>
+        // En móvil, usar View con pointerEvents para no interceptar el press
+        <View
+          style={styles.trigger}
+          pointerEvents="box-none">
           {children}
-        </Pressable>
+        </View>
       )}
       {isVisible && (
         <View

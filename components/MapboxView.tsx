@@ -199,7 +199,7 @@ const MapboxViewComponent = forwardRef<MapboxViewRef, MapboxViewProps>(({
         cameraRef.current.setCamera({
           centerCoordinate: [spot.location.longitude, spot.location.latitude],
           zoomLevel: 15, // Zoom cercano para contexto urbano (calles legibles)
-          animationDuration: 500,
+          animationDuration: 0, // Sin animación, centrado inmediato
         });
       }
     },
@@ -248,19 +248,7 @@ const MapboxViewComponent = forwardRef<MapboxViewRef, MapboxViewProps>(({
     return [];
   }, [showRoute, flowSpots, routeFrom, routeTo]);
 
-  // Centrar en spot destacado
-  useEffect(() => {
-    if (!highlightedSpotId || !cameraRef.current) return;
-    
-    const spot = spots.find(s => s.id === highlightedSpotId);
-    if (spot) {
-      cameraRef.current.setCamera({
-        centerCoordinate: [spot.location.longitude, spot.location.latitude],
-        zoomLevel: 13,
-        animationDuration: 500,
-      });
-    }
-  }, [highlightedSpotId, spots]);
+  // El centrado lo maneja centerOnSpot, no necesitamos efecto duplicado
 
   // Actualizar mapa cuando cambia la ubicación del usuario (si el mapa ya está cargado)
   useEffect(() => {

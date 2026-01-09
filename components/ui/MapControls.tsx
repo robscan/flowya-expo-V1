@@ -12,7 +12,7 @@
  * - Fullscreen: Toggle opcional (inferior derecha, junto a zoom)
  */
 
-import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
@@ -53,10 +53,12 @@ export function MapControls({
       {/* Zoom Controls - Inferior derecha (vertical) */}
       <View style={styles.zoomControls}>
         <Tooltip text="Zoom in">
-          <TouchableOpacity
-            style={buttonBaseStyle}
-            onPress={onZoomIn}
-            activeOpacity={0.7}>
+          <Pressable
+            style={({ pressed }) => [
+              buttonBaseStyle,
+              pressed && { opacity: 0.7 }
+            ]}
+            onPress={onZoomIn}>
             <GlassView
               style={styles.buttonContent}
               intensity="light"
@@ -65,16 +67,18 @@ export function MapControls({
               enableGlow={false}>
               <Icon name="add" size={20} color={colors.text} />
             </GlassView>
-          </TouchableOpacity>
+          </Pressable>
         </Tooltip>
         
         <View style={styles.buttonDivider} />
         
         <Tooltip text="Zoom out">
-          <TouchableOpacity
-            style={buttonBaseStyle}
-            onPress={onZoomOut}
-            activeOpacity={0.7}>
+          <Pressable
+            style={({ pressed }) => [
+              buttonBaseStyle,
+              pressed && { opacity: 0.7 }
+            ]}
+            onPress={onZoomOut}>
             <GlassView
               style={styles.buttonContent}
               intensity="light"
@@ -83,7 +87,7 @@ export function MapControls({
               enableGlow={false}>
               <Icon name="remove" size={20} color={colors.text} />
             </GlassView>
-          </TouchableOpacity>
+          </Pressable>
         </Tooltip>
 
         {/* Fullscreen Toggle - Debajo de zoom controls */}
@@ -91,10 +95,12 @@ export function MapControls({
           <>
             <View style={styles.buttonDivider} />
             <Tooltip text={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}>
-              <TouchableOpacity
-                style={buttonBaseStyle}
-                onPress={onFullscreenToggle}
-                activeOpacity={0.7}>
+              <Pressable
+                style={({ pressed }) => [
+                  buttonBaseStyle,
+                  pressed && { opacity: 0.7 }
+                ]}
+                onPress={onFullscreenToggle}>
                 <GlassView
                   style={styles.buttonContent}
                   intensity="light"
@@ -107,7 +113,7 @@ export function MapControls({
                     color={colors.text}
                   />
                 </GlassView>
-              </TouchableOpacity>
+              </Pressable>
             </Tooltip>
           </>
         )}

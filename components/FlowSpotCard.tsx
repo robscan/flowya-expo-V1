@@ -13,8 +13,8 @@
  * - Border radius igual a FlowCard (borderRadius.lg = 16px)
  */
 
-import { memo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
@@ -141,90 +141,97 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
             <View style={styles.suggestedActionsContainer}>
           {distanceText && (
                 <View style={styles.distanceTimeContainer}>
-                  <TouchableOpacity
+                  <Pressable
                     onPress={handleDistancePress}
-                    activeOpacity={0.7}
-                    style={styles.distanceContainer}>
+                    style={({ pressed }) => [
+                      styles.distanceContainer,
+                      pressed && { opacity: 0.7 }
+                    ]}>
                     <Icon name="map" size={14} color={colors.icon} />
                     <Text style={[styles.distanceText, { color: colors.icon }]}>
                       {distanceText}
                     </Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               )}
-              <TouchableOpacity
-                style={[styles.addButton, { backgroundColor: colors.tint }]}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.addButton,
+                  { backgroundColor: colors.tint },
+                  pressed && { opacity: 0.8 }
+                ]}
                 onPress={(e) => {
                   e.stopPropagation();
                   onAdd?.();
-                }}
-                activeOpacity={0.8}>
+                }}>
                 <Icon name="add-circle" size={16} color="#fff" />
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ) : isEditMode ? (
             <View style={styles.editControls}>
-              <TouchableOpacity
+              <Pressable
                 onPress={(e) => {
-                  e?.stopPropagation?.();
+                  e.stopPropagation();
                   onMoveUp?.();
                 }}
                 disabled={isFirst}
-                style={[
+                style={({ pressed }) => [
                   styles.editButton,
                   { backgroundColor: colors.background + '80' },
-                  isFirst && styles.editButtonDisabled
-                ]}
-                activeOpacity={0.7}>
+                  isFirst && styles.editButtonDisabled,
+                  pressed && !isFirst && { opacity: 0.7 }
+                ]}>
                 <Icon 
                   name="arrow-up" 
                   size={18} 
                   color={isFirst ? colors.icon + '40' : colors.text} 
                 />
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 onPress={(e) => {
-                  e?.stopPropagation?.();
+                  e.stopPropagation();
                   onMoveDown?.();
                 }}
                 disabled={isLast}
-                style={[
+                style={({ pressed }) => [
                   styles.editButton,
                   { backgroundColor: colors.background + '80' },
-                  isLast && styles.editButtonDisabled
-                ]}
-                activeOpacity={0.7}>
+                  isLast && styles.editButtonDisabled,
+                  pressed && !isLast && { opacity: 0.7 }
+                ]}>
                 <Icon 
                   name="arrow-down" 
                   size={18} 
                   color={isLast ? colors.icon + '40' : colors.text} 
                 />
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 onPress={(e) => {
-                  e?.stopPropagation?.();
+                  e.stopPropagation();
                   onRemove?.();
                 }}
-                style={[
+                style={({ pressed }) => [
                   styles.editButton,
-                  { backgroundColor: colors.background + '80' }
-                ]}
-                activeOpacity={0.7}>
+                  { backgroundColor: colors.background + '80' },
+                  pressed && { opacity: 0.7 }
+                ]}>
                 <Icon name="close" size={18} color="#FF3B30" />
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ) : (
             distanceText && (
             <View style={styles.distanceTimeContainer}>
-              <TouchableOpacity
+              <Pressable
                 onPress={handleDistancePress}
-                activeOpacity={0.7}
-                style={styles.distanceContainer}>
+                style={({ pressed }) => [
+                  styles.distanceContainer,
+                  pressed && { opacity: 0.7 }
+                ]}>
                 <Icon name="map" size={14} color={colors.icon} />
                 <Text style={[styles.distanceText, { color: colors.icon }]}>
                   {distanceText}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
               {estimatedTime !== undefined && estimatedTime !== null && (
                 <>
                   <Text style={[styles.separator, { color: colors.icon }]}>•</Text>
