@@ -14,14 +14,16 @@
 import React, { createContext, ReactNode, useContext, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { usePath } from './PathContext';
-import { useSpot } from './SpotContext';
 
 export type FlowStatus = 'idle' | 'active' | 'paused';
+
+export type NarrationBlock = 'anticipation' | 'presence' | 'transition';
 
 export interface FlowState {
   status: FlowStatus;
   currentPathId: string | null;
   currentSpotIndex: number;
+  currentNarrationBlock: NarrationBlock | null; // SCOPE 2: Bloque narrativo actual dentro del spot
   startedAt: Date | null;
   pausedAt: Date | null;
   isMinimized: boolean; // Estado de minimizado
@@ -41,6 +43,8 @@ interface FlowContextType {
   expandFlow: () => void; // Expandir FlowScreen desde minimizado
   nextSpot: () => void;
   previousSpot: () => void;
+  nextNarrationBlock: () => void; // SCOPE 2: Avanzar un bloque narrativo (o siguiente spot si completó todos los bloques)
+  previousNarrationBlock: () => void; // SCOPE 2: Retroceder un bloque narrativo (o bloque final del spot anterior)
   goToSpot: (spotIndex: number) => void;
   addSpotToFlow: (spotId: string) => void; // Agregar spot al flow actual
   reorderFlowSpots: (newOrder: string[]) => void; // Reordenar spots del flow actual
@@ -51,6 +55,7 @@ const defaultFlowState: FlowState = {
   status: 'idle',
   currentPathId: null,
   currentSpotIndex: 0,
+  currentNarrationBlock: null, // SCOPE 2: Sin bloque narrativo cuando está idle
   startedAt: null,
   pausedAt: null,
   isMinimized: false,
@@ -62,7 +67,6 @@ export function FlowProvider({ children }: { children: ReactNode }) {
   const [flowState, setFlowState] = useState<FlowState>(defaultFlowState);
   const router = useRouter();
   const { getFlowById, updateFlow } = usePath();
-  const { spots } = useSpot();
 
   // Calcular spot IDs actual y siguiente basado en el estado
   const { currentSpotId, nextSpotId, progress } = useMemo(() => {
@@ -103,11 +107,11 @@ export function FlowProvider({ children }: { children: ReactNode }) {
   }, [flowState.currentPathId, flowState.currentSpotIndex, flowState.status, getFlowById]);
 
   const startFlow = (pathId: string) => {
-    const flow = getFlowById(pathId);
     setFlowState({
       status: 'active',
       currentPathId: pathId,
       currentSpotIndex: 0,
+      currentNarrationBlock: 'anticipation', // SCOPE 2: Iniciar con primer bloque narrativo
       startedAt: new Date(),
       pausedAt: null,
       isMinimized: false,
@@ -161,7 +165,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
     if (stopNarrationFn) {
       try {
         await stopNarrationFn();
-      } catch (error) {
+      } catch {
         // Ignore narration errors - stopNarration is already hardened to be safe
         // We continue with state cleanup even if narration stop fails
       }
@@ -182,7 +186,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
       } else {
         router.replace('/(tabs)/home');
       }
-    } catch (error) {
+    } catch {
       // Fallback: always navigate to home if navigation fails
       router.replace('/(tabs)/home');
     }
@@ -222,8 +226,87 @@ export function FlowProvider({ children }: { children: ReactNode }) {
       setFlowState({
         ...flowState,
         currentSpotIndex: flowState.currentSpotIndex - 1,
+        currentNarrationBlock: 'transition', // SCOPE 2: Al retroceder a spot anterior, empezar desde último bloque
       });
     }
+  };
+
+  // SCOPE 2: Navegación por bloques narrativos
+  const nextNarrationBlock = () => {
+    if (flowState.status !== 'active' && flowState.status !== 'paused') {
+      return;
+    }
+
+    if (!flowState.currentPathId) {
+      return;
+    }
+
+    const flow = getFlowById(flowState.currentPathId);
+    if (!flow) {
+      return;
+    }
+
+    // Orden de bloques: anticipation → presence → transition → siguiente spot
+    const blockOrder: NarrationBlock[] = ['anticipation', 'presence', 'transition'];
+    const currentBlockIndex = flowState.currentNarrationBlock
+      ? blockOrder.indexOf(flowState.currentNarrationBlock)
+      : -1;
+
+    if (currentBlockIndex < blockOrder.length - 1) {
+      // Avanzar al siguiente bloque dentro del mismo spot
+      setFlowState({
+        ...flowState,
+        currentNarrationBlock: blockOrder[currentBlockIndex + 1],
+      });
+    } else {
+      // Completamos todos los bloques del spot actual, avanzar al siguiente spot
+      const nextSpotIndex = flowState.currentSpotIndex + 1;
+      if (nextSpotIndex < flow.spots.length) {
+        setFlowState({
+          ...flowState,
+          currentSpotIndex: nextSpotIndex,
+          currentNarrationBlock: 'anticipation', // Empezar con anticipation del siguiente spot
+        });
+      }
+      // Si no hay más spots, no hacer nada (opcional: feedback de límite)
+    }
+  };
+
+  const previousNarrationBlock = () => {
+    if (flowState.status !== 'active' && flowState.status !== 'paused') {
+      return;
+    }
+
+    if (!flowState.currentPathId) {
+      return;
+    }
+
+    const flow = getFlowById(flowState.currentPathId);
+    if (!flow) {
+      return;
+    }
+
+    // Orden de bloques: anticipation → presence → transition
+    const blockOrder: NarrationBlock[] = ['anticipation', 'presence', 'transition'];
+    const currentBlockIndex = flowState.currentNarrationBlock
+      ? blockOrder.indexOf(flowState.currentNarrationBlock)
+      : -1;
+
+    if (currentBlockIndex > 0) {
+      // Retroceder al bloque anterior dentro del mismo spot
+      setFlowState({
+        ...flowState,
+        currentNarrationBlock: blockOrder[currentBlockIndex - 1],
+      });
+    } else if (currentBlockIndex === 0 && flowState.currentSpotIndex > 0) {
+      // Ya está en el primer bloque, retroceder al bloque final del spot anterior
+      setFlowState({
+        ...flowState,
+        currentSpotIndex: flowState.currentSpotIndex - 1,
+        currentNarrationBlock: 'transition', // Empezar desde último bloque del spot anterior
+      });
+    }
+    // Si no hay spot previo o ya está en el primer bloque del primer spot, no hacer nada
   };
 
   const goToSpot = (spotIndex: number) => {
@@ -325,6 +408,8 @@ export function FlowProvider({ children }: { children: ReactNode }) {
     expandFlow,
     nextSpot,
     previousSpot,
+    nextNarrationBlock,
+    previousNarrationBlock,
     goToSpot,
     addSpotToFlow,
     reorderFlowSpots,

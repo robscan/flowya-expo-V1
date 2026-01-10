@@ -11,6 +11,7 @@
 
 import { Spot } from '@/data/spots';
 import { Path } from '@/data/paths';
+import { SpotTypeAffinity } from '@/contexts/SavedContext'; // SCOPE 5: Afinidad por tipo de spot
 
 export interface GemSpot {
   spot: Spot;
@@ -25,12 +26,25 @@ export interface GemPath {
 }
 
 /**
- * Calcular score de popularidad basado en interacciones
+ * SCOPE 5: Aplicar penalización de Dislike (reducir score ligeramente, nunca eliminarlo)
+ */
+function applyDislikePenalty(spot: Spot, notMyVibeSpots: string[]): number {
+  if (notMyVibeSpots.includes(spot.id)) {
+    // Penalizar ligeramente (-1) pero no eliminar completamente
+    return -1;
+  }
+  return 0;
+}
+
+/**
+ * Calcular score de popularidad basado en interacciones (SCOPE 5: mejorado con afinidad)
  */
 function calculatePopularityScore(
   spot: Spot,
   likedSpots: string[],
-  savedSpots: string[]
+  savedSpots: string[],
+  notMyVibeSpots: string[] = [], // SCOPE 5: Considerar dislikes
+  spotTypeAffinity?: Record<string, SpotTypeAffinity> // SCOPE 5: Afinidad por tipo
 ): number {
   let score = 0;
   
@@ -43,6 +57,16 @@ function calculatePopularityScore(
   if (savedSpots.includes(spot.id)) {
     score += 2;
   }
+  
+  // SCOPE 5: Afinidad por tipo de spot (aumentar score si tipo tiene afinidad positiva)
+  if (spotTypeAffinity && spotTypeAffinity[spot.type]) {
+    const affinity = spotTypeAffinity[spot.type];
+    // Agregar boost basado en afinidad (score puede ser -10 a 10, normalizar a -3 a 3)
+    score += Math.round((affinity.score / 10) * 3);
+  }
+  
+  // SCOPE 5: Aplicar penalización de dislike (ligera, no elimina)
+  score += applyDislikePenalty(spot, notMyVibeSpots);
   
   // Spots con nombre tienen más peso
   if (spot.name) {
@@ -58,21 +82,23 @@ function calculatePopularityScore(
 }
 
 /**
- * Obtener Spots destacados (populares)
+ * Obtener Spots destacados (populares) - SCOPE 5: mejorado con afinidad y dislike
  */
 export function getFeaturedSpots(
   spots: Spot[],
   likedSpots: string[],
   savedSpots: string[],
-  limit: number = 5
+  limit: number = 5,
+  notMyVibeSpots: string[] = [], // SCOPE 5: Considerar dislikes
+  spotTypeAffinity?: Record<string, SpotTypeAffinity> // SCOPE 5: Afinidad por tipo
 ): GemSpot[] {
   const scored = spots
     .map((spot) => ({
       spot,
-      score: calculatePopularityScore(spot, likedSpots, savedSpots),
+      score: calculatePopularityScore(spot, likedSpots, savedSpots, notMyVibeSpots, spotTypeAffinity),
       reason: 'popular' as const,
     }))
-    .filter((item) => item.score > 0)
+    .filter((item) => item.score > 0) // SCOPE 5: No eliminar spots con dislike, solo reducir score
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
   
@@ -97,16 +123,18 @@ export function getRecentSpots(
 }
 
 /**
- * Obtener Spots sugeridos (basados en interacciones pero no guardados)
+ * Obtener Spots sugeridos (basados en interacciones pero no guardados) - SCOPE 5: mejorado con afinidad
  */
 export function getSuggestedSpots(
   spots: Spot[],
   likedSpots: string[],
   savedSpots: string[],
-  limit: number = 5
+  limit: number = 5,
+  notMyVibeSpots: string[] = [], // SCOPE 5: Considerar dislikes
+  spotTypeAffinity?: Record<string, SpotTypeAffinity> // SCOPE 5: Afinidad por tipo
 ): GemSpot[] {
   // Spots que no están guardados pero podrían interesar
-  // Basado en tipo de spots que al usuario le gustan
+  // SCOPE 5: Basado en afinidad por tipo de spot (refuerza recomendaciones similares)
   const userLikedTypes = new Set(
     spots
       .filter((spot) => likedSpots.includes(spot.id))

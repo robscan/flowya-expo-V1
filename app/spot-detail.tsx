@@ -7,9 +7,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     Animated,
     Dimensions,
+    Image,
     Modal,
     Platform,
     Pressable,
@@ -18,7 +20,6 @@ import {
     StatusBar,
     StyleSheet,
     Text,
-    TouchableOpacity,
     UIManager,
     View
 } from 'react-native';
@@ -54,6 +55,7 @@ import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
 import { useSpotForm } from '@/hooks/useSpotForm';
 import { isAIConfigured } from '@/utils/aiConfig';
+import { auditSpotEditorial } from '@/utils/spotEditorialAudit';
 import { getValidImage, hasValidImage } from '@/utils/imageHelpers';
 import { mapMovementModeToNavigationMode, openNavigationApp } from '@/utils/navigationHelpers';
 import { canDeleteSpot } from '@/utils/permissions';
@@ -72,7 +74,8 @@ export default function SpotDetailScreen() {
   const { getSpotById, updateSpot, deleteSpot, markSpotAsSeen, markSpotAsAvailable, getSpotLoadState } = useSpot();
   const { isSpotSaved, toggleSaveSpot } = useSaved();
   const { createPath } = usePath();
-  const { startFlow } = useFlow();
+  // SCOPE 9: Obtener flowState, currentSpotId y funciones de Flow
+  const { flowState, currentSpotId, expandFlow, addSpotToFlow, startFlow } = useFlow();
   const { user, isAuthenticated } = useAuth();
   const { setIsTabBarVisible } = useOverlay();
   
@@ -192,7 +195,7 @@ export default function SpotDetailScreen() {
         accessibility: spotData.accessibility,
         howToVisit: spotData.howToVisit,
       };
-      if (spotData.photos && spotData.photos.length > 0 && spotData.photos[0] !== spot.photos?.[0]) {
+      if (spotData.photos && JSON.stringify(spotData.photos) !== JSON.stringify(spot.photos || [])) {
         updates.photos = spotData.photos;
       }
       if (spotData.location && (spotData.location.latitude !== spot.location.latitude || spotData.location.longitude !== spot.location.longitude)) {
@@ -253,9 +256,14 @@ export default function SpotDetailScreen() {
         <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
         <View style={styles.errorContainer}>
           <Text style={[textStyles.body, { color: colors.text }]}>Spot not found</Text>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Pressable 
+            onPress={() => router.back()} 
+            style={({ pressed }) => [
+              styles.backButton,
+              pressed && { opacity: 0.7 },
+            ]}>
             <Text style={[textStyles.bodyMedium, { color: colors.tint }]}>Go back</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
     );
@@ -350,9 +358,18 @@ export default function SpotDetailScreen() {
 
   const handleAcceptAIContent = () => {
     if (form.previewContent) {
+      // SCOPE 2: Aceptar todos los campos generados por IA
+      if (form.previewContent.spotDescription && !form.spotDescription) {
+        form.setSpotDescription(form.previewContent.spotDescription);
+        form.setDescription(form.previewContent.spotDescription);
+        form.setWhyItMatters(form.previewContent.whyItMatters || form.previewContent.spotDescription);
+      }
       if (form.previewContent.whyItMatters) {
         form.setWhyItMatters(form.previewContent.whyItMatters);
         form.setDescription(form.previewContent.whyItMatters);
+      }
+      if (form.previewContent.planInfo && !form.planInfo) {
+        form.setPlanInfo(form.previewContent.planInfo);
       }
       if (form.previewContent.culturalContext) {
         form.setCulturalContext(form.previewContent.culturalContext);
@@ -612,6 +629,38 @@ export default function SpotDetailScreen() {
             highlightedSpotId={spot.id}
             disableNativeControls={true}
           />
+          
+          {/* Controles del mapa en fullscreen - Siempre visibles dentro del marco del mapa */}
+          {/* Botón Current Location - Lado izquierdo */}
+          {baseLocation && (
+            <Pressable
+              onPress={handleCenterOnUserLocation}
+              style={({ pressed }) => [
+                styles.currentLocationButton, 
+                {
+                  backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.9)',
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}>
+              <GlassView
+                style={styles.buttonContent}
+                intensity="light"
+                opacity="medium"
+                shadowLevel="subtle"
+                enableGlow={false}>
+                <Icon name="navigation" size={20} color={colors.tint} />
+              </GlassView>
+            </Pressable>
+          )}
+
+          {/* Map Controls - Lado derecho (zoom y fullscreen exit) */}
+          <MapControls
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onFullscreenToggle={handleFullscreenToggle}
+            isFullscreen={isFullscreen}
+            showFullscreen={true}
+          />
         </View>
       )}
 
@@ -624,7 +673,9 @@ export default function SpotDetailScreen() {
         
         {/* ContentHeader with image hero */}
         {(() => {
-          const validImage = isEditMode ? form.photo : getValidImage(spot.photos);
+          // En modo edición: usar fotos del form; en modo visualización: usar fotos del spot
+          const displayPhotos = isEditMode ? form.photos : (spot.photos || []);
+          const validImage = displayPhotos.length > 0 ? displayPhotos[0] : null;
           const heroImage = validImage ? { uri: validImage } : null;
           
           // Left actions
@@ -660,7 +711,8 @@ export default function SpotDetailScreen() {
           return (
             <ContentHeader
               heroType="image"
-              heroImage={heroImage}
+              heroImage={displayPhotos.length === 1 ? heroImage : null}
+              heroImages={displayPhotos.length > 1 ? displayPhotos : displayPhotos.length === 1 ? displayPhotos : []}
               heroHeight={IMAGE_HEIGHT}
               leftActions={leftActions}
               rightActions={rightActions}
@@ -670,7 +722,62 @@ export default function SpotDetailScreen() {
           );
         })()}
         
-        {/* Edit mode image picker button - handled by ContentHeader with FormImagePicker */}
+        {/* Edit mode: Image management controls */}
+        {isEditMode && (
+          <View style={[styles.imageEditSection, { backgroundColor: colors.background }]}>
+            <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.sm }]}>
+              Photos
+            </Text>
+            
+            {/* Grid de imágenes actuales */}
+            {form.photos.length > 0 && (
+              <View style={styles.imagesGrid}>
+                {form.photos.map((photoUri, index) => (
+                  <View key={`${photoUri}-${index}`} style={styles.imageEditItem}>
+                    <Image source={{ uri: photoUri }} style={styles.imageEditThumbnail} resizeMode="cover" />
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.imageRemoveButton,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                      onPress={() => form.removeImage(index)}>
+                      <Icon name="close" size={16} color={colors.background} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+            
+            {/* Botón para agregar imagen */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.addImageButton,
+                {
+                  backgroundColor: colors.icon + '10',
+                  borderColor: colors.icon + '30',
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+              onPress={form.addImage}
+              disabled={form.isOptimizingImage}>
+              {form.isOptimizingImage ? (
+                <>
+                  <ActivityIndicator size="small" color={colors.tint} />
+                  <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
+                    Optimizing...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Icon name="add" size={20} color={colors.tint} />
+                  <Text style={[textStyles.caption, { color: colors.tint, marginLeft: spacing.xs }]}>
+                    Add photo
+                  </Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        )}
 
         <View style={[styles.contentSection, { backgroundColor: colors.background }]}>
 
@@ -711,32 +818,92 @@ export default function SpotDetailScreen() {
           {/* Primary Action Button - ocultar en modo edición */}
           {!isEditMode && (
             <>
-          <TouchableOpacity
-            onPress={handleStartFlow}
-            style={[
-              styles.primaryButton, 
-              { 
-                backgroundColor: baseLocation ? colors.tint : colors.icon + '40',
-                opacity: baseLocation ? 1 : 0.6,
-              }
-            ]}
-            activeOpacity={0.8}
-            disabled={!baseLocation}>
-            <Icon name="play" size={20} color="#fff" />
-            <Text style={[textStyles.bodyMedium, { color: '#fff', marginLeft: spacing.xs }]}>
-              Start from here
-            </Text>
-          </TouchableOpacity>
-          {!baseLocation && (
-            <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2, marginBottom: spacing.md }]}>
-              Enable location to start flow
-            </Text>
-          )}
-          {baseLocation && (
-            <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs, marginBottom: spacing.md }]}>
-              We&apos;ll build the path as you move.
-            </Text>
-          )}
+              {/* SCOPE 9: Estados del botón "Start from here" con Flow activo */}
+              {(() => {
+                const isFlowActive = flowState.status === 'active' || flowState.status === 'paused';
+                const isCurrentSpotInFlow = isFlowActive && spot?.id === currentSpotId;
+                const isNearbySpot = isFlowActive && 
+                                     spot?.id !== currentSpotId && 
+                                     flowState.currentPathId !== null; // Simplificado - mejorar con lógica de proximidad
+
+                // SCOPE 9.1: Caso A - Este spot es el actual del Flow
+                if (isCurrentSpotInFlow) {
+                  return (
+                    <Pressable
+                      onPress={() => expandFlow()}
+                      style={({ pressed }) => [
+                        styles.currentSpotButton,
+                        {
+                          backgroundColor: colors.tint + '30',
+                          borderColor: colors.tint,
+                          borderWidth: 2,
+                          opacity: pressed ? 0.8 : 1,
+                        }
+                      ]}>
+                      <Icon name="navigation" size={20} color={colors.tint} />
+                      <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
+                        You&apos;re here
+                      </Text>
+                    </Pressable>
+                  );
+                }
+
+                // SCOPE 9.2: Caso B - Spot cercano, no es el actual
+                if (isNearbySpot) {
+                  return (
+                    <Pressable
+                      onPress={() => {
+                        if (spot) {
+                          addSpotToFlow(spot.id);
+                        }
+                      }}
+                      style={({ pressed }) => [
+                        styles.addToFlowButton,
+                        {
+                          backgroundColor: colors.tint + '20',
+                          borderColor: colors.tint,
+                          opacity: pressed ? 0.8 : 1,
+                        }
+                      ]}>
+                      <Icon name="plus" size={20} color={colors.tint} />
+                      <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
+                        Add to the flow
+                      </Text>
+                    </Pressable>
+                  );
+                }
+
+                // SCOPE 9.3: Caso C - Spot lejano o sin Flow activo: Botón original "Start from here"
+                return (
+                  <>
+                    <Pressable
+                      onPress={handleStartFlow}
+                      style={({ pressed }) => [
+                        styles.primaryButton,
+                        {
+                          backgroundColor: baseLocation ? colors.tint : colors.icon + '40',
+                          opacity: baseLocation ? (pressed ? 0.8 : 1) : 0.6,
+                        }
+                      ]}
+                      disabled={!baseLocation}>
+                      <Icon name="play" size={20} color="#fff" />
+                      <Text style={[textStyles.bodyMedium, { color: '#fff', marginLeft: spacing.xs }]}>
+                        Start from here
+                      </Text>
+                    </Pressable>
+                    {!baseLocation && (
+                      <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2, marginBottom: spacing.md }]}>
+                        Enable location to start flow
+                      </Text>
+                    )}
+                    {baseLocation && (
+                      <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs, marginBottom: spacing.md }]}>
+                        We&apos;ll build the path as you move.
+                      </Text>
+                    )}
+                  </>
+                );
+              })()}
             </>
           )}
 
@@ -746,29 +913,77 @@ export default function SpotDetailScreen() {
                 <Text style={[textStyles.heading3, { color: colors.text, marginBottom: spacing.sm }]}>
                   Why it matters
                 </Text>
-                {isEditMode && isAIConfigured() && (
-                  <AIGenerateButton
-                    onPress={handleGenerateAI}
-                    isGenerating={form.isGeneratingAI}
-                    size="small"
-                  />
-                )}
+                {/* SCOPE 7: Botón removido del header */}
               </View>
             {isEditMode ? (
-              <FormTextArea
-                value={form.whyItMatters || form.description}
-                onChangeText={(text) => {
-                  form.setWhyItMatters(text);
-                  form.setDescription(text); // Mantener sincronizado por ahora
-                }}
-                placeholder="What makes this place special? e.g. A 16th-century temple representing colonial architecture..."
-                numberOfLines={4}
-              />
+              <>
+                {/* SCOPE 6.4: Hint discreto si hay campos faltantes */}
+                {(() => {
+                  const editorialStatus = spot ? auditSpotEditorial(spot) : null;
+                  const hasMissingFields = editorialStatus && (
+                    editorialStatus.spotDescription === 'missing' ||
+                    editorialStatus.narration.anticipation === 'missing' ||
+                    editorialStatus.narration.presence === 'missing' ||
+                    editorialStatus.narration.transition === 'missing' ||
+                    editorialStatus.howToVisit === 'missing' ||
+                    editorialStatus.planInfo === 'missing'
+                  );
+                  
+                  return hasMissingFields ? (
+                    <View style={[styles.incompleteHint, { backgroundColor: colors.icon + '10' }]}>
+                      <Icon name="info" size={14} color={colors.icon} />
+                      <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
+                        Este spot tiene información incompleta
+                      </Text>
+                    </View>
+                  ) : null;
+                })()}
+                
+                {/* SCOPE 7: Botón "Enrich with AI" justo arriba del FormTextArea */}
+                {!form.existingSpot && (
+                  isAIConfigured() ? (
+                    <View style={{ marginBottom: spacing.sm }}>
+                      <AIGenerateButton
+                        onPress={handleGenerateAI}
+                        isGenerating={form.isGeneratingAI}
+                        size="small"
+                      />
+                    </View>
+                  ) : (
+                    // SCOPE 0.4: Fail-safe - mostrar que IA no está configurada
+                    <View style={{
+                      backgroundColor: colors.icon + '10',
+                      borderColor: colors.icon + '30',
+                      borderWidth: 1,
+                      borderRadius: 12,
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: spacing.xs,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      marginBottom: spacing.sm,
+                    }}>
+                      <Icon name="info" size={14} color={colors.icon} />
+                      <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
+                        IA no configurada
+                      </Text>
+                    </View>
+                  )
+                )}
+                <FormTextArea
+                  value={form.whyItMatters || form.description}
+                  onChangeText={(text) => {
+                    form.setWhyItMatters(text);
+                    form.setDescription(text); // Mantener sincronizado por ahora
+                  }}
+                  placeholder="What makes this place special? e.g. A 16th-century temple representing colonial architecture..."
+                  numberOfLines={4}
+                />
+              </>
             ) : (
               (spot.whyItMatters || spot.description) && (
-              <Text style={[textStyles.body, { color: colors.text }]}>{spot.whyItMatters || spot.description}</Text>
+                <Text style={[textStyles.body, { color: colors.text }]}>{spot.whyItMatters || spot.description}</Text>
               )
-          )}
+            )}
           </View>
 
           {/* Cultural context section */}
@@ -844,57 +1059,56 @@ export default function SpotDetailScreen() {
                     disableNativeControls={true}
                   />
 
-                  {/* Controles del mapa - Overlay dentro del contenedor del mapa, solo cuando no está en fullscreen */}
-                  {!isFullscreen && (
-                    <>
-                      {/* Botón Current Location - Lado izquierdo */}
-                      {baseLocation && (
-                        <TouchableOpacity
-                          onPress={handleCenterOnUserLocation}
-                          activeOpacity={0.7}
-                          style={[styles.currentLocationButton, {
-                            backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.9)',
-                          }]}>
-                          <GlassView
-                            style={styles.buttonContent}
-                            intensity="light"
-                            opacity="medium"
-                            shadowLevel="subtle"
-                            enableGlow={false}>
-                            <Icon name="navigation" size={20} color={colors.tint} />
-                          </GlassView>
-                        </TouchableOpacity>
-                      )}
-
-                      {/* Map Controls - Lado derecho (zoom y fullscreen) */}
-                      <MapControls
-                        onZoomIn={handleZoomIn}
-                        onZoomOut={handleZoomOut}
-                        onFullscreenToggle={handleFullscreenToggle}
-                        isFullscreen={isFullscreen}
-                        showFullscreen={true}
-                      />
-                    </>
+                  {/* Controles del mapa - Overlay dentro del contenedor del mapa, siempre visibles */}
+                  {/* Botón Current Location - Lado izquierdo */}
+                  {baseLocation && (
+                    <Pressable
+                      onPress={handleCenterOnUserLocation}
+                      style={({ pressed }) => [
+                        styles.currentLocationButton, 
+                        {
+                          backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.9)',
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}>
+                      <GlassView
+                        style={styles.buttonContent}
+                        intensity="light"
+                        opacity="medium"
+                        shadowLevel="subtle"
+                        enableGlow={false}>
+                        <Icon name="navigation" size={20} color={colors.tint} />
+                      </GlassView>
+                    </Pressable>
                   )}
+
+                  {/* Map Controls - Lado derecho (zoom y fullscreen) - Siempre visibles */}
+                  <MapControls
+                    onZoomIn={handleZoomIn}
+                    onZoomOut={handleZoomOut}
+                    onFullscreenToggle={handleFullscreenToggle}
+                    isFullscreen={isFullscreen}
+                    showFullscreen={true}
+                  />
                 </View>
 
                 {/* Botón Get directions - Ocultar en fullscreen */}
                 {!isFullscreen && (
-                  <TouchableOpacity
+                  <Pressable
                     onPress={handleGetDirections}
-                    style={[
+                    style={({ pressed }) => [
                       styles.getDirectionsButton,
                       { 
                         backgroundColor: colors.background,
                         borderColor: colors.icon + '30',
+                        opacity: pressed ? 0.7 : 1,
                       }
-                    ]}
-                    activeOpacity={0.7}>
+                    ]}>
                     <Icon name="directions" size={20} color={colors.tint} />
                     <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
                       Get directions
                     </Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 )}
               </>
             )}
@@ -908,11 +1122,18 @@ export default function SpotDetailScreen() {
             {isEditMode ? (
               <>
                 <View style={styles.howToVisitEditCard}>
-                  <TouchableOpacity
+                  <Pressable
                     onPress={() => setShowIconSelector({ field: '1' })}
-                    style={[styles.iconSelectorButton, { backgroundColor: colors.icon + '10', borderColor: colors.icon + '30' }]}>
+                    style={({ pressed }) => [
+                      styles.iconSelectorButton, 
+                      { 
+                        backgroundColor: colors.icon + '10', 
+                        borderColor: colors.icon + '30',
+                        opacity: pressed ? 0.7 : 1,
+                      }
+                    ]}>
                     <Icon name={getHowToVisitBestTimeIcon()} size={24} color={colors.tint} />
-                  </TouchableOpacity>
+                  </Pressable>
                   <FormTextArea
                     value={getHowToVisitBestTime()}
                     onChangeText={(text) => setHowToVisitBestTime(text)}
@@ -922,11 +1143,18 @@ export default function SpotDetailScreen() {
                   />
                 </View>
                 <View style={[styles.howToVisitEditCard, { marginTop: spacing.sm }]}>
-                  <TouchableOpacity
+                  <Pressable
                     onPress={() => setShowIconSelector({ field: '2' })}
-                    style={[styles.iconSelectorButton, { backgroundColor: colors.icon + '10', borderColor: colors.icon + '30' }]}>
+                    style={({ pressed }) => [
+                      styles.iconSelectorButton, 
+                      { 
+                        backgroundColor: colors.icon + '10', 
+                        borderColor: colors.icon + '30',
+                        opacity: pressed ? 0.7 : 1,
+                      }
+                    ]}>
                     <Icon name={getHowToVisitPhotographyIcon()} size={24} color={colors.tint} />
-                  </TouchableOpacity>
+                  </Pressable>
                   <FormTextArea
                     value={getHowToVisitPhotography()}
                     onChangeText={(text) => setHowToVisitPhotography(text)}
@@ -997,12 +1225,18 @@ export default function SpotDetailScreen() {
                   <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Restrictions & Accessibility</Text>
                   <View style={styles.planInfoIconsEditContainer}>
                     <View style={styles.planInfoIconTextEditContainer}>
-                      <TouchableOpacity
+                      <Pressable
                         onPress={() => setShowIconSelector({ field: 'restrictions' })}
-                        style={[styles.planInfoIconEditButton, { backgroundColor: colors.icon + '10', borderColor: colors.icon + '30' }]}
-                        activeOpacity={0.7}>
+                        style={({ pressed }) => [
+                          styles.planInfoIconEditButton, 
+                          { 
+                            backgroundColor: colors.icon + '10', 
+                            borderColor: colors.icon + '30',
+                            opacity: pressed ? 0.7 : 1,
+                          }
+                        ]}>
                         <Icon name={editPlanInfoIconRestrictions} size={24} color={colors.tint} />
-                      </TouchableOpacity>
+                      </Pressable>
                       <FormTextInput
                         value={form.restrictions}
                         onChangeText={form.setRestrictions}
@@ -1011,12 +1245,18 @@ export default function SpotDetailScreen() {
                       />
                     </View>
                     <View style={[styles.planInfoIconTextEditContainer, { marginTop: spacing.sm }]}>
-                      <TouchableOpacity
+                      <Pressable
                         onPress={() => setShowIconSelector({ field: 'accessibility' })}
-                        style={[styles.planInfoIconEditButton, { backgroundColor: colors.icon + '10', borderColor: colors.icon + '30' }]}
-                        activeOpacity={0.7}>
+                        style={({ pressed }) => [
+                          styles.planInfoIconEditButton, 
+                          { 
+                            backgroundColor: colors.icon + '10', 
+                            borderColor: colors.icon + '30',
+                            opacity: pressed ? 0.7 : 1,
+                          }
+                        ]}>
                         <Icon name={editPlanInfoIconAccessibility} size={24} color={colors.tint} />
-                      </TouchableOpacity>
+                      </Pressable>
                       <FormTextInput
                         value={form.accessibility}
                         onChangeText={form.setAccessibility}
@@ -1026,6 +1266,19 @@ export default function SpotDetailScreen() {
                     </View>
                   </View>
                 </View>
+                {/* SCOPE 4: Campo planInfo editable (información experiencial generada por IA) */}
+                {form.planInfo && (
+                  <View style={styles.planInfoEditRow}>
+                    <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Plan Info</Text>
+                    <FormTextArea
+                      value={form.planInfo}
+                      onChangeText={form.setPlanInfo}
+                      placeholder="Experiential information (best time of day, how it fits in a Flow)..."
+                      numberOfLines={3}
+                      style={{ marginTop: spacing.xs }}
+                    />
+                  </View>
+                )}
                 <View style={styles.planInfoEditRow}>
                   <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Cost</Text>
                   <View style={styles.costEditRow}>
@@ -1071,6 +1324,16 @@ export default function SpotDetailScreen() {
                 </View>
               </View>
             ) : (
+            <>
+            {/* SCOPE 4: Mostrar planInfo si existe (solo texto, no en grid) */}
+            {spot.planInfo && (
+              <View style={[styles.section, { marginBottom: spacing.md }]}>
+                <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Plan Info</Text>
+                <Text style={[textStyles.body, { color: colors.text }]}>
+                  {spot.planInfo}
+                </Text>
+              </View>
+            )}
             <View style={styles.planInfoGrid}>
               {hoursText && (
                 <View style={[styles.planInfoCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
@@ -1112,6 +1375,7 @@ export default function SpotDetailScreen() {
                 </View>
               </View>
             </View>
+            </>
             )}
           </View>
 
@@ -1124,18 +1388,30 @@ export default function SpotDetailScreen() {
       {/* Edit Mode Actions */}
       {isEditMode && (
         <View style={[styles.editActions, { backgroundColor: colors.background }]}>
-          <TouchableOpacity
-            style={[styles.editActionButton, styles.cancelEditButton, { backgroundColor: colors.icon + '20' }]}
-            onPress={handleCancelEdit}
-            activeOpacity={0.7}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.editActionButton, 
+              styles.cancelEditButton, 
+              { 
+                backgroundColor: colors.icon + '20',
+                opacity: pressed ? 0.7 : 1,
+              }
+            ]}
+            onPress={handleCancelEdit}>
             <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.editActionButton, styles.saveEditButton, { backgroundColor: colors.tint }]}
-            onPress={handleSaveEdit}
-            activeOpacity={0.7}>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.editActionButton, 
+              styles.saveEditButton, 
+              { 
+                backgroundColor: colors.tint,
+                opacity: pressed ? 0.7 : 1,
+              }
+            ]}
+            onPress={handleSaveEdit}>
             <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
 
@@ -1150,35 +1426,41 @@ export default function SpotDetailScreen() {
             style={styles.menuContainer}
             shadowLevel="medium"
             enableGlow={true}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={handleSuggestEdit}
-              activeOpacity={0.7}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.menuItem,
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={handleSuggestEdit}>
               <Icon name="edit" size={20} color={colors.text} />
               <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
                 Suggest an edit
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={handleReport}
-              activeOpacity={0.7}>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.menuItem,
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={handleReport}>
               <Icon name="report" size={20} color={colors.text} />
               <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
                 Report
               </Text>
-            </TouchableOpacity>
+            </Pressable>
             {/* Visible para el creador del spot o administrador */}
             {spot && user && canDeleteSpot(spot, user) && (
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={handlePlaceNoLongerExists}
-                activeOpacity={0.7}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.menuItem,
+                  pressed && { opacity: 0.7 },
+                ]}
+                onPress={handlePlaceNoLongerExists}>
                 <Icon name="delete" size={20} color={colors.text} />
                 <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
                   This place no longer exists
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             )}
           </GlassView>
         </Pressable>
@@ -1204,18 +1486,30 @@ export default function SpotDetailScreen() {
               This action cannot be undone. The spot will be permanently deleted.
             </Text>
             <View style={styles.deleteConfirmButtons}>
-              <TouchableOpacity
-                style={[styles.deleteConfirmButton, styles.deleteConfirmButtonCancel, { borderColor: colors.icon + '30' }]}
-                onPress={handleCancelDelete}
-                activeOpacity={0.7}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.deleteConfirmButton, 
+                  styles.deleteConfirmButtonCancel, 
+                  { 
+                    borderColor: colors.icon + '30',
+                    opacity: pressed ? 0.7 : 1,
+                  }
+                ]}
+                onPress={handleCancelDelete}>
                 <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.deleteConfirmButton, styles.deleteConfirmButtonDelete, { backgroundColor: '#FF6B6B' }]}
-                onPress={handleConfirmDelete}
-                activeOpacity={0.7}>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.deleteConfirmButton, 
+                  styles.deleteConfirmButtonDelete, 
+                  { 
+                    backgroundColor: '#FF6B6B',
+                    opacity: pressed ? 0.7 : 1,
+                  }
+                ]}
+                onPress={handleConfirmDelete}>
                 <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Delete</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </GlassView>
         </Pressable>
@@ -1287,18 +1581,29 @@ export default function SpotDetailScreen() {
               You have unsaved changes. Are you sure you want to discard them?
             </Text>
             <View style={styles.deleteConfirmButtons}>
-              <TouchableOpacity
-                style={[styles.deleteConfirmButton, styles.deleteConfirmButtonCancel, { borderColor: colors.icon + '30' }]}
-                onPress={() => setShowCancelConfirm(false)}
-                activeOpacity={0.7}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.deleteConfirmButton, 
+                  styles.deleteConfirmButtonCancel, 
+                  { 
+                    borderColor: colors.icon + '30',
+                    opacity: pressed ? 0.7 : 1,
+                  }
+                ]}
+                onPress={() => setShowCancelConfirm(false)}>
                 <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Keep editing</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.deleteConfirmButton, { backgroundColor: colors.tint }]}
-                onPress={handleConfirmCancel}
-                activeOpacity={0.7}>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.deleteConfirmButton, 
+                  { 
+                    backgroundColor: colors.tint,
+                    opacity: pressed ? 0.7 : 1,
+                  }
+                ]}
+                onPress={handleConfirmCancel}>
                 <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Discard</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </GlassView>
         </Pressable>
@@ -1413,6 +1718,34 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     minHeight: 32,
+  },
+  // SCOPE 6.4: Hint discreto para información incompleta
+  incompleteHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.sm,
+    borderRadius: 8,
+    marginBottom: spacing.sm,
+  },
+  // SCOPE 9: Estilos para estados del botón con Flow activo
+  currentSpotButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingVertical: spacing.md,
+    borderRadius: borderTokens.card,
+    marginTop: spacing.md,
+  },
+  addToFlowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingVertical: spacing.md,
+    borderRadius: borderTokens.card,
+    marginTop: spacing.md,
+    borderWidth: 1,
   },
   howToVisitCard: {
     flexDirection: 'row',
@@ -1641,6 +1974,49 @@ const styles = StyleSheet.create({
   },
   deleteConfirmButtonDelete: {
     // backgroundColor se aplica dinámicamente
+  },
+  imageEditSection: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  imagesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  imageEditItem: {
+    width: (SCREEN_WIDTH - spacing.md * 2 - spacing.sm * 2) / 3, // 3 columnas con gaps
+    height: (SCREEN_WIDTH - spacing.md * 2 - spacing.sm * 2) / 3,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  imageEditThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  imageRemoveButton: {
+    position: 'absolute',
+    top: spacing.xs / 2,
+    right: spacing.xs / 2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    minHeight: 48,
   },
 });
 

@@ -15,8 +15,8 @@
  */
 
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useRef } from 'react';
+import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Icon, IconName } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -70,24 +70,18 @@ export function SectionHeader({
   // TextInput ref for autofocus
   const textInputRef = useRef<TextInput>(null);
 
-  // Auto-focus for search variant on mount
-  useEffect(() => {
-    if (variant === 'search' && autoFocus && textInputRef.current) {
-      // Delay to ensure component is mounted
-      setTimeout(() => {
-        textInputRef.current?.focus();
-      }, 100);
-    }
-  }, [variant, autoFocus]);
-
   // Auto-focus for search variant when screen gains focus
+  // CANONICAL: Focus when entering Search tab (not on mount to avoid deep links)
   useFocusEffect(
     useCallback(() => {
       if (variant === 'search' && autoFocus && textInputRef.current) {
         // Pequeño delay para asegurar que el componente esté completamente montado
-        setTimeout(() => {
+        // Reducido a 150ms para mejor respuesta
+        const timer = setTimeout(() => {
           textInputRef.current?.focus();
-        }, 100);
+        }, 150);
+
+        return () => clearTimeout(timer);
       }
     }, [variant, autoFocus])
   );
@@ -134,11 +128,12 @@ export function SectionHeader({
             onFocus={onSearchFocus}
             onBlur={onSearchBlur}
             onSubmitEditing={onSearchSubmit}
-            autoFocus={autoFocus}
+            autoFocus={false}
             autoCorrect={false}
             autoCapitalize="none"
             returnKeyType="search"
             textAlignVertical="center"
+            showSoftInputOnFocus={Platform.OS !== 'web'}
           />
         </View>
       </View>

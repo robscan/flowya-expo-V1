@@ -15,12 +15,12 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
-import { fontSize, textStyles } from '@/constants/typography';
+import { fontSize, lineHeight, textStyles } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
 import { useNarration } from '@/contexts/NarrationContext';
 import { useSaved } from '@/contexts/SavedContext';
@@ -44,6 +44,7 @@ export interface FlowPlayerControlsProps {
   onExpand?: () => void;
   onLike?: (spotId: string) => void;
   onNotMyVibe?: (spotId: string) => void;
+  isVisible?: boolean; // SCOPE 2: Control de visibilidad con scroll (solo transform/opacity)
 }
 
 export function FlowPlayerControls({
@@ -62,10 +63,11 @@ export function FlowPlayerControls({
   onExpand,
   onLike,
   onNotMyVibe,
+  isVisible = true, // SCOPE 2: Por defecto visible
 }: FlowPlayerControlsProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { flowState, pauseFlow, resumeFlow, previousSpot, nextSpot, nextSpotId } = useFlow();
+  const { flowState, pauseFlow, resumeFlow, previousNarrationBlock, nextNarrationBlock, nextSpotId } = useFlow(); // SCOPE 3: Usar navegación por bloques
   const narration = useNarration();
   
   // Obtener estado de afinidad
@@ -93,13 +95,14 @@ export function FlowPlayerControls({
     }
   }, [flowState.status, pauseFlow, resumeFlow, narration]);
 
+  // SCOPE 3: Navegación por bloques narrativos (un click = un bloque)
   const handlePrevious = useCallback(() => {
-    previousSpot();
-  }, [previousSpot]);
+    previousNarrationBlock(); // Retroceder un bloque narrativo (o bloque final del spot anterior)
+  }, [previousNarrationBlock]);
 
   const handleNext = useCallback(() => {
-    nextSpot();
-  }, [nextSpot]);
+    nextNarrationBlock(); // Avanzar un bloque narrativo (o siguiente spot si completó todos los bloques)
+  }, [nextNarrationBlock]);
 
   // Determinar tamaños según variante y tipo de botón
   const primaryIconSize = variant === 'mini' ? 24 : 28;
@@ -110,12 +113,27 @@ export function FlowPlayerControls({
   const affinityGap = spacing.sm; // Gap más pequeño para botones de afinidad
   const minTouchArea = 48;
 
+  // FIX: Estilos completos de visibilidad (no solo opacity/transform)
+  const visibilityStyle = variant === 'screen' ? {
+    opacity: isVisible ? 1 : 0,
+    transform: [{ translateY: isVisible ? 0 : 100 }],
+    pointerEvents: (isVisible ? 'auto' : 'none') as 'auto' | 'none', // FIX: No interceptar toques cuando oculto
+    zIndex: isVisible ? 1000 : -1, // FIX: z-index negativo cuando oculto (no intercepta nada)
+  } : {};
+
   // Estilos según variante
   const containerStyle = [
     styles.container,
     variant === 'mini' && styles.containerMini,
-    variant === 'screen' && [styles.containerScreen, { borderTopColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }],
+    variant === 'screen' && [
+      styles.containerScreen, 
+      { 
+        borderTopColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+        backgroundColor: colors.background, // FIX: Fondo del tema para evitar transparencias
+      }
+    ],
     variant === 'full' && [styles.containerFull, { borderTopColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }],
+    visibilityStyle, // FIX: Aplicar visibilidad completa (opacity, transform, pointerEvents, zIndex)
   ];
 
   // No se requiere lógica de centrado condicional
@@ -126,6 +144,38 @@ export function FlowPlayerControls({
   const renderInfoSection = () => {
     if (variant !== 'screen' || !currentSpot) return null;
 
+    // SCOPE 3: Sincronización de subtítulos con audio
+    // Regla principal: Subtítulo visible = audio reproduciéndose
+    const isAudioPlaying = narration.status === 'playing';
+    const hasActiveNarration = narration.currentNarration && isAudioPlaying;
+    const narrationText = narration.currentNarration?.text;
+
+    // SCOPE 3: Mostrar subtítulos SOLO cuando el audio se está reproduciendo
+    if (hasActiveNarration && narrationText && narrationText.trim().length > 0) {
+      return (
+        <View style={styles.infoSection}>
+          {/* Subtítulos de narración - máximo 2 líneas, corte por palabras completas */}
+          <Text 
+            style={[textStyles.body, styles.subtitleText, { color: colors.text }]}
+            numberOfLines={2}
+            ellipsizeMode="tail">
+            {narrationText}
+          </Text>
+
+          {/* Stepper siempre visible */}
+          <View style={[styles.progressBar, { backgroundColor: colors.icon + '15' }]}>
+            <View
+              style={[
+                styles.progressFill,
+                { backgroundColor: colors.tint, width: `${progressPercent}%` },
+              ]}
+            />
+          </View>
+        </View>
+      );
+    }
+
+    // Sin narración: mostrar labels originales
     return (
       <View style={styles.infoSection}>
         {/* Fila de estado: Punto rojo + NOW MOVING + espacio + X spots added */}
@@ -172,8 +222,13 @@ export function FlowPlayerControls({
     );
   };
 
+  // SCOPE 2: Transiciones suaves manejadas por React Native automáticamente con estilos
   return (
-    <View style={containerStyle}>
+    <View 
+      style={containerStyle}
+      // FIX: Prevenir problema de aria-hidden cuando está oculto
+      accessibilityElementsHidden={variant === 'screen' && !isVisible}
+      importantForAccessibility={variant === 'screen' && !isVisible ? 'no-hide-descendants' : 'auto'}>
       {/* Sección de información (solo para variant='screen') */}
       {renderInfoSection()}
 
@@ -185,104 +240,126 @@ export function FlowPlayerControls({
         {/* Grupo de controles (centrado naturalmente entre los espaciadores) */}
         <View style={styles.controlsGroup}>
           {/* Dislike */}
+          {/* SCOPE 4: Feedback visual claro y mutuamente excluyente con Like */}
           {showAffinity && currentSpotId && (
-            <TouchableOpacity
+            <Pressable
               onPress={() => onNotMyVibe?.(currentSpotId)}
-              style={[
+              style={({ pressed }) => [
                 iconTouchableContainer.base, 
                 styles.affinityButton, 
                 { 
                   minWidth: minTouchArea, 
                   minHeight: minTouchArea,
-                  opacity: isNotMyVibe ? 1 : 0.6,
+                  opacity: isNotMyVibe ? 1 : (pressed ? 0.6 : 0.6), // SCOPE 4: Feedback más visible
+                  transform: [{ scale: pressed ? 0.9 : (isNotMyVibe ? 1.1 : 1) }], // SCOPE 4: Animación cuando está activo
                 },
-              ]}
-              activeOpacity={0.7}>
+              ]}>
               <Icon
                 name="notMyVibe"
                 size={affinityIconSize}
-                color={isNotMyVibe ? colors.tint : colors.icon}
+                color={isNotMyVibe ? colors.tint : colors.icon} // SCOPE 4: Cambio de color inmediato cuando está activo
               />
-            </TouchableOpacity>
+            </Pressable>
           )}
 
           {/* Gap fijo después de Dislike */}
           {showAffinity && currentSpotId && <View style={{ width: affinityGap, flexShrink: 0 }} />}
 
           {/* Previous */}
+          {/* SCOPE 4: Feedback visual claro para navegación */}
           {showPrevious && (
-            <TouchableOpacity
+            <Pressable
               onPress={handlePrevious}
-              style={[iconTouchableContainer.base, styles.controlButton, { minWidth: minTouchArea, minHeight: minTouchArea }]}
-              activeOpacity={0.7}>
+              style={({ pressed }) => [
+                iconTouchableContainer.base, 
+                styles.controlButton, 
+                { 
+                  minWidth: minTouchArea, 
+                  minHeight: minTouchArea,
+                  opacity: pressed ? 0.6 : 1, // SCOPE 4: Feedback más visible
+                  transform: [{ scale: pressed ? 0.9 : 1 }], // SCOPE 4: Animación de escala
+                },
+              ]}>
               <Icon name="previous" size={secondaryIconSize} color={colors.text} />
-            </TouchableOpacity>
+            </Pressable>
           )}
 
           {/* Gap fijo después de Previous */}
           {showPrevious && <View style={{ width: controlGap, flexShrink: 0 }} />}
 
           {/* Play/Pause - Botón principal grande y prominente */}
-          <TouchableOpacity
+          {/* SCOPE 4: Feedback visual inmediato con cambio de ícono persistente */}
+          <Pressable
             onPress={handlePause}
-            style={[
+            style={({ pressed }) => [
               styles.primaryButton,
               {
                 width: primaryButtonSize,
                 height: primaryButtonSize,
                 backgroundColor: colors.tint,
                 shadowColor: colors.tint,
+                opacity: pressed ? 0.8 : 1,
+                transform: [{ scale: pressed ? 0.95 : 1 }], // SCOPE 4: Animación de escala para feedback táctil
               },
-            ]}
-            activeOpacity={0.8}>
+            ]}>
             <Icon
               name={flowState.status === 'paused' ? 'play' : 'pause'}
               size={primaryIconSize}
               color="#fff"
             />
-          </TouchableOpacity>
+          </Pressable>
 
           {/* Gap fijo después de Play/Pause */}
           {showNext && <View style={{ width: controlGap, flexShrink: 0 }} />}
 
           {/* Next */}
+          {/* SCOPE 4: Feedback visual claro para navegación */}
           {showNext && (
-            <TouchableOpacity
+            <Pressable
               onPress={handleNext}
-              style={[iconTouchableContainer.base, styles.controlButton, { minWidth: minTouchArea, minHeight: minTouchArea }]}
-              activeOpacity={0.7}
+              style={({ pressed }) => [
+                iconTouchableContainer.base, 
+                styles.controlButton, 
+                { 
+                  minWidth: minTouchArea, 
+                  minHeight: minTouchArea,
+                  opacity: pressed ? 0.6 : (nextSpotId ? 1 : 0.5), // SCOPE 4: Feedback más visible
+                  transform: [{ scale: pressed ? 0.9 : 1 }], // SCOPE 4: Animación de escala
+                },
+              ]}
               disabled={!nextSpotId}>
               <Icon
                 name="next"
                 size={secondaryIconSize}
                 color={nextSpotId ? colors.text : colors.icon}
               />
-            </TouchableOpacity>
+            </Pressable>
           )}
 
           {/* Gap fijo antes de Like */}
           {showAffinity && currentSpotId && <View style={{ width: affinityGap, flexShrink: 0 }} />}
 
           {/* Like */}
+          {/* SCOPE 4: Feedback visual claro y mutuamente excluyente con Dislike */}
           {showAffinity && currentSpotId && (
-            <TouchableOpacity
+            <Pressable
               onPress={() => onLike?.(currentSpotId)}
-              style={[
+              style={({ pressed }) => [
                 iconTouchableContainer.base, 
                 styles.affinityButton, 
                 { 
                   minWidth: minTouchArea, 
                   minHeight: minTouchArea,
-                  opacity: isLiked ? 1 : 0.6,
+                  opacity: isLiked ? (pressed ? 0.8 : 1) : (pressed ? 0.6 : 0.6), // SCOPE 4: Feedback más visible
+                  transform: [{ scale: pressed ? 0.9 : (isLiked ? 1.1 : 1) }], // SCOPE 4: Animación cuando está activo
                 },
-              ]}
-              activeOpacity={0.7}>
+              ]}>
               <Icon
                 name="like"
                 size={affinityIconSize}
-                color={isLiked ? colors.tint : colors.icon}
+                color={isLiked ? colors.tint : colors.icon} // SCOPE 4: Cambio de color inmediato cuando está activo
               />
-            </TouchableOpacity>
+            </Pressable>
           )}
         </View>
         
@@ -301,16 +378,22 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: '100%',
   },
+  // SCOPE 2: Transición suave para visibilidad (añadido como estilo dinámico)
   containerMini: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   containerScreen: {
+    position: 'absolute', // FIX: Overlay flotante - no afecta el layout
+    bottom: 0, // Anclado a la parte inferior
+    left: 0,
+    right: 0,
     flexDirection: 'column',
     paddingVertical: spacing.sm, // Reducido de md a sm para optimizar espacio vertical
     paddingHorizontal: spacing.md,
     borderTopWidth: 1,
     overflow: 'hidden',
+    // backgroundColor se aplica dinámicamente en containerStyle
   },
   containerFull: {
     flexDirection: 'column',
@@ -366,6 +449,12 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: fontSize.xs,
+  },
+  subtitleText: {
+    fontSize: fontSize.sm,
+    lineHeight: lineHeight.sm,
+    textAlign: 'center',
+    paddingHorizontal: spacing.sm,
   },
   progressBar: {
     height: 2,

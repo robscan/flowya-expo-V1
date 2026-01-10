@@ -96,9 +96,18 @@ export default function CreateSpotScreen() {
   // Handle accept AI content
   const handleAcceptAIContent = () => {
     if (form.previewContent) {
+      // SCOPE 2: Aceptar todos los campos generados por IA
+      if (form.previewContent.spotDescription && !form.spotDescription) {
+        form.setSpotDescription(form.previewContent.spotDescription);
+        form.setDescription(form.previewContent.spotDescription);
+        form.setWhyItMatters(form.previewContent.whyItMatters || form.previewContent.spotDescription);
+      }
       if (form.previewContent.whyItMatters && !form.whyItMatters) {
         form.setWhyItMatters(form.previewContent.whyItMatters);
         form.setDescription(form.previewContent.whyItMatters);
+      }
+      if (form.previewContent.planInfo && !form.planInfo) {
+        form.setPlanInfo(form.previewContent.planInfo);
       }
       if (form.previewContent.culturalContext && !form.culturalContext) {
         form.setCulturalContext(form.previewContent.culturalContext);
@@ -250,14 +259,24 @@ export default function CreateSpotScreen() {
         <View style={{ width: 24 }} />
       </View>
 
+      {/* SCOPE 2: Badge/indicador visual cuando se detecta spot existente */}
+      {form.existingSpot && (
+        <View style={[styles.existingSpotBadge, { backgroundColor: colors.tint + '15', borderColor: colors.tint + '40' }]}>
+          <Icon name="info" size={16} color={colors.tint} />
+          <Text style={[textStyles.caption, { color: colors.tint, marginLeft: spacing.xs }]}>
+            Existing spot detected. Content loaded automatically.
+          </Text>
+        </View>
+      )}
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Section 1: Photo (Required) */}
         <View style={styles.section}>
           <FormField label="Photo" required error={form.errors.photo}>
             <FormImagePicker
-              initialUri={form.photo}
-              onPickImage={form.pickImage}
-              onImageRemoved={form.removeImage}
+              initialUri={form.photos.length > 0 ? form.photos[0] : null}
+              onPickImage={form.addImage}
+              onImageRemoved={() => form.removeImage(0)}
               height={200}
             />
           </FormField>
@@ -287,6 +306,44 @@ export default function CreateSpotScreen() {
               placeholder="e.g. Main Square, Sunset Viewpoint..."
             />
           </FormField>
+
+          {/* SCOPE 7: Botón "Enrich with AI" justo arriba del campo Description */}
+          {!form.existingSpot && (
+            isAIConfigured() ? (
+              <TouchableOpacity
+                style={[
+                  styles.aiButtonInline, 
+                  { 
+                    backgroundColor: colors.tint + '15', 
+                    borderColor: colors.tint + '40',
+                    opacity: form.location ? 1 : 0.5,
+                    marginBottom: spacing.sm,
+                  }
+                ]}
+                onPress={handleGenerateAI}
+                disabled={form.isGeneratingAI || !form.location}
+                activeOpacity={0.7}>
+                {form.isGeneratingAI ? (
+                  <ActivityIndicator size="small" color={colors.tint} />
+                ) : (
+                  <>
+                    <Icon name="star" size={16} color={colors.tint} />
+                    <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
+                      Enrich with AI
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : (
+              // SCOPE 0.4: Fail-safe - mostrar que IA no está configurada
+              <View style={[styles.aiButtonInline, { backgroundColor: colors.icon + '10', borderColor: colors.icon + '30', opacity: 0.6, marginBottom: spacing.sm }]}>
+                <Icon name="info" size={16} color={colors.icon} />
+                <Text style={[textStyles.bodyMedium, { color: colors.icon, marginLeft: spacing.xs }]}>
+                  IA no configurada
+                </Text>
+              </View>
+            )
+          )}
 
           <FormField label="Description">
             <FormTextArea
@@ -360,31 +417,6 @@ export default function CreateSpotScreen() {
           <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
         </TouchableOpacity>
         
-        {isAIConfigured() && (
-          <TouchableOpacity
-            style={[
-              styles.aiButton, 
-              { 
-                backgroundColor: colors.tint + '20', 
-                borderColor: colors.tint,
-                opacity: form.location ? 1 : 0.5,
-              }
-            ]}
-            onPress={handleGenerateAI}
-            disabled={form.isGeneratingAI || !form.location}
-            activeOpacity={0.7}>
-            {form.isGeneratingAI ? (
-              <ActivityIndicator size="small" color={colors.tint} />
-            ) : (
-              <>
-                <Icon name="star" size={16} color={colors.tint} />
-                <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
-                  Enrich with AI
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
         
         <TouchableOpacity
           style={[
@@ -437,6 +469,17 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
   },
+  existingSpotBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
   content: {
     flex: 1,
   },
@@ -488,6 +531,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginRight: spacing.sm,
     minWidth: 140,
+  },
+  // SCOPE 7.3: Estilo discreto para botón sobre campo Description
+  aiButtonInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 40,
   },
   sendButton: {
     flex: 1,

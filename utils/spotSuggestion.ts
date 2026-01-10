@@ -14,11 +14,15 @@ import { Flow, getFlowSpots } from '@/data/flows';
 import { Spot, SpotType } from '@/data/spots';
 import { calculateDistanceToSpot } from '@/utils/distance';
 
+import { SpotTypeAffinity } from '@/contexts/SavedContext'; // SCOPE 5: Afinidad por tipo de spot
+
 export interface SuggestionContext {
   savedSpots: string[];
   likedSpots: string[];
+  notMyVibeSpots?: string[]; // SCOPE 5: Considerar dislikes
   savedFlows: string[];
   allFlows: Flow[];
+  spotTypeAffinity?: Record<string, SpotTypeAffinity>; // SCOPE 5: Afinidad por tipo
 }
 
 /**
@@ -74,7 +78,7 @@ function calculateTypeScore(spot: Spot, startingSpot: Spot): number {
 }
 
 /**
- * Calcular score de afinidad del usuario (0-100)
+ * Calcular score de afinidad del usuario (0-100) - SCOPE 5: mejorado con afinidad por tipo y dislike
  */
 function calculateAffinityScore(
   spot: Spot,
@@ -91,6 +95,18 @@ function calculateAffinityScore(
   // Spots liked: 60 puntos
   if (context.likedSpots.includes(spot.id)) {
     score += 60;
+  }
+  
+  // SCOPE 5: Afinidad por tipo de spot (refuerza spots similares)
+  if (context.spotTypeAffinity && context.spotTypeAffinity[spot.type]) {
+    const affinity = context.spotTypeAffinity[spot.type];
+    // Agregar boost basado en afinidad (score puede ser -10 a 10, normalizar a -30 a 30 puntos)
+    score += Math.round((affinity.score / 10) * 30);
+  }
+  
+  // SCOPE 5: Reducir score si está en notMyVibe (no eliminar, solo reducir)
+  if (context.notMyVibeSpots && context.notMyVibeSpots.includes(spot.id)) {
+    score = Math.max(0, score - 20); // Reducir 20 puntos pero no eliminar
   }
   
   // Spots en flows guardados: 40 puntos

@@ -23,15 +23,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
     Dimensions,
+    Platform,
+    Pressable,
     ScrollView,
     StatusBar,
     StyleSheet,
     Text,
-    TouchableOpacity,
     View
 } from 'react-native';
 
-import { FlowPlayerControls } from '@/components/FlowPlayerControls';
+import { FlowPlayer } from '@/design-system/FlowPlayer';
 import { FlowyaMapView } from '@/components/MapView';
 import { useNarrationTriggers } from '@/components/NarrationController';
 import { SaveFlowModal } from '@/components/SaveFlowModal';
@@ -53,6 +54,7 @@ import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { getSpotDistance, useSpotDistance } from '@/hooks/useSpotDistance';
+import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
 import { getFlowState, hasFlowChanges } from '@/utils/flowChanges';
 import { geofencingSimulator } from '@/utils/geofencingSimulator';
 import { mapMovementModeToNavigationMode, openNavigationApp } from '@/utils/navigationHelpers';
@@ -82,6 +84,8 @@ export default function FlowScreenPage() {
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
   const { flowState, currentSpotId, nextSpotId, closeFlow, minimizeFlow, addSpotToFlow, reorderFlowSpots, removeSpotFromFlow } = useFlow();
+  // SCOPE 2: Obtener currentNarrationBlock del estado del flow
+  const currentNarrationBlock = flowState.currentNarrationBlock;
   const { getFlowById, flows, updateFlow } = usePath();
   const { spots, getSpotById } = useSpot();
   const { 
@@ -91,8 +95,6 @@ export default function FlowScreenPage() {
     savedSpots, 
     likedSpots, 
     savedFlows,
-    toggleLikeSpotFromPlayer,
-    toggleNotMyVibeSpot,
     } = useSaved();
   const [showSaveFlowModal, setShowSaveFlowModal] = useState(false);
   const narration = useNarration();
@@ -109,6 +111,34 @@ export default function FlowScreenPage() {
   const [toastUndoAction, setToastUndoAction] = useState<(() => void) | undefined>(undefined);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+
+  // SCOPE 2: Control de visibilidad del player con scroll
+  const { isBottomNavVisible, handleScroll } = useScrollVisibility({ threshold: 24 });
+
+  // TEMPORARY TEST: Web Speech API test
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.speechSynthesis) {
+      console.log('[WEB SPEECH TEST] Attempting native browser speech');
+      const utterance = new SpeechSynthesisUtterance("Esto es una prueba de audio del navegador");
+      utterance.lang = 'es-ES'; // Idioma español
+      utterance.rate = 0.85; // Velocidad similar a ExpoSpeech
+      utterance.pitch = 0.95; // Tono similar a ExpoSpeech
+      
+      utterance.onstart = () => {
+        console.log('[WEB SPEECH TEST] Speech started successfully');
+      };
+      
+      utterance.onerror = (error) => {
+        console.error('[WEB SPEECH TEST] Speech error:', error);
+      };
+      
+      utterance.onend = () => {
+        console.log('[WEB SPEECH TEST] Speech ended');
+      };
+      
+      window.speechSynthesis.speak(utterance);
+    }
+  }, []); // Ejecutar solo una vez al montar
 
   const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
   
@@ -177,40 +207,9 @@ export default function FlowScreenPage() {
   }, [flow]);
 
 
-  // Reproducir mensaje inicial solo una vez cuando se inicia el flow
-  useEffect(() => {
-    if (!flow || flowState.status !== 'active') {
-      return;
-    }
 
-    // Reproducir mensaje inicial solo una vez al iniciar
-    const initialNarration = {
-      id: `narration-initial-${flow.id}`,
-      type: 'context' as const,
-      text: 'Iniciamos recorrido',
-    };
-
-    // Reproducir el mensaje inicial directamente
-    if (narration.status === 'idle') {
-      try {
-        narration.playNarration(initialNarration).catch((error) => {
-          console.error('Error playing initial narration:', error);
-        });
-      } catch (error) {
-        console.error('Error calling playNarration:', error);
-      }
-    }
-
-    // Cleanup: detener narrations cuando el flow se cierra
-    return () => {
-      try {
-        narration.stopNarration();
-      } catch (error) {
-        console.error('Error in cleanup stopNarration:', error);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flow?.id]); // Solo cuando cambia el flow (una vez al iniciar)
+  // SCOPE 1: Eliminada reproducción automática de bloques narrativos
+  // La reproducción solo ocurre cuando el usuario presiona Play o Next (interacción explícita)
 
   // Calcular sugerencias de spots cuando cambia el flow o el spot actual
   useEffect(() => {
@@ -538,16 +537,18 @@ export default function FlowScreenPage() {
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
                 UP NEXT
               </Text>
-              <TouchableOpacity
+              <Pressable
                 onPress={() => setIsEditMode(!isEditMode)}
-                style={iconTouchableContainer.base}
-                activeOpacity={0.7}>
+                style={({ pressed }) => [
+                  iconTouchableContainer.base,
+                  pressed && { opacity: 0.7 },
+                ]}>
                 <Icon 
                   name={isEditMode ? "check" : "edit"} 
                   size={20} 
                   color={colors.text} 
                 />
-              </TouchableOpacity>
+              </Pressable>
             </View>
             {/* Spots agregados al flow */}
             {futureSpots.map((spot, relativeIndex) => {
@@ -735,25 +736,36 @@ export default function FlowScreenPage() {
           <View style={styles.mapControlsCluster}>
             {/* Get directions - Acción principal */}
             <Tooltip text="Get directions">
-              <TouchableOpacity
-                style={[styles.mapControlButton, styles.mapControlPrimary, { backgroundColor: colors.tint }]}
-                onPress={handleOpenNavigation}
-                activeOpacity={0.8}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.mapControlButton, 
+                  styles.mapControlPrimary, 
+                  { 
+                    backgroundColor: colors.tint,
+                    opacity: pressed ? 0.8 : 1,
+                  }
+                ]}
+                onPress={handleOpenNavigation}>
                 <Icon name="directions" size={20} color="#fff" />
-              </TouchableOpacity>
+              </Pressable>
             </Tooltip>
             {/* Fullscreen toggle - Acción del mapa */}
             <Tooltip text={isMapFullscreen ? 'Salir de pantalla completa' : 'Ver mapa en pantalla completa'}>
-              <TouchableOpacity
-                style={[styles.mapControlButton, { backgroundColor: colors.background + 'E6' }]}
-                onPress={() => setIsMapFullscreen(!isMapFullscreen)}
-                activeOpacity={0.7}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.mapControlButton, 
+                  { 
+                    backgroundColor: colors.background + 'E6',
+                    opacity: pressed ? 0.7 : 1,
+                  }
+                ]}
+                onPress={() => setIsMapFullscreen(!isMapFullscreen)}>
                 <Icon 
                   name={isMapFullscreen ? 'fullscreen-exit' : 'fullscreen'} 
                   size={18} 
                   color={colors.text} 
                 />
-              </TouchableOpacity>
+              </Pressable>
             </Tooltip>
           </View>
         )}
@@ -798,7 +810,9 @@ export default function FlowScreenPage() {
           <ScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}>
+            showsVerticalScrollIndicator={false}
+            onScroll={handleScroll} // SCOPE 2: Detectar scroll para ocultar/mostrar player
+            scrollEventThrottle={16}> {/* SCOPE 2: Throttle para mejor rendimiento */}
             {/* ContentHeader con mapa hero */}
             <ContentHeader
               heroType="map"
@@ -817,26 +831,22 @@ export default function FlowScreenPage() {
             {renderTimeline()}
           </ScrollView>
           
-          {/* Player controls fijo en la parte inferior */}
-          <FlowPlayerControls
-            variant="screen"
-            showPrevious={true}
-            showNext={true}
-            showMute={false}
-            showAffinity={true}
-            currentSpotId={currentSpotId ?? undefined}
-            currentSpot={currentSpot}
-            userLocation={baseLocation}
-            flowSpots={flowSpots}
-            flow={flow}
-            nextSpotData={nextSpotData}
-            onLike={(spotId) => {
-              toggleLikeSpotFromPlayer(spotId);
-            }}
-            onNotMyVibe={(spotId) => {
-              toggleNotMyVibeSpot(spotId);
-            }}
-          />
+          {/* FIX: Player como overlay absoluto (no en el flujo del layout) */}
+          <View style={styles.playerOverlayContainer}>
+            <FlowPlayer
+              flowId={flow?.id ?? null}
+              flowStatus={flowState.status}
+              currentSpotId={currentSpotId}
+              currentSpot={currentSpot}
+              nextSpotId={nextSpotId}
+              nextSpotData={nextSpotData}
+              flowSpots={flowSpots}
+              flow={flow}
+              userLocation={baseLocation}
+              getSpotById={getSpotById}
+              isVisible={isBottomNavVisible} // SCOPE 2: Control de visibilidad con scroll
+            />
+          </View>
         </>
       )}
       
@@ -965,6 +975,15 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     shadowOpacity: 0.3,
+  },
+  // FIX: Contenedor overlay para FlowPlayer (no afecta el layout)
+  playerOverlayContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    // Sin height - el player define su propio tamaño
+    // Sin backgroundColor - debe ser transparente para que el fondo se vea
   },
 });
 

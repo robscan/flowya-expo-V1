@@ -25,6 +25,7 @@ import { TouchableOpacity } from 'react-native';
 
 import { IconButton, IconButtonVariant } from '@/components/ui/IconButton';
 import { Icon, IconName, iconTouchableContainer } from '@/components/ui/Icon';
+import { ImageSlider } from '@/components/ui/ImageSlider';
 import { OptimizedImage } from '@/components/ui/OptimizedImage';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { spacing } from '@/constants/spacing';
@@ -47,6 +48,7 @@ export interface ContentHeaderAction {
 interface ContentHeaderProps {
   heroType: HeroType;
   heroImage?: ImageSourcePropType | { uri: string } | null;
+  heroImages?: string[]; // Array de URIs para slider (si se proporciona, tiene prioridad sobre heroImage)
   heroMap?: React.ReactNode;
   heroHeight?: number; // Altura del hero (para imagen)
   leftActions?: ContentHeaderAction[];
@@ -58,6 +60,7 @@ interface ContentHeaderProps {
 export function ContentHeader({
   heroType,
   heroImage,
+  heroImages,
   heroMap,
   heroHeight,
   leftActions = [],
@@ -74,19 +77,37 @@ export function ContentHeader({
       return heroMap;
     }
 
-    if (heroType === 'image' && heroImage) {
-      return (
-        <View style={[styles.heroImageContainer, heroHeight && { height: heroHeight }]}>
-          <OptimizedImage
-            source={heroImage}
-            width="100%"
-            height={heroHeight || '100%'}
-            showFallback={false}
-            resizeMode="cover"
-          />
-          {showOverlay && <View style={styles.heroOverlay} />}
-        </View>
-      );
+    if (heroType === 'image') {
+      // Si hay múltiples imágenes (heroImages), usar slider
+      if (heroImages && heroImages.length > 0) {
+        return (
+          <View style={[styles.heroImageContainer, heroHeight && { height: heroHeight }]}>
+            <ImageSlider
+              images={heroImages}
+              height={heroHeight || 300}
+              showIndicators={heroImages.length > 1}
+              showFallback={true}
+            />
+            {showOverlay && <View style={styles.heroOverlay} />}
+          </View>
+        );
+      }
+      
+      // Si hay una sola imagen (heroImage), mostrar directamente
+      if (heroImage) {
+        return (
+          <View style={[styles.heroImageContainer, heroHeight && { height: heroHeight }]}>
+            <OptimizedImage
+              source={heroImage}
+              width="100%"
+              height={heroHeight || '100%'}
+              showFallback={false}
+              resizeMode="cover"
+            />
+            {showOverlay && <View style={styles.heroOverlay} />}
+          </View>
+        );
+      }
     }
 
     // Placeholder cuando no hay hero

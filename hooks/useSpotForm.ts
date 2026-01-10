@@ -17,6 +17,8 @@ import { useImageUpload } from './useImageUpload';
 import { generateSpotContent, GeneratedContent } from '@/utils/aiContentGenerator';
 import { isAIConfigured } from '@/utils/aiConfig';
 import { resolveRegion } from '@/core/region';
+import { findExistingSpot } from '@/utils/spotDetection';
+import { useSpot } from '@/contexts/SpotContext';
 
 export interface UseSpotFormOptions {
   /** Spot inicial (para edición) */
@@ -37,6 +39,10 @@ export interface UseSpotFormResult {
   setDescription: (description: string) => void;
   whyItMatters: string;
   setWhyItMatters: (whyItMatters: string) => void;
+  spotDescription: string; // SCOPE 2: Campo spotDescription del contrato
+  setSpotDescription: (spotDescription: string) => void;
+  planInfo: string; // SCOPE 2: Campo planInfo del contrato
+  setPlanInfo: (planInfo: string) => void;
   culturalContext: string;
   setCulturalContext: (culturalContext: string) => void;
   type: SpotType;
@@ -56,11 +62,12 @@ export interface UseSpotFormResult {
   narration: SpotNarration | undefined;
   setNarration: (narration: SpotNarration | undefined) => void;
 
-  // Imagen
-  photo: string | null;
+  // Imágenes (múltiples)
+  photos: string[];
   isOptimizingImage: boolean;
   pickImage: () => Promise<void>;
-  removeImage: () => void;
+  removeImage: (index: number) => void;
+  addImage: () => Promise<void>;
 
   // Validación
   isValid: boolean;
@@ -76,6 +83,10 @@ export interface UseSpotFormResult {
   previewContent: GeneratedContent | null;
   setPreviewContent: (content: GeneratedContent | null) => void;
 
+  // SCOPE 2: Detección de spot existente
+  existingSpot: Spot | null;
+  isLoadingExisting: boolean;
+
   // Acciones
   handleSave: () => void;
   handleCancel: () => void;
@@ -89,10 +100,19 @@ export interface UseSpotFormResult {
 export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult {
   const { initialSpot, onSave, onCancel, isEditMode = false } = options;
 
+  // SCOPE 2: Obtener spots del contexto para detección
+  const { spots } = useSpot();
+
+  // SCOPE 2: Estados para detección de spot existente
+  const [existingSpot, setExistingSpot] = useState<Spot | null>(null);
+  const [isLoadingExisting, setIsLoadingExisting] = useState(false);
+
   // Estados de campos básicos
   const [name, setName] = useState(initialSpot?.name || '');
   const [description, setDescription] = useState(initialSpot?.description || '');
   const [whyItMatters, setWhyItMatters] = useState(initialSpot?.whyItMatters || initialSpot?.description || '');
+  const [spotDescription, setSpotDescription] = useState(initialSpot?.description || initialSpot?.whyItMatters || ''); // SCOPE 2: Campo spotDescription
+  const [planInfo, setPlanInfo] = useState(initialSpot?.planInfo || ''); // SCOPE 2: Campo planInfo
   const [culturalContext, setCulturalContext] = useState(initialSpot?.culturalContext || '');
   const [type, setType] = useState<SpotType>(initialSpot?.type || 'other');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(
@@ -105,17 +125,84 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
   const [howToVisit, setHowToVisit] = useState<SpotHowToVisit | undefined>(initialSpot?.howToVisit);
   const [narration, setNarration] = useState<SpotNarration | undefined>(initialSpot?.narration);
 
-  // Estados de imagen
-  const {
-    uri: photo,
-    isOptimizing: isOptimizingImage,
-    pickFromGallery,
-    reset: resetImage,
-  } = useImageUpload({
-    initialUri: initialSpot?.photos?.[0] || null,
+  // SCOPE 2: Función para cargar contenido de spot existente
+  const loadExistingSpotContent = useCallback((spot: Spot) => {
+    // Cargar todos los campos automáticamente
+    if (spot.description) {
+      setDescription(spot.description);
+      setSpotDescription(spot.description);
+    }
+    if (spot.whyItMatters) {
+      setWhyItMatters(spot.whyItMatters);
+      if (!spot.description) {
+        setSpotDescription(spot.whyItMatters);
+      }
+    }
+    if (spot.planInfo) {
+      setPlanInfo(spot.planInfo);
+    }
+    if (spot.howToVisit) {
+      setHowToVisit(spot.howToVisit);
+    }
+    if (spot.narration) {
+      setNarration(spot.narration);
+    }
+    if (spot.culturalContext) {
+      setCulturalContext(spot.culturalContext);
+    }
+    if (spot.hours) {
+      setHours(spot.hours);
+    }
+    if (spot.cost) {
+      setCost(spot.cost);
+    }
+    if (spot.restrictions) {
+      setRestrictions(spot.restrictions);
+    }
+    if (spot.accessibility) {
+      setAccessibility(spot.accessibility);
+    }
+    if (spot.type) {
+      setType(spot.type);
+    }
+    if (spot.photos && spot.photos.length > 0) {
+      setPhotos(spot.photos);
+    }
+    // Actualizar initialState para que hasChanges funcione correctamente
+    setInitialState(prev => ({
+      ...prev,
+      description: spot.description || prev.description,
+      spotDescription: spot.description || spot.whyItMatters || prev.spotDescription,
+      planInfo: spot.planInfo || prev.planInfo,
+      whyItMatters: spot.whyItMatters || prev.whyItMatters,
+      culturalContext: spot.culturalContext || prev.culturalContext,
+      howToVisit: spot.howToVisit || prev.howToVisit,
+      narration: spot.narration || prev.narration,
+      hours: spot.hours || prev.hours,
+      cost: spot.cost || prev.cost,
+      restrictions: spot.restrictions || prev.restrictions,
+      accessibility: spot.accessibility || prev.accessibility,
+      type: spot.type || prev.type,
+      photos: spot.photos || prev.photos,
+    }));
+  }, []);
+
+  // Estados de imágenes (múltiples)
+  const [photos, setPhotos] = useState<string[]>(initialSpot?.photos || []);
+  const [isOptimizingImage, setIsOptimizingImage] = useState(false);
+  
+  // Hook para manejar subida de imágenes
+  const imageUploadHook = useImageUpload({
+    initialUri: null, // No usamos initialUri, manejamos el array directamente
     allowsEditing: true,
     aspect: [4, 3],
     quality: 75,
+    onOptimizing: () => setIsOptimizingImage(true),
+    onOptimized: (uri) => {
+      setIsOptimizingImage(false);
+      setPhotos(prev => [...prev, uri]);
+    },
+    onError: () => setIsOptimizingImage(false),
   });
 
   // Estados de IA
@@ -128,10 +215,12 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     name: initialSpot?.name || '',
     description: initialSpot?.description || '',
     whyItMatters: initialSpot?.whyItMatters || initialSpot?.description || '',
+    spotDescription: initialSpot?.description || initialSpot?.whyItMatters || '', // SCOPE 2: Incluir spotDescription
+    planInfo: initialSpot?.planInfo || '', // SCOPE 2: Incluir planInfo
     culturalContext: initialSpot?.culturalContext || '',
     type: initialSpot?.type || 'other',
     location: initialSpot?.location ? { latitude: initialSpot.location.latitude, longitude: initialSpot.location.longitude } : null,
-    photo: initialSpot?.photos?.[0] || null,
+      photos: initialSpot?.photos || [],
     hours: initialSpot?.hours,
     cost: initialSpot?.cost,
     restrictions: initialSpot?.restrictions || '',
@@ -146,6 +235,8 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
       setName(initialSpot.name || '');
       setDescription(initialSpot.description || '');
       setWhyItMatters(initialSpot.whyItMatters || initialSpot.description || '');
+      setSpotDescription(initialSpot.description || initialSpot.whyItMatters || ''); // SCOPE 2: Actualizar spotDescription
+      setPlanInfo(initialSpot.planInfo || ''); // SCOPE 2: Actualizar planInfo
       setCulturalContext(initialSpot.culturalContext || '');
       setType(initialSpot.type);
       setLocation(initialSpot.location ? { latitude: initialSpot.location.latitude, longitude: initialSpot.location.longitude } : null);
@@ -155,14 +246,18 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
       setAccessibility(initialSpot.accessibility || '');
       setHowToVisit(initialSpot.howToVisit);
       setNarration(initialSpot.narration);
+      setPhotos(initialSpot.photos || []);
+      setExistingSpot(null); // Reset existingSpot cuando cambia initialSpot
       setInitialState({
         name: initialSpot.name || '',
         description: initialSpot.description || '',
         whyItMatters: initialSpot.whyItMatters || initialSpot.description || '',
+        spotDescription: initialSpot.description || initialSpot.whyItMatters || '', // SCOPE 2: Incluir spotDescription
+        planInfo: initialSpot.planInfo || '', // SCOPE 2: Incluir planInfo
         culturalContext: initialSpot.culturalContext || '',
         type: initialSpot.type,
         location: initialSpot.location ? { latitude: initialSpot.location.latitude, longitude: initialSpot.location.longitude } : null,
-        photo: initialSpot.photos?.[0] || null,
+        photos: initialSpot.photos || [],
         hours: initialSpot.hours,
         cost: initialSpot.cost,
         restrictions: initialSpot.restrictions || '',
@@ -173,17 +268,56 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     }
   }, [initialSpot]);
 
+  // SCOPE 2: Detectar spot existente cuando cambia nombre o ubicación (modo creación)
+  useEffect(() => {
+    if (name && name.trim().length > 0 && location) {
+      setIsLoadingExisting(true);
+      const existing = findExistingSpot(spots, name, location);
+      if (existing) {
+        setExistingSpot(existing);
+        // En modo creación: cargar contenido automáticamente
+        if (!isEditMode && (!initialSpot || initialSpot.id !== existing.id)) {
+          loadExistingSpotContent(existing);
+        }
+      } else {
+        setExistingSpot(null);
+      }
+      setIsLoadingExisting(false);
+    } else {
+      setExistingSpot(null);
+    }
+  }, [name, location, spots, isEditMode, initialSpot, loadExistingSpotContent]);
+
+  // SCOPE 2: En modo edición: detectar si cambia nombre/ubicación y coincide con otro spot
+  useEffect(() => {
+    if (isEditMode && initialSpot && name && location) {
+      const existing = findExistingSpot(spots, name, location);
+      // Si encontramos un spot diferente al que estamos editando
+      if (existing && existing.id !== initialSpot.id) {
+        setExistingSpot(existing);
+        // Cambiar automáticamente al spot existente
+        loadExistingSpotContent(existing);
+        // Nota: Esto reemplazará el formulario actual con el contenido del spot existente
+        // El usuario puede continuar editando desde ahí
+      } else if (!existing || existing.id === initialSpot.id) {
+        setExistingSpot(null);
+      }
+    }
+  }, [isEditMode, initialSpot, name, location, spots, loadExistingSpotContent]);
+
   // Detectar cambios
   const hasChanges = 
     name !== initialState.name ||
     description !== initialState.description ||
     whyItMatters !== initialState.whyItMatters ||
+    spotDescription !== initialState.spotDescription || // SCOPE 2: Incluir spotDescription en comparación
+    planInfo !== initialState.planInfo || // SCOPE 2: Incluir planInfo en comparación
     culturalContext !== initialState.culturalContext ||
     type !== initialState.type ||
     (location && initialState.location && (location.latitude !== initialState.location.latitude || location.longitude !== initialState.location.longitude)) ||
     (!location && initialState.location) ||
     (location && !initialState.location) ||
-    photo !== initialState.photo ||
+    JSON.stringify(photos) !== JSON.stringify(initialState.photos) ||
     JSON.stringify(hours) !== JSON.stringify(initialState.hours) ||
     JSON.stringify(cost) !== JSON.stringify(initialState.cost) ||
     restrictions !== initialState.restrictions ||
@@ -191,27 +325,45 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     JSON.stringify(howToVisit) !== JSON.stringify(initialState.howToVisit) ||
     JSON.stringify(narration) !== JSON.stringify(initialState.narration);
 
-  // Validaciones
+  // Validaciones (imágenes son opcionales según el plan)
   const errors: { photo?: string; location?: string } = {};
-  if (!photo) {
-    errors.photo = 'Photo is required';
-  }
+  // Imágenes son opcionales, no requeridas
   if (!location) {
     errors.location = 'Location is required';
   }
-  const isValid = !errors.photo && !errors.location;
+  const isValid = !errors.location;
 
-  // Seleccionar imagen
+  // Seleccionar imagen (agrega nueva imagen al array)
   const pickImage = useCallback(async () => {
-    await pickFromGallery();
-  }, [pickFromGallery]);
+    await imageUploadHook.pickFromGallery();
+  }, [imageUploadHook]);
 
-  const removeImage = useCallback(() => {
-    resetImage();
-  }, [resetImage]);
+  const addImage = useCallback(async () => {
+    await imageUploadHook.pickFromGallery();
+  }, [imageUploadHook]);
+
+  const removeImage = useCallback((index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
+  }, []);
 
   // Generar contenido con IA
   const generateContent = useCallback(async (fields?: string[]): Promise<GeneratedContent | null> => {
+    // SCOPE: Validar duplicidad ANTES de llamar a OpenAI
+    if (existingSpot) {
+      console.log('[AI] Spot existente detectado — usando contenido existente', {
+        existingSpotId: existingSpot.id,
+        existingSpotName: existingSpot.name,
+      });
+      setAiError('Cannot generate content for existing spot. Existing content has been loaded automatically.');
+      return null;
+    }
+
+    // SCOPE: Log claro para spot nuevo
+    console.log('[AI] Spot nuevo — generando contenido con OpenAI', {
+      spotName: name,
+      location: location ? { lat: location.latitude, lng: location.longitude } : null,
+    });
+    
     if (!location) {
       setAiError('Location is required to generate content');
       return null;
@@ -235,7 +387,7 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
           longitude: location.longitude,
           adjustable: true,
         },
-        photos: photo ? [photo] : [],
+        photos: photos || [],
         description: description || undefined,
         whyItMatters: whyItMatters || undefined,
         culturalContext: culturalContext || undefined,
@@ -255,20 +407,40 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
 
       setPreviewContent(generatedContent);
       
+      // SCOPE 2: Actualizar campos del formulario con contenido generado
+      if (generatedContent.spotDescription) {
+        setSpotDescription(generatedContent.spotDescription);
+        setDescription(generatedContent.spotDescription); // Mantener sincronizado
+        setWhyItMatters(generatedContent.whyItMatters || generatedContent.spotDescription);
+      }
+      
+      if (generatedContent.planInfo) {
+        setPlanInfo(generatedContent.planInfo);
+      }
+      
+      if (generatedContent.howToVisit) {
+        setHowToVisit(generatedContent.howToVisit);
+      }
+      
       // Si se genera narration, guardarla automáticamente (no visible para el usuario)
       if (generatedContent.narration) {
         setNarration(generatedContent.narration);
       }
       
+      // SCOPE: Log al completar generación
+      console.log('[AI] Content generated and saved successfully');
+      
       return generatedContent;
     } catch (error: any) {
-      console.error('Error generating AI content:', error);
+      // SCOPE: Manejo robusto de errores - no romper el flujo
+      console.error('[AI] Error generating AI content:', error);
       setAiError(error.message || 'Couldn\'t generate content. Try again.');
+      // NO hacer throw - permitir que el spot se cree sin contenido AI
       return null;
     } finally {
       setIsGeneratingAI(false);
     }
-  }, [location, name, photo, description, whyItMatters, culturalContext, type, hours, cost, restrictions, accessibility, howToVisit]);
+  }, [location, name, photos, description, whyItMatters, culturalContext, type, hours, cost, restrictions, accessibility, howToVisit, existingSpot]);
 
   // Guardar
   const handleSave = useCallback(async () => {
@@ -310,9 +482,10 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
         longitude: location.longitude,
         adjustable: true,
       },
-      photos: photo ? [photo] : [],
-      description: description || undefined,
-      whyItMatters: whyItMatters || undefined,
+      photos: photos || [],
+      description: description || spotDescription || undefined, // SCOPE 2: Usar spotDescription si description está vacío
+      whyItMatters: whyItMatters || spotDescription || undefined,
+      planInfo: planInfo || undefined, // SCOPE 2: Persistir planInfo en DB
       culturalContext: culturalContext || undefined,
       type,
       hours,
@@ -325,7 +498,7 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     };
 
     onSave?.(spotData);
-  }, [isValid, location, name, photo, description, whyItMatters, culturalContext, type, hours, cost, restrictions, accessibility, howToVisit, narration, onSave]);
+  }, [isValid, location, name, photos, description, spotDescription, whyItMatters, planInfo, culturalContext, type, hours, cost, restrictions, accessibility, howToVisit, narration, onSave]); // SCOPE 2: Incluir spotDescription y planInfo
 
   // Cancelar
   const handleCancel = useCallback(() => {
@@ -333,6 +506,8 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     setName(initialState.name);
     setDescription(initialState.description);
     setWhyItMatters(initialState.whyItMatters);
+    setSpotDescription(initialState.spotDescription); // SCOPE 2: Reset spotDescription
+    setPlanInfo(initialState.planInfo); // SCOPE 2: Reset planInfo
     setCulturalContext(initialState.culturalContext);
     setType(initialState.type);
     setLocation(initialState.location);
@@ -342,22 +517,19 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     setAccessibility(initialState.accessibility);
     setHowToVisit(initialState.howToVisit);
     setNarration(initialState.narration);
-    if (initialState.photo) {
-      // Resetear imagen si había una inicial
-      // Nota: useImageUpload no tiene forma de setear URI directamente, así que esto es limitado
-    } else {
-      resetImage();
-    }
+      setPhotos(initialState.photos);
     setPreviewContent(null);
     setAiError(null);
     onCancel?.();
-  }, [initialState, resetImage, onCancel]);
+  }, [initialState, onCancel]);
 
   // Reset completo
   const reset = useCallback(() => {
     setName('');
     setDescription('');
     setWhyItMatters('');
+    setSpotDescription(''); // SCOPE 2: Reset spotDescription
+    setPlanInfo(''); // SCOPE 2: Reset planInfo
     setCulturalContext('');
     setType('other');
     setLocation(null);
@@ -367,10 +539,10 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     setAccessibility('');
     setHowToVisit(undefined);
     setNarration(undefined);
-    resetImage();
+    setPhotos([]);
     setPreviewContent(null);
     setAiError(null);
-  }, [resetImage]);
+  }, []);
 
   return {
     // Estados de campos
@@ -380,6 +552,10 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     setDescription,
     whyItMatters,
     setWhyItMatters,
+    spotDescription, // SCOPE 2: Exponer spotDescription
+    setSpotDescription, // SCOPE 2: Exponer setter
+    planInfo, // SCOPE 2: Exponer planInfo
+    setPlanInfo, // SCOPE 2: Exponer setter
     culturalContext,
     setCulturalContext,
     type,
@@ -399,11 +575,12 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     narration,
     setNarration,
 
-    // Imagen
-    photo,
+    // Imágenes
+    photos,
     isOptimizingImage,
     pickImage,
     removeImage,
+    addImage,
 
     // Validación
     isValid,
@@ -415,6 +592,10 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     generateContent,
     previewContent,
     setPreviewContent,
+
+    // SCOPE 2: Detección de spot existente
+    existingSpot,
+    isLoadingExisting,
 
     // Acciones
     handleSave,

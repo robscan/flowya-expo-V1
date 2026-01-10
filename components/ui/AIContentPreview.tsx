@@ -70,6 +70,18 @@ export function AIContentPreview({
         </Text>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {/* SCOPE 2: Mostrar spotDescription si existe */}
+          {content.spotDescription && (
+            <View style={styles.section}>
+              <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
+                Description
+              </Text>
+              <Text style={[textStyles.body, { color: colors.text }]}>
+                {content.spotDescription}
+              </Text>
+            </View>
+          )}
+
           {content.whyItMatters && (
             <View style={styles.section}>
               <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
@@ -77,6 +89,18 @@ export function AIContentPreview({
               </Text>
               <Text style={[textStyles.body, { color: colors.text }]}>
                 {content.whyItMatters}
+              </Text>
+            </View>
+          )}
+
+          {/* SCOPE 2: Mostrar planInfo si existe */}
+          {content.planInfo && (
+            <View style={styles.section}>
+              <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
+                Plan Info
+              </Text>
+              <Text style={[textStyles.body, { color: colors.text }]}>
+                {content.planInfo}
               </Text>
             </View>
           )}

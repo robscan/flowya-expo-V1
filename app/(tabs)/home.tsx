@@ -99,10 +99,11 @@ const SpotSlider = memo(function SpotSlider({ title, spots, onSpotPress }: SpotS
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         getItemLayout={getItemLayout}
-        windowSize={21}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        removeClippedSubviews={false}
+        // SCOPE 8.1: Lazy load real - solo renderizar lo visible + buffer pequeño
+        windowSize={5}
+        initialNumToRender={3}
+        maxToRenderPerBatch={2}
+        removeClippedSubviews={Platform.OS !== 'web'}
         snapToInterval={CARD_WIDTH + spacing.sm}
         decelerationRate="fast"
         pagingEnabled={false}
@@ -152,10 +153,11 @@ const SpotSliderCompact = memo(function SpotSliderCompact({ title, spots, onSpot
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         getItemLayout={getItemLayout}
-        windowSize={21}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        removeClippedSubviews={false}
+        // SCOPE 8.1: Lazy load real - solo renderizar lo visible + buffer pequeño
+        windowSize={5}
+        initialNumToRender={4}
+        maxToRenderPerBatch={2}
+        removeClippedSubviews={Platform.OS !== 'web'}
         snapToInterval={COMPACT_CARD_WIDTH + spacing.sm}
         decelerationRate="fast"
         pagingEnabled={false}

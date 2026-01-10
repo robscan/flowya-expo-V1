@@ -64,6 +64,7 @@ export type AIGeneratedMetadata = {
 };
 
 import { LocationRegion } from '@/types/locationRegion';
+import { generateNarrationText } from '@/utils/narrationGenerator';
 
 export interface Spot {
   id: string;
@@ -83,9 +84,11 @@ export interface Spot {
   // Campos para AI Content Generator (Scope 12.1)
   whyItMatters?: string; // Por qué importa este lugar - reemplaza uso de description en Spot Detail
   culturalContext?: string; // Contexto cultural
+  planInfo?: string; // SCOPE 1: Información experiencial (mejor momento del día, cómo encaja en Flow)
   howToVisit?: SpotHowToVisit; // Tips de visita (mejor hora, fotografía)
   narration?: SpotNarration; // Narrativas para audio (NO visibles en UI)
   aiGenerated?: AIGeneratedMetadata; // Metadatos de generación AI
+  isLegacySpot?: boolean; // SCOPE 6.3: Flag interno para spots creados antes de IA
   createdBy?: string; // ID del usuario que creó el spot (opcional para backward compatibility)
   /**
    * Región canónica normalizada derivada de Mapbox
@@ -107,8 +110,66 @@ export interface Spot {
 }
 
 /**
+ * Generar planInfo estático basado en tipo de spot
+ * SCOPE 1: Poblar planInfo con información experiencial (no horarios/precios)
+ */
+function generatePlanInfo(spot: Spot): string {
+  const typeInfo: Record<SpotType, string> = {
+    beach: "Best visited early morning or late afternoon. Fits perfectly as a rest stop or endpoint in coastal flows.",
+    cafe: "Ideal midday pause. Works well in urban flows between cultural sites.",
+    viewpoint: "Visit during golden hour for best views. Perfect start or endpoint for scenic flows.",
+    museum: "Allow 1-2 hours. Works well as a main destination in cultural flows.",
+    restaurant: "Ideal for lunch or dinner breaks. Integrates naturally in culinary or neighborhood flows.",
+    park: "Perfect for morning walks or evening relaxation. Fits in family-friendly or nature flows.",
+    monument: "Visit during cooler hours (morning or late afternoon). Pairs well with historical or cultural flows.",
+    market: "Best during morning hours when vendors are active. Works well in authentic local experience flows.",
+    other: "Consider best visit time based on context. Adapts to various flow types.",
+  };
+
+  return typeInfo[spot.type] || typeInfo.other;
+}
+
+/**
+ * Asegurar que un spot tenga todos los campos de texto requeridos
+ * SCOPE 1: Validar y poblar campos faltantes
+ */
+function ensureSpotTextFields(spot: Spot): Spot {
+  // 1. Asegurar narration completo
+  if (!spot.narration) {
+    spot.narration = {
+      anticipation: generateNarrationText(spot, 'anticipation') || 'A special place approaches.',
+      presence: generateNarrationText(spot, 'presence') || 'You are here. Observe and feel this moment.',
+      transition: generateNarrationText(spot, 'transition') || 'With this experience, the journey continues.',
+    };
+  } else {
+    // Poblar bloques faltantes
+    if (!spot.narration.anticipation || spot.narration.anticipation.trim().length === 0) {
+      spot.narration.anticipation = generateNarrationText(spot, 'anticipation') || 'A special place approaches.';
+    }
+    if (!spot.narration.presence || spot.narration.presence.trim().length === 0) {
+      spot.narration.presence = generateNarrationText(spot, 'presence') || 'You are here. Observe and feel this moment.';
+    }
+    if (!spot.narration.transition || spot.narration.transition.trim().length === 0) {
+      spot.narration.transition = generateNarrationText(spot, 'transition') || 'With this experience, the journey continues.';
+    }
+  }
+
+  // 2. Asegurar planInfo
+  if (!spot.planInfo || spot.planInfo.trim().length === 0) {
+    spot.planInfo = generatePlanInfo(spot);
+  }
+
+  // 3. Verificar spotDescription (description o whyItMatters)
+  // No es necesario crear uno nuevo, solo asegurar que existe description o whyItMatters
+  // (estos campos son opcionales en la interfaz)
+
+  return spot;
+}
+
+/**
  * Spots reales de la Riviera Maya (Cancún a Tulum)
  * Basados en investigación de hidden gems y spots del CSV proporcionado
+ * SCOPE 1: Normalizados para asegurar campos de texto completos
  */
 export const mockSpots: Spot[] = [
   // === CANCÚN ===
@@ -3349,4 +3410,4 @@ export const mockSpots: Spot[] = [
     createdAt: new Date('2025-01-15'),
     updatedAt: new Date('2025-01-15'),
   },
-];
+].map(spot => ensureSpotTextFields(spot));

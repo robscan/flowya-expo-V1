@@ -17,10 +17,12 @@ import { mockSpots } from '@/data/spots';
 import { generateSpotContent as generateAIContent, GenerateContentOptions } from '@/utils/aiContentGenerator';
 import { migrateOwnersLegacy } from '@/utils/ownerMigration';
 import { migrateSpotsRegions } from '@/core/region';
+import { normalizeAllSpots } from '@/utils/spotNormalizer';
 import { useAuth } from './AuthContext';
 
 const STORAGE_KEY = '@flowya_spots';
 const REGION_REMIGRATION_KEY = '@flowya_region_remigration_done';
+const LEGACY_MARKED_KEY = '@flowya_legacy_marked';
 
 // ============================================================================
 // TIPOS DE CACHE
@@ -198,6 +200,33 @@ export function SpotProvider({ children }: { children: ReactNode }) {
             console.log(`✅ Saved ${loadedSpots.length} canonical spots (${deletedCount} invalid spots removed)`);
           }
         }
+        
+        // SCOPE 6.2: Normalizar spots legacy al cargar
+        loadedSpots = normalizeAllSpots(loadedSpots);
+        
+        // SCOPE 6.3: Marcar spots existentes como legacy (una sola vez)
+        const shouldMarkLegacy = async (): Promise<boolean> => {
+          try {
+            const done = await AsyncStorage.getItem(LEGACY_MARKED_KEY);
+            return done !== 'true';
+          } catch {
+            return false;
+          }
+        };
+        
+        if (await shouldMarkLegacy()) {
+          loadedSpots = loadedSpots.map(spot => ({
+            ...spot,
+            isLegacySpot: true, // SCOPE 6.3: Marcar como legacy
+          }));
+          // Marcar como ejecutado para futuras cargas
+          await AsyncStorage.setItem(LEGACY_MARKED_KEY, 'true');
+          // Guardar spots marcados como legacy
+          await saveSpots(loadedSpots);
+          if (__DEV__) {
+            console.log(`[SpotContext] Marked ${loadedSpots.length} spots as legacy`);
+          }
+        }
       } else {
         // Usar mock data si no hay datos guardados
         // CANONICAL: Migrar owners legacy (UNA SOLA VEZ, no dinámico)
@@ -206,7 +235,29 @@ export function SpotProvider({ children }: { children: ReactNode }) {
         // CANONICAL: Migrar spots para poblar locationRegion (idempotente)
         loadedSpots = await migrateSpotsRegions(loadedSpots);
         
-        // Guardar los spots iniciales con owners y regiones asignados
+        // SCOPE 6.2: Normalizar spots legacy al cargar
+        loadedSpots = normalizeAllSpots(loadedSpots);
+        
+        // SCOPE 6.3: Marcar spots existentes como legacy (una sola vez)
+        const shouldMarkLegacy = async (): Promise<boolean> => {
+          try {
+            const done = await AsyncStorage.getItem(LEGACY_MARKED_KEY);
+            return done !== 'true';
+          } catch {
+            return false;
+          }
+        };
+        
+        if (await shouldMarkLegacy()) {
+          loadedSpots = loadedSpots.map(spot => ({
+            ...spot,
+            isLegacySpot: true, // SCOPE 6.3: Marcar como legacy
+          }));
+          // Marcar como ejecutado para futuras cargas
+          await AsyncStorage.setItem(LEGACY_MARKED_KEY, 'true');
+        }
+        
+        // Guardar los spots iniciales con owners, regiones, normalización y legacy flag asignados
         await saveSpots(loadedSpots);
       }
       
@@ -221,6 +272,10 @@ export function SpotProvider({ children }: { children: ReactNode }) {
       
       // CANONICAL: Migrar spots para poblar locationRegion (idempotente)
       fallbackSpots = await migrateSpotsRegions(fallbackSpots);
+      
+      // SCOPE 6.2: Normalizar spots legacy al cargar
+      fallbackSpots = normalizeAllSpots(fallbackSpots);
+      
       initializeSpotCache(fallbackSpots);
       setSpots(fallbackSpots);
     } finally {
@@ -309,10 +364,12 @@ export function SpotProvider({ children }: { children: ReactNode }) {
     try {
       const generatedContent = await generateAIContent(spot, options);
       
-      // Actualizar spot con contenido generado
+      // SCOPE 2: Actualizar spot con contenido generado (todos los campos del contrato)
       updateSpot(spotId, {
-        whyItMatters: generatedContent.whyItMatters || spot.whyItMatters,
+        description: generatedContent.spotDescription || spot.description,
+        whyItMatters: generatedContent.whyItMatters || generatedContent.spotDescription || spot.whyItMatters,
         culturalContext: generatedContent.culturalContext || spot.culturalContext,
+        planInfo: generatedContent.planInfo || spot.planInfo, // SCOPE 2: Persistir planInfo
         howToVisit: generatedContent.howToVisit || spot.howToVisit,
         narration: generatedContent.narration || spot.narration,
         aiGenerated: generatedContent.aiGenerated || spot.aiGenerated,

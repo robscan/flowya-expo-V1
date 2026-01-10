@@ -25,6 +25,13 @@ export interface TimelineEntry {
   timestamp: Date;
 }
 
+// SCOPE 5: Tracking de afinidad por tipo de spot para aprendizaje
+export interface SpotTypeAffinity {
+  spotType: string;
+  score: number; // Score de afinidad (positivo para like, negativo para dislike)
+  count: number; // Cantidad de interacciones
+}
+
 interface SavedData {
   likedSpots: string[]; // Spot IDs
   likedSpotsFromPlayer: string[]; // Spot IDs - likes hechos desde el player durante navegación
@@ -33,6 +40,7 @@ interface SavedData {
   savedFlows: string[]; // Flow IDs (anteriormente savedPaths)
   savedFlowNames: Record<string, string>; // Map de flowId a nombre personalizado
   timeline: TimelineEntry[];
+  spotTypeAffinity: Record<string, SpotTypeAffinity>; // SCOPE 5: Afinidad por tipo de spot (tipo -> { score, count })
   // Aliases para compatibilidad temporal
   savedPaths: string[];
 }
@@ -52,8 +60,9 @@ interface SavedContextType {
   timeline: TimelineEntry[];
   // Actions
   toggleLikeSpot: (spotId: string) => void;
-  toggleLikeSpotFromPlayer: (spotId: string) => void; // Like desde el player
-  toggleNotMyVibeSpot: (spotId: string) => void;
+  toggleLikeSpotFromPlayer: (spotId: string, spotType?: string) => void; // Like desde el player (SCOPE 5: con tipo opcional para aprendizaje)
+  toggleNotMyVibeSpot: (spotId: string, spotType?: string) => void; // SCOPE 5: con tipo opcional para aprendizaje
+  getSpotTypeAffinity: (spotType: string) => SpotTypeAffinity | undefined; // SCOPE 5: Obtener afinidad por tipo
   toggleSaveSpot: (spotId: string) => void;
   toggleSaveFlow: (flowId: string, customName?: string) => void; // Legacy - use saveFlow instead
   saveFlow: (flowId: string, customName: string) => void; // CANONICAL: Create if draft, Update if saved
@@ -81,6 +90,7 @@ const defaultData: SavedData = {
   savedFlows: [],
   savedFlowNames: {},
   timeline: [],
+  spotTypeAffinity: {}, // SCOPE 5: Inicializar afinidad vacía
   // Aliases para compatibilidad
   savedPaths: [],
 };
@@ -188,7 +198,24 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const toggleLikeSpotFromPlayer = (spotId: string) => {
+  // SCOPE 5: Helper para actualizar afinidad por tipo de spot
+  const updateSpotTypeAffinity = (
+    spotType: string,
+    increment: number,
+    prev: SavedData
+  ): Record<string, SpotTypeAffinity> => {
+    const current = prev.spotTypeAffinity[spotType] || { spotType, score: 0, count: 0 };
+    return {
+      ...prev.spotTypeAffinity,
+      [spotType]: {
+        spotType,
+        score: Math.max(-10, Math.min(10, current.score + increment)), // Limitar score entre -10 y 10
+        count: current.count + 1,
+      },
+    };
+  };
+
+  const toggleLikeSpotFromPlayer = (spotId: string, spotType?: string) => {
     setData((prev) => {
       const isLiked = prev.likedSpotsFromPlayer.includes(spotId);
       const newLikedSpotsFromPlayer = isLiked
@@ -198,14 +225,20 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       // También agregar/quitar del timeline
       addToTimeline('spot', 'like', spotId);
 
+      // SCOPE 5: Actualizar afinidad por tipo de spot (aumentar si like, disminuir si unlike)
+      const newSpotTypeAffinity = spotType
+        ? updateSpotTypeAffinity(spotType, isLiked ? -2 : 2, prev)
+        : prev.spotTypeAffinity;
+
       return {
         ...prev,
         likedSpotsFromPlayer: newLikedSpotsFromPlayer,
+        spotTypeAffinity: newSpotTypeAffinity,
       };
     });
   };
 
-  const toggleNotMyVibeSpot = (spotId: string) => {
+  const toggleNotMyVibeSpot = (spotId: string, spotType?: string) => {
     setData((prev) => {
       const isNotMyVibe = prev.notMyVibeSpots.includes(spotId);
       const newNotMyVibeSpots = isNotMyVibe
@@ -219,10 +252,16 @@ export function SavedProvider({ children }: { children: ReactNode }) {
 
       addToTimeline('spot', 'not_my_vibe', spotId);
 
+      // SCOPE 5: Actualizar afinidad por tipo de spot (disminuir si dislike, aumentar ligeramente si unlike)
+      const newSpotTypeAffinity = spotType
+        ? updateSpotTypeAffinity(spotType, isNotMyVibe ? 1 : -1, prev) // Penalizar menos que like para evitar castigo absoluto
+        : prev.spotTypeAffinity;
+
       return {
         ...prev,
         notMyVibeSpots: newNotMyVibeSpots,
         likedSpots: newLikedSpots,
+        spotTypeAffinity: newSpotTypeAffinity,
       };
     });
   };
@@ -325,6 +364,11 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   // Aliases para compatibilidad
   const isPathSaved = isFlowSaved;
 
+  // SCOPE 5: Obtener afinidad por tipo de spot
+  const getSpotTypeAffinity = (spotType: string): SpotTypeAffinity | undefined => {
+    return data.spotTypeAffinity[spotType];
+  };
+
   const value: SavedContextType = {
     likedSpots: data.likedSpots,
     likedSpotsFromPlayer: data.likedSpotsFromPlayer,
@@ -338,6 +382,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     toggleLikeSpot,
     toggleLikeSpotFromPlayer,
     toggleNotMyVibeSpot,
+    getSpotTypeAffinity,
     toggleSaveSpot,
     toggleSaveFlow,
     saveFlow,

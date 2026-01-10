@@ -374,7 +374,7 @@ export function FormLocationSelector({
         )}
       </View>
 
-      {/* Mapa - siempre visible */}
+      {/* Mapa - siempre visible - contenedor debe estar vacío (solo el mapa) */}
       <View style={[styles.mapContainer, { height: mapHeight }]}>
         <FlowyaMapView
           key={internalLocation ? `${internalLocation.latitude.toFixed(4)}-${internalLocation.longitude.toFixed(4)}` : 'no-location'}
@@ -385,14 +385,14 @@ export function FormLocationSelector({
           userLocation={userLocation}
           showUserLocation={!!userLocation}
         />
-        
-        {/* Instrucciones */}
-        {!disabled && (
-          <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
-            {Platform.OS === 'web' ? 'Click' : 'Tap'} on the map to select location
-          </Text>
-        )}
       </View>
+
+      {/* Instrucciones - fuera del contenedor del mapa */}
+      {!disabled && (
+        <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
+          {Platform.OS === 'web' ? 'Click' : 'Tap'} on the map to select location
+        </Text>
+      )}
 
       {/* Coordenadas informativas (discreto) */}
       {internalLocation && (

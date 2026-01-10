@@ -200,7 +200,7 @@ export default function SearchScreen() {
             searchValue={searchQuery}
             onSearchChange={handleSearchChange}
             searchPlaceholder="Search spots and flows"
-            autoFocus={Platform.OS !== 'web'}
+            autoFocus={true}
           />
           
           {/* CANONICAL: Search results header with count */}
@@ -231,10 +231,11 @@ export default function SearchScreen() {
                     columnWrapperStyle={styles.gridRow}
                     contentContainerStyle={styles.gridContent}
                     scrollEnabled={false}
-                    windowSize={21}
-                    initialNumToRender={10}
-                    maxToRenderPerBatch={10}
-                    removeClippedSubviews={false}
+                    // SCOPE 8.1: Lazy load real - solo renderizar lo visible + buffer pequeño
+                    windowSize={5}
+                    initialNumToRender={6}
+                    maxToRenderPerBatch={2}
+                    removeClippedSubviews={Platform.OS !== 'web'}
                     renderItem={({ item: result }) => {
                       if (!result.spot) return null;
                       return (
@@ -335,10 +336,11 @@ export default function SearchScreen() {
                   columnWrapperStyle={styles.gridRow}
                   contentContainerStyle={styles.gridContent}
                   scrollEnabled={false}
-                  windowSize={21}
-                  initialNumToRender={10}
-                  maxToRenderPerBatch={10}
-                  removeClippedSubviews={false}
+                  // SCOPE 8.1: Lazy load real - solo renderizar lo visible + buffer pequeño
+                  windowSize={5}
+                  initialNumToRender={6}
+                  maxToRenderPerBatch={2}
+                  removeClippedSubviews={Platform.OS !== 'web'}
                   renderItem={({ item: itemWithDistance }) => {
                     return (
                       <View style={styles.gridItem}>

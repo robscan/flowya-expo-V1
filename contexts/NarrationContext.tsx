@@ -45,22 +45,29 @@ const NarrationContext = createContext<NarrationContextType | undefined>(undefin
 
 /**
  * Convertir Narration a AudioSource para el audio manager
+ * SCOPE 1: Retornar tipo "none" si no hay texto ni audio URL (silencio controlado)
  */
 function narrationToAudioSource(narration: Narration): AudioSource {
   if (narration.audioUrl) {
-    // Audio pre-grabado
+    // Prioridad 1: Audio pre-grabado (archivo)
     return {
       type: 'url',
       source: narration.audioUrl,
     };
-  } else {
-    // Text-to-Speech
+  } else if (narration.text && narration.text.trim().length > 0) {
+    // Prioridad 2: Text-to-Speech (solo si hay texto)
     return {
       type: 'tts',
       source: narration.text,
       language: 'en-US', // English for all narration texts
       rate: 0.85, // More natural speed
       pitch: 0.95, // Slightly lower pitch for better quality
+    };
+  } else {
+    // SCOPE 1: Silencio controlado - no hay audio ni texto
+    return {
+      type: 'none',
+      source: '',
     };
   }
 }
@@ -82,14 +89,26 @@ export function NarrationProvider({ children }: { children: ReactNode }) {
         narrationEngine.markNarrationAsPlayed(narration);
 
         const audioSource = narrationToAudioSource(narration);
+        
+        // SCOPE 2: Logging de estado de narración antes de reproducir
+        console.log('[Narration] playNarration called:', {
+          narrationId: narration.id,
+          narrationType: narration.type,
+          spotId: narration.spotId,
+          textLength: narration.text?.length ?? 0,
+          audioSourceType: audioSource.type,
+          textPreview: audioSource.type === 'tts' ? audioSource.source?.substring(0, 50) : undefined,
+        });
+        
         await audioManager.play(audioSource);
       } catch (error) {
-        setStatus('error');
+        // SCOPE 1: Manejo de errores robusto - restaurar UI sin propagar error
+        setStatus('stopped'); // Cambiar de 'error' a 'stopped' para restaurar UI
         narrationEngine.markNarrationAsCancelled();
         setCurrentNarration(null);
         const errorObj = error instanceof Error ? error : new Error(String(error));
-        console.error('Error playing narration:', errorObj);
-        throw errorObj;
+        console.warn('[Narration] Playback failed, restoring UI state:', errorObj.message);
+        // NO hacer throw - permitir que el flujo continúe sin errores visibles
       }
     },
     []
@@ -131,10 +150,13 @@ export function NarrationProvider({ children }: { children: ReactNode }) {
         setCurrentNarration(null);
       },
       onError: (error) => {
-        setStatus('error');
+        // SCOPE 1: Manejo de errores robusto - restaurar UI en lugar de mostrar error
+        setStatus('stopped'); // Cambiar de 'error' a 'stopped' para restaurar UI
         narrationEngine.markNarrationAsCancelled();
         setCurrentNarration(null);
-        console.error('Narration error:', error);
+        console.warn('[Narration] Audio error occurred, restoring UI state:', error.message);
+        // NO loggear como error crítico - es parte del fallback normal
+        // El flujo continúa silenciosamente
       },
     });
 
@@ -156,7 +178,7 @@ export function NarrationProvider({ children }: { children: ReactNode }) {
       // CRITICAL: Stop audio first (includes Speech.stop() for TTS)
       // audioManager.stop() is already safe and idempotent
       await audioManager.stop();
-    } catch (error) {
+    } catch {
       // Ignore audio stop errors - we'll still reset state
       // This ensures stopNarration is always safe to call
     }
@@ -166,7 +188,7 @@ export function NarrationProvider({ children }: { children: ReactNode }) {
       narrationEngine.markNarrationAsCancelled();
       // Clear any queued narrations to prevent them from starting after stop
       narrationEngine.clearQueue();
-    } catch (error) {
+    } catch {
       // Ignore engine errors - state will still be reset below
     }
 
