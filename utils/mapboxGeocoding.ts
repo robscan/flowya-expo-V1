@@ -25,12 +25,12 @@ interface MapboxFeature {
   text: string;
   place_name: string;
   center: [number, number]; // [lng, lat]
-  context?: Array<{
+  context?: {
     id: string;
     short_code?: string;
     wikidata?: string;
     text: string;
-  }>;
+  }[];
 }
 
 interface MapboxGeocodeResponse {
@@ -73,7 +73,7 @@ export async function reverseGeocodeMapbox(
     return null;
   }
 
-  // Crear clave de cache
+  // Crear clave de cache (usar 4 decimales para agrupar coordenadas cercanas)
   const cacheKey = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
   
   // Verificar cache
@@ -83,11 +83,61 @@ export async function reverseGeocodeMapbox(
 
   // P0-01: Incluir 'address' en types para obtener direcciones completas (calle + referencia)
   // Mapbox espera [lng, lat] (NO [lat, lng])
-  // Priorizar address, luego street, luego place/locality como fallback
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${token}&types=address,street,place,locality,neighborhood,region&limit=5`;
+  // Limitar precisión a 5 decimales para evitar error 422 (Unprocessable Content)
+  // 5 decimales ≈ 1 metro de precisión, suficiente para geocoding y reduce errores 422
+  // Usar endpoint v5 (formato correcto, v6 requiere URL diferente)
+  
+  // Validar coordenadas antes de procesar
+  if (!isFinite(latitude) || !isFinite(longitude)) {
+    if (__DEV__) {
+      console.warn('⚠️ Invalid coordinates for reverse geocoding:', { latitude, longitude });
+    }
+    return null;
+  }
+  
+  // Redondear a 5 decimales y validar rangos (reducido de 6 para evitar errores 422)
+  // 5 decimales es suficiente para geocoding (~1 metro de precisión)
+  const lngRounded = Math.max(-180, Math.min(180, parseFloat(longitude.toFixed(5))));
+  const latRounded = Math.max(-90, Math.min(90, parseFloat(latitude.toFixed(5))));
+  
+  // Verificar que las coordenadas sean válidas después del redondeo
+  if (!isFinite(lngRounded) || !isFinite(latRounded)) {
+    if (__DEV__) {
+      console.warn('⚠️ Invalid coordinates after rounding:', { lngRounded, latRounded });
+    }
+    return null;
+  }
+  
+  // Primero intentar con tipos específicos (más preciso)
+  let url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lngRounded},${latRounded}.json?access_token=${token}&types=address,street,place,locality,neighborhood,region&limit=5`;
 
   try {
-    const response = await fetch(url);
+    let response = await fetch(url);
+    
+    // Si hay error 422, intentar sin el filtro de tipos (fallback más permisivo)
+    if (!response.ok && response.status === 422) {
+      if (__DEV__) {
+        console.warn(`⚠️ Mapbox API 422 with types filter. Trying fallback without types for coordinates: ${lngRounded},${latRounded}`);
+      }
+      
+      // Reintentar sin filtro de tipos
+      url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lngRounded},${latRounded}.json?access_token=${token}&limit=5`;
+      response = await fetch(url);
+      
+      // Si el fallback también falla con 422, usar coordenadas como último recurso
+      if (!response.ok && response.status === 422) {
+        if (__DEV__) {
+          console.warn(`⚠️ Mapbox API 422 (Unprocessable Content) for coordinates: ${lngRounded},${latRounded}. Using coordinates as fallback.`);
+        }
+        // Retornar coordenadas formateadas como dirección de último recurso
+        const fallbackResult: MapboxReverseGeocodeResult = {
+          formattedAddress: `${latRounded.toFixed(5)}, ${lngRounded.toFixed(5)}`,
+        };
+        reverseGeocodeCache.set(cacheKey, fallbackResult);
+        return fallbackResult;
+      }
+    }
+    
     if (!response.ok) {
       throw new Error(`Mapbox API error: ${response.status} ${response.statusText}`);
     }

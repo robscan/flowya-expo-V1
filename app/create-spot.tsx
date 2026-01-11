@@ -19,7 +19,7 @@ import {
 import { AIContentPreview } from '@/components/ui/AIContentPreview';
 import { FormField } from '@/components/ui/FormField';
 import { FormImagePicker } from '@/components/ui/FormImagePicker';
-import { FormLocationSelector } from '@/components/ui/FormLocationSelector';
+import { LocationSelectorWeb } from '@/components/ui/LocationSelectorWeb';
 import { FormTextArea } from '@/components/ui/FormTextArea';
 import { FormTextInput } from '@/components/ui/FormTextInput';
 import { FormTypeSelector } from '@/components/ui/FormTypeSelector';
@@ -67,8 +67,9 @@ export default function CreateSpotScreen() {
     },
   });
 
-  // P0-03: Handler para guardar que verifica si hay spot existente antes de crear duplicado
+  // CANONICAL: Handler para guardar que verifica duplicados ANTES de crear
   const handleSave = () => {
+    // Detección de duplicados: NO crear nuevo spot si ya existe
     if (form.existingSpot) {
       // Si hay spot existente, NO crear nuevo spot, redirigir al existente
       router.replace(`/spot-detail?id=${form.existingSpot.id}`);
@@ -273,51 +274,56 @@ export default function CreateSpotScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* P0-03: Badge/indicador visual cuando se detecta spot existente */}
+      {/* CANONICAL: Badge/indicador visual cuando se detecta spot existente */}
       {form.existingSpot && (
         <View style={[styles.existingSpotBadge, { backgroundColor: colors.tint + '15', borderColor: colors.tint + '40' }]}>
           <Icon name="info" size={16} color={colors.tint} />
           <Text style={[textStyles.caption, { color: colors.tint, marginLeft: spacing.xs }]}>
-            Este spot ya existe. Se ha cargado la información existente.
+            Este lugar ya existe en FLOWYA
           </Text>
         </View>
       )}
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Section 1: Photo (Required) */}
-        <View style={styles.section}>
-          <FormField label="Photo" required error={form.errors.photo}>
-            <FormImagePicker
-              initialUri={form.photos.length > 0 ? form.photos[0] : null}
-              onPickImage={form.addImage}
-              onImageRemoved={() => form.removeImage(0)}
-              height={200}
-            />
-          </FormField>
-        </View>
-
-        {/* Section 2: Location (Required) */}
+        {/* Section 1: Location (Required) */}
         <View style={styles.section}>
           <FormField label="Location" required error={form.errors.location}>
-            <FormLocationSelector
+            <LocationSelectorWeb
               location={form.location}
               onLocationChange={(loc) => {
                 form.setLocation(loc);
-                // El mapa se centra automáticamente cuando cambia la ubicación
+              }}
+              onCommercialNameChange={(commercialName) => {
+                // CANONICAL: Solo poblar Name si existe nombre comercial (NO direcciones)
+                if (commercialName && commercialName.trim().length > 0) {
+                  form.setName(commercialName);
+                } else {
+                  // Si no hay nombre comercial, NO modificar el campo Name
+                  // El usuario puede escribir el nombre manualmente
+                }
               }}
               userLocation={baseLocation}
-              mapHeight={200}
+              mapHeight={300}
             />
           </FormField>
         </View>
 
-        {/* Section 3: Basic Info */}
+        {/* Section 2: Basic Info */}
         <View style={styles.section}>
           <FormField label="Name">
             <FormTextInput
               value={form.name}
               onChangeText={form.setName}
               placeholder="e.g. Main Square, Sunset Viewpoint..."
+            />
+          </FormField>
+
+          <FormField label="Photo" required error={form.errors.photo}>
+            <FormImagePicker
+              initialUri={form.photos.length > 0 ? form.photos[0] : null}
+              onPickImage={form.addImage}
+              onImageRemoved={() => form.removeImage(0)}
+              height={200}
             />
           </FormField>
 
@@ -335,9 +341,9 @@ export default function CreateSpotScreen() {
                   }
                 ]}
                 onPress={handleGenerateAI}
-                disabled={form.isGeneratingAI || !form.location}
+                disabled={form.aiState === 'loading' || !form.location}
                 activeOpacity={0.7}>
-                {form.isGeneratingAI ? (
+                {form.aiState === 'loading' ? (
                   <ActivityIndicator size="small" color={colors.tint} />
                 ) : (
                   <>

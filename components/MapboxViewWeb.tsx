@@ -6,12 +6,12 @@
  * Google Maps solo se usa como app externa para "Get directions" (ver utils/navigationHelpers.ts).
  */
 
-import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
-import { StyleSheet, View, Text, Platform } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { Spot } from '@/data/spots';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MAPBOX_ACCESS_TOKEN, isMapboxConfigured } from '@/utils/mapsConfig';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 interface Region {
   latitude: number;
@@ -24,6 +24,7 @@ interface MapboxViewWebProps {
   spots: Spot[];
   onSpotPress: (spot: Spot) => void;
   onLongPress?: (location: { latitude: number; longitude: number }) => void;
+  onClick?: (location: { latitude: number; longitude: number }) => void;
   initialRegion?: Region;
   showRoute?: boolean;
   flowSpots?: Spot[];
@@ -178,6 +179,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
   spots,
   onSpotPress,
   onLongPress,
+  onClick,
   initialRegion,
   showRoute = false,
   flowSpots = [],
@@ -253,7 +255,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       // Forzar recalculo del tamaño del mapa
       mapInstanceRef.current.resize();
     },
-  }), [userLocation, spots]);
+  }), [userLocation, spots, onClick, onLongPress]);
 
   // Inyectar estilos para ocultar controles de Mapbox en document.head
   useEffect(() => {
@@ -484,7 +486,16 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
           let isClick = false;
           
           map.on('click', (e) => {
-            // Si no hay spots o el click es fuera de marcadores, permitir selección directa
+            // Si hay onClick prop, usarla directamente (para LocationSelectorWeb)
+            if (onClick) {
+              onClick({
+                latitude: e.lngLat.lat,
+                longitude: e.lngLat.lng,
+              });
+              return;
+            }
+            
+            // Si no hay spots o el click es fuera de marcadores, permitir selección directa (legacy)
             if (spots.length <= 1 && onLongPress) {
               // En desktop web, permitir click directo (con un pequeño delay para distinguir de drag)
               clickLocation = { lat: e.lngLat.lat, lng: e.lngLat.lng };

@@ -23,25 +23,9 @@ import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
 import { useSpot } from '@/contexts/SpotContext';
-import { Spot, SpotType } from '@/data/spots';
+import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
-// Helper para obtener label del tipo de spot
-function getSpotTypeLabel(type: SpotType): string {
-  const labels: Record<SpotType, string> = {
-    restaurant: 'Restaurant',
-    bar: 'Bar',
-    cafe: 'Cafe',
-    museum: 'Museum',
-    park: 'Park',
-    beach: 'Beach',
-    viewpoint: 'Viewpoint',
-    shop: 'Shop',
-    hotel: 'Hotel',
-    other: 'Other',
-  };
-  return labels[type] || 'Spot';
-}
+import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
 
 interface SpotInlineCardProps {
   spot: Spot;

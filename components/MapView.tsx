@@ -39,6 +39,7 @@ interface MapViewProps {
   spots: Spot[];
   onSpotPress: (spot: Spot) => void;
   onLongPress?: (location: { latitude: number; longitude: number }) => void;
+  onClick?: (location: { latitude: number; longitude: number }) => void;
   initialRegion?: Region;
   // Props adicionales para FlowScreen
   showRoute?: boolean; // Mostrar ruta entre spots (Polyline) - solo móvil
@@ -113,6 +114,7 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
   spots,
   onSpotPress,
   onLongPress,
+  onClick,
   initialRegion,
   showRoute = false,
   flowSpots = [],
@@ -227,6 +229,7 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
           spots={spots}
           onSpotPress={onSpotPress}
           onLongPress={onLongPress}
+          onClick={onClick}
           initialRegion={initialRegion || calculateInitialRegion(spots, userLocation)}
           showRoute={showRoute}
           flowSpots={flowSpots}

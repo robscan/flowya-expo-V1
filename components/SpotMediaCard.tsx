@@ -27,26 +27,10 @@ import { Colors } from '@/constants/theme';
 import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { Spot, SpotType } from '@/data/spots';
+import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
 import { hasValidImage } from '@/utils/imageHelpers';
-
-// Helper para obtener label del tipo de spot
-function getSpotTypeLabel(type: SpotType): string {
-  const labels: Record<SpotType, string> = {
-    restaurant: 'Restaurant',
-    bar: 'Bar',
-    cafe: 'Cafe',
-    museum: 'Museum',
-    park: 'Park',
-    beach: 'Beach',
-    viewpoint: 'Viewpoint',
-    shop: 'Shop',
-    hotel: 'Hotel',
-    other: 'Other',
-  };
-  return labels[type] || 'Spot';
-}
 
 interface SpotMediaCardProps {
   spot: Spot;
@@ -97,41 +81,6 @@ export const SpotMediaCard = memo(function SpotMediaCard({
     router.push(`/(tabs)/map?spotId=${spot.id}`);
   }, [spot.id, router]);
 
-  // Render distancia con "Map" inline
-  const renderDistanceWithViewOnMap = useCallback(() => {
-    if (distance === undefined || distance === null) {
-      // Si no hay distancia, mostrar InfoMeta normal para size="large"
-      if (size === 'large') {
-        return (
-          <InfoMeta
-            chip={{ label: spotTypeLabel }}
-            distance={distance}
-            rating={rating}
-            size="large"
-          />
-        );
-      }
-      return null;
-    }
-    
-    return (
-      <View style={styles.distanceRow}>
-        <InfoMeta
-          chip={size === 'large' ? { label: spotTypeLabel } : undefined}
-          distance={distance}
-          rating={size === 'large' ? rating : undefined}
-          size={size}
-        />
-        <Pressable
-          onPress={handleViewOnMap}
-          style={styles.viewOnMapButton}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Chip text="Map" variant="highlighted" />
-        </Pressable>
-      </View>
-    );
-  }, [distance, size, spotTypeLabel, rating, handleViewOnMap, colors.tint]);
-
   // Render variant="small" (compacto para grid y sliders)
   if (size === 'small') {
     return (
@@ -147,7 +96,21 @@ export const SpotMediaCard = memo(function SpotMediaCard({
             fallbackIcon="upload"
             resizeMode="cover"
           />
-          {/* Icono de guardar sobre la imagen */}
+          {/* Botón "Map" - extremo inferior izquierdo */}
+          <View style={styles.mapViewOverlay}>
+            <Pressable
+              onPress={handleViewOnMap}
+              style={({ pressed }) => [
+                styles.mapViewButton,
+                {
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Chip text="Map" variant="default" icon="visibility" solidBackground={true} />
+            </Pressable>
+          </View>
+          {/* Icono de guardar sobre la imagen - extremo superior derecho */}
           <View style={styles.bookmarkOverlay}>
             <View
               style={[
@@ -181,8 +144,13 @@ export const SpotMediaCard = memo(function SpotMediaCard({
           {spot.name || 'Unnamed spot'}
         </Text>
 
-        {/* Distancia + "Map" inline */}
-        {renderDistanceWithViewOnMap()}
+        {/* InfoMeta debajo del título */}
+        {distance !== undefined && distance !== null && (
+          <InfoMeta
+            distance={distance}
+            size={size}
+          />
+        )}
       </Pressable>
     );
   }
@@ -208,7 +176,21 @@ export const SpotMediaCard = memo(function SpotMediaCard({
             fallbackIcon="upload"
             resizeMode="cover"
           />
-          {/* Icono de guardar sobre la imagen */}
+          {/* Botón "Map" - extremo inferior izquierdo */}
+          <View style={styles.mapViewOverlay}>
+            <Pressable
+              onPress={handleViewOnMap}
+              style={({ pressed }) => [
+                styles.mapViewButton,
+                {
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Chip text="Map" variant="default" icon="visibility" solidBackground={true} />
+            </Pressable>
+          </View>
+          {/* Icono de guardar sobre la imagen - extremo superior derecho */}
           <View style={styles.bookmarkOverlay}>
             <View
               style={[
@@ -245,8 +227,15 @@ export const SpotMediaCard = memo(function SpotMediaCard({
                 {spot.description}
               </Text>
             )}
-            {/* Distancia + "Map" inline */}
-            {renderDistanceWithViewOnMap()}
+            {/* InfoMeta debajo de la descripción */}
+            <View style={styles.infoMetaContainer}>
+              <InfoMeta
+                chip={{ label: spotTypeLabel }}
+                distance={distance}
+                rating={rating}
+                size="large"
+              />
+            </View>
           </View>
         </View>
       </GlassView>
@@ -313,7 +302,20 @@ const styles = StyleSheet.create({
     lineHeight: lineHeight.sm,
     fontWeight: '400',
   },
-  // Bookmark overlay
+  infoMetaContainer: {
+    marginTop: -(spacing.sm - spacing.xs / 2), // Compensar marginTop de InfoMeta (16px -> 4px)
+  },
+  // Map View overlay (inferior izquierda)
+  mapViewOverlay: {
+    position: 'absolute',
+    bottom: spacing.sm,
+    left: spacing.sm,
+    zIndex: 10,
+  },
+  mapViewButton: {
+    // Chip tiene su propio padding, no necesita contenedor adicional
+  },
+  // Bookmark overlay (superior derecha)
   bookmarkOverlay: {
     position: 'absolute',
     top: spacing.sm,
@@ -327,15 +329,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-  },
-  // Distance row con "Map"
-  distanceRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginTop: spacing.sm,
-    gap: spacing.xs,
-  },
-  viewOnMapButton: {
-    // Sin marginLeft adicional, el separador ya proporciona el espacio
   },
 });

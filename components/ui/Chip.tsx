@@ -29,9 +29,10 @@ interface ChipProps {
   text: string;
   variant?: ChipVariant;
   icon?: IconName;
+  solidBackground?: boolean; // Si true, usa fondo sólido en lugar de transparente (para mejor contraste sobre imágenes)
 }
 
-export function Chip({ text, variant = 'default', icon }: ChipProps) {
+export function Chip({ text, variant = 'default', icon, solidBackground = false }: ChipProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
@@ -58,8 +59,12 @@ export function Chip({ text, variant = 'default', icon }: ChipProps) {
         };
       case 'default':
       default:
+        // Si solidBackground es true, usar fondo sólido para mejor contraste sobre imágenes
+        const defaultBg = solidBackground
+          ? colorScheme === 'dark' ? '#2A2A2A' : '#EBEBEB' // Gris sólido equivalente
+          : colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
         return {
-          backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
+          backgroundColor: defaultBg,
           borderColor: 'transparent',
           borderWidth: 0,
           textColor: colors.text,

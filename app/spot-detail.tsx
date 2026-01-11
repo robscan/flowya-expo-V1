@@ -30,7 +30,7 @@ import { AIGenerateButton } from '@/components/ui/AIGenerateButton';
 import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
 import { FormField } from '@/components/ui/FormField';
 import { FormIconSelector } from '@/components/ui/FormIconSelector';
-import { FormLocationSelector } from '@/components/ui/FormLocationSelector';
+import { LocationSelectorWeb } from '@/components/ui/LocationSelectorWeb';
 import { FormTextArea } from '@/components/ui/FormTextArea';
 import { FormTextInput } from '@/components/ui/FormTextInput';
 import { FormTypeSelector } from '@/components/ui/FormTypeSelector';
@@ -945,7 +945,7 @@ export default function SpotDetailScreen() {
                     <View style={{ marginBottom: spacing.sm }}>
                       <AIGenerateButton
                         onPress={handleGenerateAI}
-                        isGenerating={form.isGeneratingAI}
+                        isGenerating={form.aiState === 'loading'}
                         size="small"
                       />
                     </View>
@@ -1015,15 +1015,16 @@ export default function SpotDetailScreen() {
               Location
             </Text>
             {isEditMode ? (
-              <FormLocationSelector
-                location={form.location}
-                onLocationChange={(loc) => {
-                  form.setLocation(loc);
-                  // El mapa se centra automáticamente cuando cambia la ubicación
-                }}
-                userLocation={baseLocation}
-                mapHeight={400}
-              />
+              <FormField label="Location" required error={form.errors.location}>
+                <LocationSelectorWeb
+                  location={form.location}
+                  onLocationChange={(loc) => {
+                    form.setLocation(loc);
+                  }}
+                  userLocation={baseLocation}
+                  mapHeight={300}
+                />
+              </FormField>
             ) : (
               <>
                 {/* Map Container - Edge-to-edge en fullscreen */}

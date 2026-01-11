@@ -79,6 +79,7 @@ export const iconMap = {
   'plus-circle': 'add-circle', // Alias para add-circle
   fullscreen: 'fullscreen',
   'fullscreen-exit': 'fullscreen-exit',
+  visibility: 'visibility',
 } as const;
 
 export type IconName = keyof typeof iconMap;

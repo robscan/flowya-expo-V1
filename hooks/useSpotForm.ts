@@ -10,7 +10,7 @@
  * - Guardado/cancelación
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Spot, SpotType, SpotHours, SpotCost, SpotHowToVisit, SpotNarration } from '@/data/spots';
 import { LocationRegion } from '@/types/locationRegion';
 import { useImageUpload } from './useImageUpload';
@@ -77,7 +77,7 @@ export interface UseSpotFormResult {
   };
 
   // IA
-  isGeneratingAI: boolean;
+  aiState: 'idle' | 'loading' | 'success' | 'error';
   aiError: string | null;
   generateContent: (fields?: string[]) => Promise<GeneratedContent | null>;
   previewContent: GeneratedContent | null;
@@ -205,10 +205,13 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     onError: () => setIsOptimizingImage(false),
   });
 
-  // Estados de IA
-  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  // Estados de IA - Control absoluto por intención del usuario
+  const [aiState, setAiState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [aiError, setAiError] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState<GeneratedContent | null>(null);
+  
+  // Ref para prevenir múltiples ejecuciones simultáneas
+  const isGeneratingRef = useRef(false);
 
   // Estado inicial para detectar cambios
   const [initialState, setInitialState] = useState(() => ({
@@ -269,41 +272,48 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
   }, [initialSpot]);
 
   // SCOPE 2: Detectar spot existente cuando cambia nombre o ubicación (modo creación)
+  // Optimizado: usar useMemo para lazy evaluation y evitar recálculos innecesarios
+  const detectedExistingSpot = useMemo(() => {
+    // Lazy: solo buscar cuando ambos campos tienen valor
+    if (!name || name.trim().length === 0 || !location) {
+      return null;
+    }
+    return findExistingSpot(spots, name, location);
+  }, [name, location, spots]);
+
   useEffect(() => {
-    if (name && name.trim().length > 0 && location) {
+    if (detectedExistingSpot) {
       setIsLoadingExisting(true);
-      const existing = findExistingSpot(spots, name, location);
-      if (existing) {
-        setExistingSpot(existing);
-        // En modo creación: cargar contenido automáticamente
-        if (!isEditMode && (!initialSpot || initialSpot.id !== existing.id)) {
-          loadExistingSpotContent(existing);
-        }
-      } else {
-        setExistingSpot(null);
+      setExistingSpot(detectedExistingSpot);
+      // En modo creación: cargar contenido automáticamente
+      if (!isEditMode && (!initialSpot || initialSpot.id !== detectedExistingSpot.id)) {
+        loadExistingSpotContent(detectedExistingSpot);
       }
       setIsLoadingExisting(false);
     } else {
       setExistingSpot(null);
+      setIsLoadingExisting(false);
     }
-  }, [name, location, spots, isEditMode, initialSpot, loadExistingSpotContent]);
+  }, [detectedExistingSpot, isEditMode, initialSpot, loadExistingSpotContent]);
 
   // SCOPE 2: En modo edición: detectar si cambia nombre/ubicación y coincide con otro spot
+  // Optimizado: usar el mismo useMemo para consistencia
   useEffect(() => {
-    if (isEditMode && initialSpot && name && location) {
-      const existing = findExistingSpot(spots, name, location);
+    if (isEditMode && initialSpot && detectedExistingSpot) {
       // Si encontramos un spot diferente al que estamos editando
-      if (existing && existing.id !== initialSpot.id) {
-        setExistingSpot(existing);
+      if (detectedExistingSpot.id !== initialSpot.id) {
+        setExistingSpot(detectedExistingSpot);
         // Cambiar automáticamente al spot existente
-        loadExistingSpotContent(existing);
+        loadExistingSpotContent(detectedExistingSpot);
         // Nota: Esto reemplazará el formulario actual con el contenido del spot existente
         // El usuario puede continuar editando desde ahí
-      } else if (!existing || existing.id === initialSpot.id) {
+      } else {
         setExistingSpot(null);
       }
+    } else if (isEditMode && initialSpot && !detectedExistingSpot) {
+      setExistingSpot(null);
     }
-  }, [isEditMode, initialSpot, name, location, spots, loadExistingSpotContent]);
+  }, [isEditMode, initialSpot, detectedExistingSpot, loadExistingSpotContent]);
 
   // Detectar cambios
   const hasChanges = 
@@ -346,15 +356,22 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     setPhotos(prev => prev.filter((_, i) => i !== index));
   }, []);
 
-  // Generar contenido con IA
+  // Generar contenido con IA - Control absoluto: solo se ejecuta por acción explícita del usuario
   const generateContent = useCallback(async (fields?: string[]): Promise<GeneratedContent | null> => {
-    // SCOPE: Validar duplicidad ANTES de llamar a OpenAI
+    // Prevenir múltiples ejecuciones simultáneas
+    if (isGeneratingRef.current || aiState === 'loading') {
+      console.log('[AI] Generación ya en curso, ignorando llamada adicional');
+      return null;
+    }
+
+    // CANONICAL: Control estricto de IA - NO ejecutar si hay spot existente o duplicado
     if (existingSpot) {
-      console.log('[AI] Spot existente detectado — usando contenido existente', {
+      console.log('[AI] Spot existente detectado — NO ejecutar IA', {
         existingSpotId: existingSpot.id,
         existingSpotName: existingSpot.name,
       });
-      setAiError('Cannot generate content for existing spot. Existing content has been loaded automatically.');
+      setAiState('error');
+      setAiError('Cannot generate content for existing spot. This place already exists in FLOWYA.');
       return null;
     }
 
@@ -365,16 +382,20 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     });
     
     if (!location) {
+      setAiState('error');
       setAiError('Location is required to generate content');
       return null;
     }
 
     if (!isAIConfigured()) {
+      setAiState('error');
       setAiError('OpenAI API key is not configured');
       return null;
     }
 
-    setIsGeneratingAI(true);
+    // Marcar como en progreso
+    isGeneratingRef.current = true;
+    setAiState('loading');
     setAiError(null);
 
     try {
@@ -406,8 +427,9 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
       });
 
       setPreviewContent(generatedContent);
+      setAiState('success');
       
-      // SCOPE 2: Actualizar campos del formulario con contenido generado
+      // CANONICAL: Actualizar campos del formulario con contenido generado
       if (generatedContent.spotDescription) {
         setSpotDescription(generatedContent.spotDescription);
         setDescription(generatedContent.spotDescription); // Mantener sincronizado
@@ -422,6 +444,11 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
         setHowToVisit(generatedContent.howToVisit);
       }
       
+      // CANONICAL: Mapear culturalContext desde respuesta de IA
+      if (generatedContent.culturalContext !== undefined) {
+        setCulturalContext(generatedContent.culturalContext);
+      }
+      
       // Si se genera narration, guardarla automáticamente (no visible para el usuario)
       if (generatedContent.narration) {
         setNarration(generatedContent.narration);
@@ -434,13 +461,14 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     } catch (error: any) {
       // SCOPE: Manejo robusto de errores - no romper el flujo
       console.error('[AI] Error generating AI content:', error);
+      setAiState('error');
       setAiError(error.message || 'Couldn\'t generate content. Try again.');
       // NO hacer throw - permitir que el spot se cree sin contenido AI
       return null;
     } finally {
-      setIsGeneratingAI(false);
+      isGeneratingRef.current = false;
     }
-  }, [location, name, photos, description, whyItMatters, culturalContext, type, hours, cost, restrictions, accessibility, howToVisit, existingSpot]);
+  }, [location, name, photos, description, whyItMatters, culturalContext, type, hours, cost, restrictions, accessibility, howToVisit, existingSpot, aiState]);
 
   // Guardar
   const handleSave = useCallback(async () => {
@@ -520,6 +548,8 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
       setPhotos(initialState.photos);
     setPreviewContent(null);
     setAiError(null);
+    setAiState('idle');
+    isGeneratingRef.current = false;
     onCancel?.();
   }, [initialState, onCancel]);
 
@@ -542,6 +572,8 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     setPhotos([]);
     setPreviewContent(null);
     setAiError(null);
+    setAiState('idle');
+    isGeneratingRef.current = false;
   }, []);
 
   return {
@@ -587,7 +619,7 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     errors,
 
     // IA
-    isGeneratingAI,
+    aiState,
     aiError,
     generateContent,
     previewContent,

@@ -763,6 +763,14 @@ Evento → Momento → UI impactada → Texto esperado
 - ✅ Uso transversal del naming "Flow" documentado (qué se reemplaza, qué NO se toca)
 - ✅ Documentación obligatoria confirmada (en FLOWYA V1.1: BITACORA_V1_1.md, análisis funcionales, decisiones técnicas)
 
+**Decisión arquitectónica adicional (2026-01-10):**
+- ✅ **LocationSelectorWeb se redefine como flujo secuencial:** Search → Confirmación en mapa → Current location
+  - Modelo anterior (descartado): sincronización bidireccional Search ↔ Map, mapMode explícito
+  - Modelo nuevo (implementado): flujo secuencial simple y robusto
+  - Motivo: inestabilidad de sincronización bidireccional
+  - Flujo: Paso 1 (Search) → Paso 2 (Map aparece solo con coordinates) → Paso 3 (Current location siempre visible)
+  - Ver BITACORA_V1_1.md entrada P1-Location-Reconstruction para detalles completos
+
 **Confirmación de addendum final:**
 - ✅ **A1. Pausas obligatorias:** Regla explícita agregada - NO avanzar sin confirmación del Product Owner
 - ✅ **A2. Congelamiento del contrato:** Regla agregada en P0-07 - Schema FlowSubtitle congelado una vez aprobado

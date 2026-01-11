@@ -30,7 +30,7 @@ import { textStyles } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMapboxSearchBoxScript } from '@/hooks/useMapboxSearchBoxScript';
 import { MAPBOX_ACCESS_TOKEN } from '@/utils/mapsConfig';
-import { forwardGeocodeMapbox } from '@/utils/mapboxGeocoding';
+import { forwardGeocodeMapbox, reverseGeocodeMapbox } from '@/utils/mapboxGeocoding';
 
 export interface FormLocationSelectorProps {
   /** Ubicación actual */
@@ -90,6 +90,7 @@ export function FormLocationSelector({
   // Estado del input (completamente independiente de coordenadas)
   const [searchText, setSearchText] = useState(''); // Texto que el usuario escribe
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null); // place_name del resultado seleccionado
+  const [initialLabel, setInitialLabel] = useState<string | null>(null); // Label inicial cuando hay userLocation pero no location
 
   // Estado de búsqueda
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
@@ -102,6 +103,7 @@ export function FormLocationSelector({
   // Refs para control interno
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInternalUpdateRef = useRef<boolean>(false);
+  const hasInitializedLabelRef = useRef<boolean>(false);
 
   // Función helper para generar clave de ubicación
   const getLocationKey = useCallback((loc: { latitude: number; longitude: number } | null): string => {
@@ -126,6 +128,10 @@ export function FormLocationSelector({
 
     // Limpiar selección cuando el usuario busca de nuevo
     setSelectedAddress(null);
+    // Limpiar label inicial cuando el usuario escribe
+    if (initialLabel) {
+      setInitialLabel(null);
+    }
 
     // Cancelar búsqueda anterior
     if (searchTimeoutRef.current) {
@@ -175,6 +181,10 @@ export function FormLocationSelector({
     // Actualizar input: guardar place_name, limpiar texto de búsqueda
     setSelectedAddress(result.description); // place_name de Mapbox (texto humano)
     setSearchText(''); // Limpiar texto de búsqueda
+    // Limpiar label inicial cuando se selecciona resultado
+    if (initialLabel) {
+      setInitialLabel(null);
+    }
 
     // Notificar cambio externo
     onLocationChange(newCoordinates);
@@ -268,6 +278,73 @@ export function FormLocationSelector({
       }
     };
   }, []);
+
+  // ============================================================================
+  // ESTADO INICIAL: Label inicial cuando hay userLocation pero no location
+  // ============================================================================
+
+  /**
+   * Inicializar label inicial (solo una vez al inicio)
+   * Ocurre cuando hay userLocation pero no location seleccionada
+   * NO es sincronización permanente, solo estado inicial UX
+   */
+  useEffect(() => {
+    // Solo ejecutar una vez
+    if (hasInitializedLabelRef.current) return;
+
+    // Condiciones: hay userLocation, no hay locationProp, no hay coordinates internas
+    if (!userLocation) return;
+    if (locationProp) return;
+    if (coordinates) return;
+
+    // Marcar como inicializado
+    hasInitializedLabelRef.current = true;
+
+    // Opción simple: usar "Current location" como fallback
+    const setSimpleLabel = () => {
+      setInitialLabel('Current location');
+    };
+
+    // En web, intentar reverse geocoding para obtener label más descriptivo
+    if (Platform.OS === 'web') {
+      let timeoutCleared = false;
+      const timeoutId = setTimeout(() => {
+        timeoutCleared = true;
+        // Si no se ha establecido un label más descriptivo en 500ms, usar fallback
+        setSimpleLabel();
+      }, 500);
+
+      // Intentar reverse geocoding (opcional, no bloquea)
+      reverseGeocodeMapbox(userLocation.latitude, userLocation.longitude)
+        .then((result) => {
+          if (timeoutCleared) return; // Ya se estableció fallback, no sobrescribir
+
+          if (result?.formattedAddress) {
+            // Si hay dirección formateada, usarla
+            clearTimeout(timeoutId);
+            setInitialLabel(result.formattedAddress);
+          } else if (result?.city) {
+            // Si hay ciudad, usar "Near [city]"
+            clearTimeout(timeoutId);
+            setInitialLabel(`Near ${result.city}`);
+          } else {
+            // Si no hay resultado útil, usar fallback
+            clearTimeout(timeoutId);
+            setSimpleLabel();
+          }
+        })
+        .catch(() => {
+          // Si falla, usar fallback (solo si timeout no se ha ejecutado)
+          if (!timeoutCleared) {
+            clearTimeout(timeoutId);
+            setSimpleLabel();
+          }
+        });
+    } else {
+      // En native, usar fallback simple directamente
+      setSimpleLabel();
+    }
+  }, [userLocation, locationProp, coordinates]);
 
   // ============================================================================
   // P1-01: SETUP MAPBOX SEARCH BOX (WEB ONLY)
@@ -434,10 +511,14 @@ export function FormLocationSelector({
             // Fallback: Implementación actual (si Search Box no está disponible)
             <>
               <FormTextInput
-                value={selectedAddress || searchText}
+                value={selectedAddress || initialLabel || searchText}
                 onChangeText={(text) => {
                   setSearchText(text);
                   setSelectedAddress(null);
+                  // Limpiar label inicial cuando el usuario escribe
+                  if (initialLabel) {
+                    setInitialLabel(null);
+                  }
                   handleSearch(text);
                 }}
                 placeholder="Search by address"
@@ -513,10 +594,14 @@ export function FormLocationSelector({
       {/* Input de búsqueda */}
       <View style={styles.searchContainer}>
         <FormTextInput
-          value={selectedAddress || searchText}
+          value={selectedAddress || initialLabel || searchText}
           onChangeText={(text) => {
             setSearchText(text);
             setSelectedAddress(null); // Limpiar selección cuando el usuario escribe
+            // Limpiar label inicial cuando el usuario escribe
+            if (initialLabel) {
+              setInitialLabel(null);
+            }
             handleSearch(text);
           }}
           placeholder="Search by address"

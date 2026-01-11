@@ -24,6 +24,7 @@ export interface AIGeneratedResponse {
   };
   planInfo: string;
   howToVisit: string;
+  culturalContext: string;
 }
 
 export interface GeneratedContent {
@@ -102,7 +103,8 @@ You must return EXACTLY this JSON structure (no additional fields, no markdown):
     "transition": ""
   },
   "howToVisit": "",
-  "planInfo": ""
+  "planInfo": "",
+  "culturalContext": ""
 }
 
 Editorial rules for each field:
@@ -189,6 +191,27 @@ LENGTH:
 - Designed for quick scanning
 
 OUTPUT: Return a single short paragraph.
+
+5. culturalContext:
+ROLE: You provide cultural and historical context for the place.
+
+STYLE RULES:
+- Informative and respectful
+- Focus on factual historical or cultural significance
+- Avoid opinions or marketing language
+- Neutral tone
+
+CONTENT RULES:
+- Historical background (if relevant)
+- Cultural significance (if relevant)
+- Local context or traditions
+- If no specific cultural context exists → empty string ""
+
+LENGTH:
+- 2 to 4 sentences
+- Clear and concise
+
+OUTPUT: Return a single string.
 
 IMPORTANT: All fields must be populated or explicitly empty (empty string ""). Never return null or undefined. All narration blocks (anticipation, presence, transition) must be strings, even if brief.
 
@@ -461,7 +484,8 @@ export async function generateSpotContent(
       typeof parsed.narration.presence !== 'string' ||
       typeof parsed.narration.transition !== 'string' ||
       typeof parsed.planInfo !== 'string' ||
-      typeof parsed.howToVisit !== 'string'
+      typeof parsed.howToVisit !== 'string' ||
+      typeof parsed.culturalContext !== 'string'
     ) {
       throw new Error('Invalid JSON structure: missing required fields or fields not strings');
     }
@@ -483,6 +507,7 @@ export async function generateSpotContent(
       narration_transition: !!parsedContent.narration?.transition,
       planInfo: !!parsedContent.planInfo,
       howToVisit: !!parsedContent.howToVisit,
+      culturalContext: !!parsedContent.culturalContext,
     });
   } catch (error) {
     console.error('Error parsing AI response:', error);
@@ -521,7 +546,7 @@ export async function generateSpotContent(
   const result: GeneratedContent = {
     spotDescription: parsedContent.spotDescription || spot.description || spot.whyItMatters || '',
     whyItMatters: parsedContent.spotDescription || spot.whyItMatters || spot.description || '', // Compatibilidad
-    culturalContext: spot.culturalContext, // No se genera en nuevo contrato, mantener existente
+    culturalContext: parsedContent.culturalContext || spot.culturalContext || '', // CANONICAL: Mapear desde respuesta de IA
     planInfo: parsedContent.planInfo || '',
     howToVisit: howToVisitParsed || spot.howToVisit,
     narration, // SCOPE 2: Narration siempre poblado (campos pueden estar vacíos pero deben existir)
@@ -543,6 +568,7 @@ export async function generateSpotContent(
     },
     planInfo: !!result.planInfo && result.planInfo.length > 0,
     howToVisit: !!result.howToVisit,
+    culturalContext: !!result.culturalContext && result.culturalContext.length > 0,
   });
 
   return result;
