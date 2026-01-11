@@ -81,8 +81,10 @@ export async function reverseGeocodeMapbox(
     return reverseGeocodeCache.get(cacheKey) ?? null;
   }
 
+  // P0-01: Incluir 'address' en types para obtener direcciones completas (calle + referencia)
   // Mapbox espera [lng, lat] (NO [lat, lng])
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${token}&types=place,locality,neighborhood,region&limit=1`;
+  // Priorizar address, luego street, luego place/locality como fallback
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${token}&types=address,street,place,locality,neighborhood,region&limit=5`;
 
   try {
     const response = await fetch(url);
@@ -97,8 +99,12 @@ export async function reverseGeocodeMapbox(
       return null;
     }
 
-    // Extraer información del primer resultado
-    const feature = data.features[0];
+    // P0-01: Priorizar resultado con address o street sobre place/locality
+    // Buscar el primer resultado que sea address o street
+    let feature = data.features.find(f => 
+      f.place_type.includes('address') || f.place_type.includes('street')
+    ) || data.features[0]; // Fallback al primer resultado si no hay address/street
+
     const context = feature.context || [];
     
     // Extraer ciudad, región, país del context array
@@ -131,6 +137,8 @@ export async function reverseGeocodeMapbox(
       }
     }
 
+    // P0-01: Usar place_name completo (incluye calle + referencia si es address/street)
+    // place_name es más completo que text y incluye contexto completo
     const result: MapboxReverseGeocodeResult = {
       city: city || undefined,
       region: region || undefined,

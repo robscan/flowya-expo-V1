@@ -56,6 +56,7 @@ interface MapViewProps {
 export interface FlowyaMapViewRef {
   centerOnUserLocation: () => void;
   centerOnSpot: (spotId: string) => void;
+  flyToCoordinates: (coordinates: { latitude: number; longitude: number }, zoom?: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
   resize: () => void;
@@ -155,6 +156,17 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
       }
       if (mapboxViewWebRef.current) {
         mapboxViewWebRef.current.centerOnSpot(spotId);
+        return;
+      }
+    },
+    flyToCoordinates: (coordinates: { latitude: number; longitude: number }, zoom?: number) => {
+      if (mapboxViewRef.current) {
+        // En native, usar centerOnSpot si hay un spot en esas coordenadas, o no hacer nada
+        // Por ahora, solo implementar en web
+        return;
+      }
+      if (mapboxViewWebRef.current) {
+        mapboxViewWebRef.current.flyToCoordinates(coordinates, zoom);
         return;
       }
     },

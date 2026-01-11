@@ -22,8 +22,8 @@ import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontSize, lineHeight, textStyles } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
-import { useNarration } from '@/contexts/NarrationContext';
 import { useSaved } from '@/contexts/SavedContext';
+import { useFlowSubtitle } from '@/hooks/useFlowSubtitle';
 import { Flow } from '@/data/flows';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -32,7 +32,6 @@ export interface FlowPlayerControlsProps {
   variant: 'mini' | 'full' | 'screen';
   showPrevious?: boolean;
   showNext?: boolean;
-  showMute?: boolean;
   showAffinity?: boolean;
   currentSpotId?: string;
   currentSpot?: Spot | null;
@@ -51,7 +50,6 @@ export function FlowPlayerControls({
   variant,
   showPrevious = false,
   showNext = true,
-  showMute = true,
   showAffinity = false,
   currentSpotId,
   currentSpot,
@@ -68,7 +66,7 @@ export function FlowPlayerControls({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { flowState, pauseFlow, resumeFlow, previousNarrationBlock, nextNarrationBlock, nextSpotId } = useFlow(); // SCOPE 3: Usar navegación por bloques
-  const narration = useNarration();
+  const subtitle = useFlowSubtitle(); // P0-06: Obtener subtítulo actual basado en eventos
   
   // Obtener estado de afinidad
   const { isSpotLikedFromPlayer, notMyVibeSpots } = useSaved();
@@ -84,16 +82,14 @@ export function FlowPlayerControls({
 
   const totalSpots = flowSpots.length;
 
-  // Sincronizar pausa Flow con pausa Narration
+  // P0-05: Audio eliminado - pausa/resume solo afecta al Flow, no a audio
   const handlePause = useCallback(() => {
     if (flowState.status === 'active') {
       pauseFlow();
-      narration.pauseNarration(); // Sincronizar: pausar narración también
     } else if (flowState.status === 'paused') {
       resumeFlow();
-      narration.resumeNarration(); // Sincronizar: reanudar narración también
     }
-  }, [flowState.status, pauseFlow, resumeFlow, narration]);
+  }, [flowState.status, pauseFlow, resumeFlow]);
 
   // SCOPE 3: Navegación por bloques narrativos (un click = un bloque)
   const handlePrevious = useCallback(() => {
@@ -139,88 +135,11 @@ export function FlowPlayerControls({
   // No se requiere lógica de centrado condicional
   // El layout de 3 columnas simétricas maneja el centrado automáticamente
 
+  // P0-06: Determinar texto del subtítulo (de forma declarativa, para reactividad correcta)
+  const subtitleText = subtitle?.text;
+  const hasSubtitleText = Boolean(subtitleText && subtitleText.trim().length > 0);
 
-  // Renderizar sección de información (solo para variant='screen')
-  const renderInfoSection = () => {
-    if (variant !== 'screen' || !currentSpot) return null;
-
-    // SCOPE 3: Sincronización de subtítulos con audio
-    // Regla principal: Subtítulo visible = audio reproduciéndose
-    const isAudioPlaying = narration.status === 'playing';
-    const hasActiveNarration = narration.currentNarration && isAudioPlaying;
-    const narrationText = narration.currentNarration?.text;
-
-    // SCOPE 3: Mostrar subtítulos SOLO cuando el audio se está reproduciendo
-    if (hasActiveNarration && narrationText && narrationText.trim().length > 0) {
-      return (
-        <View style={styles.infoSection}>
-          {/* Subtítulos de narración - máximo 2 líneas, corte por palabras completas */}
-          <Text 
-            style={[textStyles.body, styles.subtitleText, { color: colors.text }]}
-            numberOfLines={2}
-            ellipsizeMode="tail">
-            {narrationText}
-          </Text>
-
-          {/* Stepper siempre visible */}
-          <View style={[styles.progressBar, { backgroundColor: colors.icon + '15' }]}>
-            <View
-              style={[
-                styles.progressFill,
-                { backgroundColor: colors.tint, width: `${progressPercent}%` },
-              ]}
-            />
-          </View>
-        </View>
-      );
-    }
-
-    // Sin narración: mostrar labels originales
-    return (
-      <View style={styles.infoSection}>
-        {/* Fila de estado: Punto rojo + NOW MOVING + espacio + X spots added */}
-        <View style={styles.statusRow}>
-          <View style={styles.statusLeft}>
-            <View style={[styles.greenDot, { backgroundColor: '#FF3B30' }]} />
-            <Text style={[textStyles.caption, styles.statusText, { color: colors.icon }]}>NOW MOVING</Text>
-          </View>
-          {totalSpots > 0 && (
-            <Text style={[textStyles.caption, styles.statusText, { color: colors.text }]}>
-              {totalSpots} {totalSpots === 1 ? 'spot' : 'spots'} added
-            </Text>
-          )}
-        </View>
-
-        {/* Stepper */}
-        <View style={[styles.progressBar, { backgroundColor: colors.icon + '15' }]}>
-          <View
-            style={[
-              styles.progressFill,
-              { backgroundColor: colors.tint, width: `${progressPercent}%` },
-            ]}
-          />
-        </View>
-      </View>
-    );
-  };
-
-  // Renderizar info de narración para variante full
-  const renderNarrationInfo = () => {
-    if (variant !== 'full') return null;
-
-    return (
-      <View style={styles.narrationInfo}>
-        <Text style={[textStyles.caption, { color: colors.icon }]}>
-          {narration.isMuted ? 'Muted' : 'Narration active'}
-        </Text>
-        {narration.currentNarration && (
-          <Text style={[textStyles.caption, { color: colors.icon }]} numberOfLines={1}>
-            {narration.currentNarration.text}
-          </Text>
-        )}
-      </View>
-    );
-  };
+  // P0-05: renderNarrationInfo eliminado - audio ya no se usa, subtítulos se muestran en infoSection
 
   // SCOPE 2: Transiciones suaves manejadas por React Native automáticamente con estilos
   return (
@@ -229,14 +148,64 @@ export function FlowPlayerControls({
       // FIX: Prevenir problema de aria-hidden cuando está oculto
       accessibilityElementsHidden={variant === 'screen' && !isVisible}
       importantForAccessibility={variant === 'screen' && !isVisible ? 'no-hide-descendants' : 'auto'}>
-      {/* Sección de información (solo para variant='screen') */}
-      {renderInfoSection()}
+      {/* Sección de información (solo para variant='screen') - P0-06: Renderizado declarativo para reactividad correcta */}
+      {variant === 'screen' && currentSpot && (
+        <View style={styles.infoSection}>
+          {/* P0-06: Mostrar subtítulo si existe, sino UI base */}
+          {hasSubtitleText ? (
+            <>
+              {/* Subtítulos de narración - máximo 2 líneas, corte por palabras completas */}
+              <Text 
+                style={[textStyles.body, styles.subtitleText, { color: colors.text }]}
+                numberOfLines={2}
+                ellipsizeMode="tail">
+                {subtitleText || ''}
+              </Text>
+
+              {/* Stepper siempre visible */}
+              <View style={[styles.progressBar, { backgroundColor: colors.icon + '15' }]}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { backgroundColor: colors.tint, width: `${progressPercent}%` },
+                  ]}
+                />
+              </View>
+            </>
+          ) : (
+            <>
+              {/* Sin subtítulo: mostrar labels originales (fallback UX) */}
+              {/* Fila de estado: Punto rojo + NOW MOVING + espacio + X spots added */}
+              <View style={styles.statusRow}>
+                <View style={styles.statusLeft}>
+                  <View style={[styles.greenDot, { backgroundColor: '#FF3B30' }]} />
+                  <Text style={[textStyles.caption, styles.statusText, { color: colors.icon }]}>NOW MOVING</Text>
+                </View>
+                {totalSpots > 0 && (
+                  <Text style={[textStyles.caption, styles.statusText, { color: colors.text }]}>
+                    {totalSpots} {totalSpots === 1 ? 'spot' : 'spots'} added
+                  </Text>
+                )}
+              </View>
+
+              {/* Stepper */}
+              <View style={[styles.progressBar, { backgroundColor: colors.icon + '15' }]}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { backgroundColor: colors.tint, width: `${progressPercent}%` },
+                  ]}
+                />
+              </View>
+            </>
+          )}
+        </View>
+      )}
 
       {/* Zona de controles - Layout de 3 columnas simétricas para centrado absoluto */}
       <View style={styles.controlsZone}>
         {/* Espaciador izquierdo - flex: 1 para simetría */}
         <View style={styles.leftSpacer} />
-        
         {/* Grupo de controles (centrado naturalmente entre los espaciadores) */}
         <View style={styles.controlsGroup}>
           {/* Dislike */}
@@ -362,13 +331,9 @@ export function FlowPlayerControls({
             </Pressable>
           )}
         </View>
-        
         {/* Espaciador derecho - flex: 1 para simetría */}
         <View style={styles.rightSpacer} />
       </View>
-
-      {/* Info de narración para full */}
-      {renderNarrationInfo()}
     </View>
   );
 }

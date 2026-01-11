@@ -32,19 +32,8 @@ export function NarrationController() {
   const { flowState, currentSpotId, nextSpotId } = useFlow();
   const { getPathById } = usePath();
 
-  // Escuchar cambios en el estado de Flow y disparar narrations
-  useEffect(() => {
-    if (flowState.status !== 'active') {
-      // Si el Flow no está activo, detener cualquier narration
-      narration.stopNarration();
-      return;
-    }
-
-    // Cuando el Flow está activo, las narrations se disparan manualmente
-    // desde eventos específicos (approaching, arriving, leaving, between)
-    // Por ahora, este componente solo prepara el sistema
-    // La implementación completa de triggers será en el Scope 7 (Flow Screen)
-  }, [flowState.status, narration]);
+  // P0-05: Audio eliminado - este componente ya no necesita hacer nada
+  // Los subtítulos se manejan mediante useFlowSubtitle hook en los componentes que los renderizan
 
   // El componente es invisible - no renderiza nada
   // Solo maneja la lógica de orquestación

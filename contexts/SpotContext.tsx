@@ -12,12 +12,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { Spot } from '@/data/spots';
-import { mockSpots } from '@/data/spots';
+import { Spot , mockSpots } from '@/data/spots';
 import { generateSpotContent as generateAIContent, GenerateContentOptions } from '@/utils/aiContentGenerator';
 import { migrateOwnersLegacy } from '@/utils/ownerMigration';
 import { migrateSpotsRegions } from '@/core/region';
 import { normalizeAllSpots } from '@/utils/spotNormalizer';
+import { removeImageState } from '@/utils/imageCache';
 import { useAuth } from './AuthContext';
 
 const STORAGE_KEY = '@flowya_spots';
@@ -333,6 +333,13 @@ export function SpotProvider({ children }: { children: ReactNode }) {
       updatedAt: now,
     };
 
+    // P0-02: Invalidar caché de imágenes del spot (forzar recarga)
+    if (newSpot.photos && newSpot.photos.length > 0) {
+      newSpot.photos.forEach((photoUri) => {
+        removeImageState(photoUri);
+      });
+    }
+
     // Agregar al cache como 'available' (nuevo Spot, ya está en memoria)
     markSpotAsAvailable(newSpot.id);
     setSpots((prev) => [...prev, newSpot]);
@@ -341,11 +348,26 @@ export function SpotProvider({ children }: { children: ReactNode }) {
 
   const updateSpot = (id: string, updates: Partial<Spot>) => {
     setSpots((prev) =>
-      prev.map((spot) =>
-        spot.id === id
-          ? { ...spot, ...updates, updatedAt: new Date() }
-          : spot
-      )
+      prev.map((spot) => {
+        if (spot.id === id) {
+          // P0-02: Invalidar caché de imágenes si se actualizan las fotos
+          if (updates.photos) {
+            // Invalidar URIs antiguas
+            if (spot.photos && spot.photos.length > 0) {
+              spot.photos.forEach((photoUri) => {
+                removeImageState(photoUri);
+              });
+            }
+            // Invalidar URIs nuevas (para forzar recarga)
+            updates.photos.forEach((photoUri) => {
+              removeImageState(photoUri);
+            });
+          }
+
+          return { ...spot, ...updates, updatedAt: new Date() };
+        }
+        return spot;
+      })
     );
   };
 

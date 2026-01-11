@@ -23,7 +23,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
     Dimensions,
-    Platform,
     Pressable,
     ScrollView,
     StatusBar,
@@ -32,9 +31,8 @@ import {
     View
 } from 'react-native';
 
-import { FlowPlayer } from '@/design-system/FlowPlayer';
 import { FlowyaMapView } from '@/components/MapView';
-import { useNarrationTriggers } from '@/components/NarrationController';
+import { flowEventEmitter } from '@/utils/flowEventEmitter';
 import { SaveFlowModal } from '@/components/SaveFlowModal';
 import { SpotInlineCard } from '@/components/SpotInlineCard';
 import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
@@ -45,16 +43,16 @@ import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
-import { useNarration } from '@/contexts/NarrationContext';
 import { usePath } from '@/contexts/PathContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Flow, getFlowSpots } from '@/data/flows';
 import { Spot } from '@/data/spots';
+import { FlowPlayer } from '@/design-system/FlowPlayer';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { getSpotDistance, useSpotDistance } from '@/hooks/useSpotDistance';
-import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
 import { getFlowState, hasFlowChanges } from '@/utils/flowChanges';
 import { geofencingSimulator } from '@/utils/geofencingSimulator';
 import { mapMovementModeToNavigationMode, openNavigationApp } from '@/utils/navigationHelpers';
@@ -84,8 +82,6 @@ export default function FlowScreenPage() {
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
   const { flowState, currentSpotId, nextSpotId, closeFlow, minimizeFlow, addSpotToFlow, reorderFlowSpots, removeSpotFromFlow } = useFlow();
-  // SCOPE 2: Obtener currentNarrationBlock del estado del flow
-  const currentNarrationBlock = flowState.currentNarrationBlock;
   const { getFlowById, flows, updateFlow } = usePath();
   const { spots, getSpotById } = useSpot();
   const { 
@@ -97,8 +93,7 @@ export default function FlowScreenPage() {
     savedFlows,
     } = useSaved();
   const [showSaveFlowModal, setShowSaveFlowModal] = useState(false);
-  const narration = useNarration();
-  const narrationTriggers = useNarrationTriggers();
+  // P0-05: useNarration y useNarrationTriggers eliminados - audio ya no se usa
   
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
@@ -115,30 +110,7 @@ export default function FlowScreenPage() {
   // SCOPE 2: Control de visibilidad del player con scroll
   const { isBottomNavVisible, handleScroll } = useScrollVisibility({ threshold: 24 });
 
-  // TEMPORARY TEST: Web Speech API test
-  useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.speechSynthesis) {
-      console.log('[WEB SPEECH TEST] Attempting native browser speech');
-      const utterance = new SpeechSynthesisUtterance("Esto es una prueba de audio del navegador");
-      utterance.lang = 'es-ES'; // Idioma español
-      utterance.rate = 0.85; // Velocidad similar a ExpoSpeech
-      utterance.pitch = 0.95; // Tono similar a ExpoSpeech
-      
-      utterance.onstart = () => {
-        console.log('[WEB SPEECH TEST] Speech started successfully');
-      };
-      
-      utterance.onerror = (error) => {
-        console.error('[WEB SPEECH TEST] Speech error:', error);
-      };
-      
-      utterance.onend = () => {
-        console.log('[WEB SPEECH TEST] Speech ended');
-      };
-      
-      window.speechSynthesis.speak(utterance);
-    }
-  }, []); // Ejecutar solo una vez al montar
+  // P0-05: Código de test de Web Speech API eliminado - audio ya no se usa
 
   const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
   
@@ -241,7 +213,7 @@ export default function FlowScreenPage() {
     }
   }, [flow, currentSpot, baseLocation, spots, savedSpots, likedSpots, savedFlows, flows]);
 
-  // Integrar geofencing con narration triggers - solo cuando usuario está cerca de spot
+  // P0-08: Integrar geofencing con eventos explícitos del Flow
   useEffect(() => {
     if (!flow || flowSpots.length === 0) {
       try {
@@ -252,19 +224,22 @@ export default function FlowScreenPage() {
       return;
     }
 
-    // Configurar callbacks de geofencing para disparar narrations solo cuando se llega a un spot
+    // Configurar callbacks de geofencing para emitir eventos explícitos
     try {
       const removeCallbacks = geofencingSimulator.addCallbacks({
         onArriving: (spotId: string) => {
-          // Solo disparar narration cuando el usuario llega a un spot
-          narrationTriggers.triggerArriving(spotId);
+          // P0-08: Emitir evento SPOT_PROXIMITY_ENTER (one-shot por spotId)
+          flowEventEmitter.emit('SPOT_PROXIMITY_ENTER', { spotId });
+          // P0-05: narrationTriggers eliminado - audio ya no se usa
         },
-        // Desactivar approaching y leaving para evitar narrations en loop
-        onApproaching: () => {
-          // No hacer nada - solo narrations al llegar
+        onApproaching: (spotId: string) => {
+          // P0-08: Emitir evento SPOT_PROXIMITY_ENTER (one-shot por spotId)
+          // Si onArriving no se ha emitido aún para este spotId, emitir aquí
+          flowEventEmitter.emit('SPOT_PROXIMITY_ENTER', { spotId });
         },
         onLeaving: () => {
-          // No hacer nada - solo narrations al llegar
+          // P0-08: No emitir eventos al salir (solo al llegar/acercarse)
+          // No hacer nada
         },
       });
 
@@ -291,7 +266,7 @@ export default function FlowScreenPage() {
     } catch (error) {
       console.error('Error in geofencing useEffect:', error);
     }
-  }, [flow, flowSpots, baseLocation, narrationTriggers]);
+  }, [flow, flowSpots, baseLocation]);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info', icon?: string, undoAction?: () => void) => {
     setToastMessage(message);
@@ -383,7 +358,7 @@ export default function FlowScreenPage() {
     // Rule: If no changes, close directly. If changes, show confirmation modal.
     if (!flowHasChanges) {
       // No changes: close directly without confirmation
-      closeFlow(narration.stopNarration);
+      closeFlow();
     } else {
       // Has changes: show confirmation modal
       setShowSaveFlowModal(true);
@@ -409,13 +384,13 @@ export default function FlowScreenPage() {
     // Toast duration is 3000ms (3 seconds) - user can see it while navigating
     // Determine if this is an update or create based on previous state
     const wasSavedBefore = isFlowSavedState;
-    showToast(wasSavedBefore ? 'Route updated' : 'Route saved', 'success', 'check');
+    showToast(wasSavedBefore ? 'Flow updated' : 'Flow saved', 'success', 'check');
     
     // Step 5: Close flow after a short delay to ensure toast is visible
     // Delay allows user to see the confirmation before navigation
     setTimeout(async () => {
       // closeFlow handles complete sequence including explicit navigation
-      await closeFlow(narration.stopNarration);
+      await closeFlow();
     }, 2500); // 2.5 seconds - allows toast to be visible before navigation
   };
 
@@ -439,7 +414,7 @@ export default function FlowScreenPage() {
     
     // Close flow after short delay to show toast
     setTimeout(async () => {
-      await closeFlow(narration.stopNarration);
+      await closeFlow();
     }, flowStateCanonical === 'draft' ? 1500 : 0);
   };
 
@@ -453,7 +428,7 @@ export default function FlowScreenPage() {
     
     // Close flow after short delay to show toast
     setTimeout(async () => {
-      await closeFlow(narration.stopNarration);
+      await closeFlow();
     }, 1500);
   };
 
@@ -782,11 +757,7 @@ export default function FlowScreenPage() {
           onPress: handleMinimize,
           tooltip: 'Minimize',
         },
-        {
-          icon: narration.isMuted ? 'mute' : 'audio',
-          onPress: narration.toggleMute,
-          tooltip: narration.isMuted ? 'Unmute narration' : 'Mute narration',
-        },
+        // P0-05: Botón mute eliminado - audio ya no se usa
         {
           icon: 'close',
           onPress: handleClose,
@@ -826,11 +797,9 @@ export default function FlowScreenPage() {
               showOverlay={false}
               sticky={true}
             />
-            
             {/* Timeline debajo del mapa */}
             {renderTimeline()}
           </ScrollView>
-          
           {/* FIX: Player como overlay absoluto (no en el flujo del layout) */}
           <View style={styles.playerOverlayContainer}>
             <FlowPlayer

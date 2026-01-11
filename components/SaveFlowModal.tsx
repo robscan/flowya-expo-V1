@@ -168,12 +168,12 @@ export function SaveFlowModal({
               <View style={styles.header}>
                 <Text style={[textStyles.heading3, { color: colors.text }]}>
                   {confirmationStep === 'naming'
-                    ? 'Save route'
+                    ? 'Save Flow'
                     : flowState === 'edited'
                     ? 'Save changes?'
                     : isSaved
-                    ? 'Close route'
-                    : 'Save route'}
+                    ? 'Close Flow'
+                    : 'Save Flow'}
                 </Text>
                 <Pressable
                   onPress={handleCancel}
@@ -195,15 +195,15 @@ export function SaveFlowModal({
                   {/* Mensaje según estado del flow */}
                   {flowState === 'draft' && hasChanges ? (
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                      Do you want to save this route before leaving?
+                      Do you want to save this Flow before leaving?
                     </Text>
                   ) : flowState === 'edited' ? (
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                      {currentName ? `Save changes to "${currentName}"?` : 'Save changes to this route?'}
+                      {currentName ? `Save changes to "${currentName}"?` : 'Save changes to this Flow?'}
                     </Text>
                   ) : flowState === 'saved' && !hasChanges ? (
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                      {currentName || 'Route saved'}
+                      {currentName || 'Flow saved'}
                     </Text>
                   ) : (
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
@@ -310,13 +310,13 @@ export function SaveFlowModal({
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled">
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                      Give your route a name so you can find it later.
+                      Give your Flow a name so you can find it later.
                     </Text>
 
                     {/* Input */}
                     <View style={styles.inputContainer}>
                       <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
-                        Route name
+                        Flow name
                       </Text>
                       <TextInput
                         style={[
@@ -353,7 +353,7 @@ export function SaveFlowModal({
                           },
                         ]}
                         onPress={handleSave}>
-                        <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save Route</Text>
+                        <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save Flow</Text>
                       </Pressable>
                     </View>
                   </ScrollView>

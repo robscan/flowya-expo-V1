@@ -1,33 +1,36 @@
 /**
  * FormLocationSelector - Selector de ubicación canónico
- * CANONICAL: Componente único de selección de ubicación para FLOWYA
+ * RECONSTRUIDO DESDE CERO - Arquitectura limpia con desacoplamiento completo
  * 
  * Características:
- * - Búsqueda por dirección con sugerencias en tiempo real
+ * - Búsqueda por dirección con sugerencias en tiempo real (Mapbox Forward Geocoding)
  * - Selección directa en mapa (click/tap unificado)
- * - Sincronización bidireccional automática entre input, mapa y estado
+ * - Input y coordenadas completamente desacoplados
  * - Funciona correctamente en desktop web y mobile web
- * - Comportamiento idéntico en creación y edición
  * - Usa tokens del design system
  * - Integración con FormField
  * 
- * Principios:
- * - Fuente de verdad única: un solo estado location controla todo
- * - NO muestra inputs técnicos (lat/lng) al usuario
- * - Prevención de bucles infinitos mediante refs y comparaciones
- * - Manejo de errores silencioso con fallbacks
+ * Principios de arquitectura:
+ * - Input controla búsqueda (texto humano únicamente, NUNCA coordenadas)
+ * - Mapa controla coordenadas (independiente del input)
+ * - No hay sincronización bidireccional input ↔ coordenadas
+ * - Input solo muestra: texto de búsqueda o place_name seleccionado
+ * - Click en mapa NO actualiza el input
+ * - Botón clear solo limpia input, sin reverse geocode
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { FlowyaMapView } from '@/components/MapView';
+import { FlowyaMapView, FlowyaMapViewRef } from '@/components/MapView';
 import { FormTextInput } from '@/components/ui/FormTextInput';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { reverseGeocodeMapbox, forwardGeocodeMapbox } from '@/utils/mapboxGeocoding';
+import { useMapboxSearchBoxScript } from '@/hooks/useMapboxSearchBoxScript';
+import { MAPBOX_ACCESS_TOKEN } from '@/utils/mapsConfig';
+import { forwardGeocodeMapbox } from '@/utils/mapboxGeocoding';
 
 export interface FormLocationSelectorProps {
   /** Ubicación actual */
@@ -47,7 +50,7 @@ export interface FormLocationSelectorProps {
 interface GeocodeResult {
   latitude: number;
   longitude: number;
-  description: string;
+  description: string; // place_name de Mapbox (texto humano)
 }
 
 interface Region {
@@ -59,6 +62,7 @@ interface Region {
 
 /**
  * FormLocationSelector - Selector de ubicación canónico
+ * RECONSTRUIDO DESDE CERO con arquitectura limpia
  */
 export function FormLocationSelector({
   location: locationProp,
@@ -71,18 +75,31 @@ export function FormLocationSelector({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
-  // Estado interno (fuente de verdad única)
-  const [internalLocation, setInternalLocation] = useState<{ latitude: number; longitude: number } | null>(locationProp);
-  const [address, setAddress] = useState<string>('');
-  
+  // ============================================================================
+  // P1-01: MAPBOX SEARCH BOX (WEB ONLY)
+  // ============================================================================
+  const { isLoaded: isSearchBoxLoaded, error: searchBoxError } = useMapboxSearchBoxScript();
+  const searchBoxContainerIdRef = useRef(`mapbox-search-box-container-${Math.random().toString(36).substr(2, 9)}`);
+  const searchBoxElementRef = useRef<HTMLElement | null>(null);
+  const mapViewRef = useRef<FlowyaMapViewRef>(null);
+
+  // ============================================================================
+  // ESTADOS COMPLETAMENTE SEPARADOS (SIN ACOPLAMIENTO)
+  // ============================================================================
+
+  // Estado del input (completamente independiente de coordenadas)
+  const [searchText, setSearchText] = useState(''); // Texto que el usuario escribe
+  const [selectedAddress, setSelectedAddress] = useState<string | null>(null); // place_name del resultado seleccionado
+
   // Estado de búsqueda
-  const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
 
-  // Refs para prevenir bucles infinitos
-  const lastLocationRef = useRef<string>('');
+  // Estado de coordenadas (completamente independiente del input)
+  const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(locationProp);
+
+  // Refs para control interno
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInternalUpdateRef = useRef<boolean>(false);
 
@@ -92,51 +109,23 @@ export function FormLocationSelector({
     return `${loc.latitude.toFixed(6)}-${loc.longitude.toFixed(6)}`;
   }, []);
 
-  // Función de reverse geocoding para actualizar dirección
-  // CANONICAL: Usa Mapbox Geocoding API (NO Google, NO expo-location)
-  const updateAddressFromLocation = useCallback(async (loc: { latitude: number; longitude: number }) => {
-    try {
-      const result = await reverseGeocodeMapbox(loc.latitude, loc.longitude);
-      
-      if (result && result.formattedAddress) {
-        setAddress(result.formattedAddress);
-        return result.formattedAddress;
-      }
-      
-      // Si no hay formattedAddress, construir desde partes
-      if (result) {
-        const addressParts = [
-          result.city,
-          result.region,
-          result.country,
-        ].filter(Boolean);
-        
-        if (addressParts.length > 0) {
-          const constructedAddress = addressParts.join(', ');
-          setAddress(constructedAddress);
-          return constructedAddress;
-        }
-      }
-    } catch (error) {
-      if (__DEV__) {
-        console.error('Error in reverse geocoding:', error);
-      }
-    }
-    
-    // Fallback a coordenadas si no hay dirección disponible
-    const fallbackAddress = `${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`;
-    setAddress(fallbackAddress);
-    return fallbackAddress;
-  }, []);
+  // ============================================================================
+  // FLUJO 1: BÚSQUEDA (Input → Resultados → Selección)
+  // ============================================================================
 
-  // Función de búsqueda con debounce
-  // CANONICAL: Usa Mapbox Forward Geocoding API (NO Google, NO expo-location)
-  const handleSearchAddress = useCallback(async (query: string) => {
+  /**
+   * Handler de búsqueda (solo input, NO toca coordenadas)
+   * Usa Mapbox Forward Geocoding API para obtener resultados semánticos
+   */
+  const handleSearch = useCallback(async (query: string) => {
     if (!query.trim() || disabled) {
       setSearchResults([]);
       setShowResults(false);
       return;
     }
+
+    // Limpiar selección cuando el usuario busca de nuevo
+    setSelectedAddress(null);
 
     // Cancelar búsqueda anterior
     if (searchTimeoutRef.current) {
@@ -147,17 +136,16 @@ export function FormLocationSelector({
     searchTimeoutRef.current = setTimeout(async () => {
       setIsSearching(true);
       try {
-        // Usar Mapbox forward geocoding directamente
-        // Mapbox ya retorna place_name formateado, no necesitamos reverse geocoding adicional
+        // Usar Mapbox Forward Geocoding API
         const results = await forwardGeocodeMapbox(query, 5);
-        
-        // Mapear resultados de Mapbox a formato esperado
+
+        // Mapear resultados: description contiene place_name (texto humano de Mapbox)
         const formattedResults: GeocodeResult[] = results.map((result) => ({
           latitude: result.latitude,
           longitude: result.longitude,
-          description: result.description || query || `${result.latitude.toFixed(4)}, ${result.longitude.toFixed(4)}`,
+          description: result.description || query, // place_name de Mapbox (texto humano)
         }));
-        
+
         setSearchResults(formattedResults);
         setShowResults(formattedResults.length > 0);
       } catch (error) {
@@ -172,111 +160,105 @@ export function FormLocationSelector({
     }, 300);
   }, [disabled]);
 
-  // Handler de selección de resultado de búsqueda
-  const handleSelectResult = useCallback(async (result: GeocodeResult) => {
-    const newLocation = { latitude: result.latitude, longitude: result.longitude };
-    const locationKey = getLocationKey(newLocation);
-    
-    // Prevenir actualizaciones si la ubicación no cambió significativamente
-    if (lastLocationRef.current === locationKey) {
-      setShowResults(false);
-      setSearchResults([]);
-      return;
-    }
-    
-    lastLocationRef.current = locationKey;
+  /**
+   * Handler de selección de resultado de búsqueda
+   * Guarda place_name en input y coordenadas independientemente
+   */
+  const handleSelectResult = useCallback((result: GeocodeResult) => {
+    const newCoordinates = { latitude: result.latitude, longitude: result.longitude };
+
     isInternalUpdateRef.current = true;
-    
-    // Actualizar estado interno
-    setInternalLocation(newLocation);
-    setSearchQuery(result.description);
-    
-    // Actualizar dirección
-    await updateAddressFromLocation(newLocation);
-    
+
+    // Actualizar coordenadas (estado independiente)
+    setCoordinates(newCoordinates);
+
+    // Actualizar input: guardar place_name, limpiar texto de búsqueda
+    setSelectedAddress(result.description); // place_name de Mapbox (texto humano)
+    setSearchText(''); // Limpiar texto de búsqueda
+
     // Notificar cambio externo
-    onLocationChange(newLocation);
-    
+    onLocationChange(newCoordinates);
+
     // Cerrar resultados
     setShowResults(false);
     setSearchResults([]);
-    
-    // Reset flag después de un breve delay para permitir que el efecto de sincronización no interfiera
-    setTimeout(() => {
-      isInternalUpdateRef.current = false;
-    }, 100);
-  }, [onLocationChange, getLocationKey, updateAddressFromLocation]);
 
-  // Handler de click/tap en mapa (unificado para desktop y mobile)
-  const handleMapPress = useCallback(async (newLocation: { latitude: number; longitude: number }) => {
-    if (disabled) return;
-    
-    const locationKey = getLocationKey(newLocation);
-    
-    // Prevenir actualizaciones si la ubicación no cambió significativamente
-    if (lastLocationRef.current === locationKey) {
-      return;
-    }
-    
-    lastLocationRef.current = locationKey;
-    isInternalUpdateRef.current = true;
-    
-    // Actualizar estado interno
-    setInternalLocation(newLocation);
-    
-    // Actualizar dirección y query de búsqueda
-    const formattedAddress = await updateAddressFromLocation(newLocation);
-    setSearchQuery(formattedAddress);
-    
-    // Notificar cambio externo
-    onLocationChange(newLocation);
-    
-    // Cerrar resultados si están abiertos
-    setShowResults(false);
-    
     // Reset flag después de un breve delay
     setTimeout(() => {
       isInternalUpdateRef.current = false;
     }, 100);
-  }, [disabled, onLocationChange, getLocationKey, updateAddressFromLocation]);
+  }, [onLocationChange]);
 
-  // Efecto de sincronización con props externos
+  // ============================================================================
+  // FLUJO 2: MAPA (Click → Coordenadas)
+  // ============================================================================
+
+  /**
+   * Handler de click/tap en mapa (unificado para desktop y mobile)
+   * Actualiza coordenadas, NO toca el input
+   */
+  const handleMapPress = useCallback((newLocation: { latitude: number; longitude: number }) => {
+    if (disabled) return;
+
+    isInternalUpdateRef.current = true;
+
+    // Actualizar coordenadas (estado independiente)
+    setCoordinates(newLocation);
+
+    // Notificar cambio externo
+    onLocationChange(newLocation);
+
+    // Cerrar resultados si están abiertos
+    setShowResults(false);
+
+    // NO tocar el input - queda como está (searchText y selectedAddress sin cambios)
+
+    // Reset flag después de un breve delay
+    setTimeout(() => {
+      isInternalUpdateRef.current = false;
+    }, 100);
+  }, [disabled, onLocationChange]);
+
+  // ============================================================================
+  // FLUJO 3: CLEAR (Limpieza)
+  // ============================================================================
+
+  /**
+   * Handler de clear
+   * Limpia input únicamente, NO toca coordenadas, NO hace reverse geocode
+   */
+  const handleClear = useCallback(() => {
+    setSearchText('');
+    setSelectedAddress(null);
+    setSearchResults([]);
+    setShowResults(false);
+    // NO tocar coordenadas
+    // NO hacer reverse geocode
+  }, []);
+
+  // ============================================================================
+  // SINCRONIZACIÓN CON PROPS EXTERNOS (Solo Coordenadas)
+  // ============================================================================
+
+  /**
+   * Sincronizar coordenadas con props externos
+   * NO toca el input (queda como está)
+   */
   useEffect(() => {
     // Si es una actualización interna, ignorar para prevenir bucles
     if (isInternalUpdateRef.current) {
       return;
     }
-    
-    // Comparar location prop con estado interno
-    const propLocationKey = getLocationKey(locationProp);
-    const internalLocationKey = getLocationKey(internalLocation);
-    
-    // Solo actualizar si es diferente
-    if (propLocationKey !== internalLocationKey) {
-      const newLocationKey = getLocationKey(locationProp);
-      if (newLocationKey !== lastLocationRef.current) {
-        lastLocationRef.current = newLocationKey;
-        setInternalLocation(locationProp);
-        
-        // Si hay ubicación, actualizar dirección
-        if (locationProp) {
-          updateAddressFromLocation(locationProp).then((formattedAddress) => {
-            setSearchQuery(formattedAddress);
-          });
-        } else {
-          setSearchQuery('');
-          setAddress('');
-        }
-      }
-    }
-  }, [locationProp, internalLocation, getLocationKey, updateAddressFromLocation]);
 
-  // Inicializar dirección si hay ubicación pero no hay dirección aún
-  useEffect(() => {
-    if (internalLocation && !address) {
-      updateAddressFromLocation(internalLocation);
+    const propKey = getLocationKey(locationProp);
+    const internalKey = getLocationKey(coordinates);
+
+    // Solo actualizar si es diferente
+    if (propKey !== internalKey) {
+      setCoordinates(locationProp);
+      // NO tocar el input - queda como está
     }
-  }, [internalLocation, address, updateAddressFromLocation]);
+  }, [locationProp, coordinates, getLocationKey]);
 
   // Cleanup de timeout en unmount
   useEffect(() => {
@@ -287,11 +269,112 @@ export function FormLocationSelector({
     };
   }, []);
 
-  // Calcular región inicial para el mapa (siempre debe haber una región)
-  const mapRegion: Region = internalLocation
+  // ============================================================================
+  // P1-01: SETUP MAPBOX SEARCH BOX (WEB ONLY)
+  // ============================================================================
+
+  // Montar y configurar el custom element de Mapbox Search Box en web
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (!isSearchBoxLoaded || searchBoxError) return;
+
+    // Si ya existe el elemento, no recrearlo
+    if (searchBoxElementRef.current) return;
+
+    // Capturar el ID del contenedor para usar en cleanup
+    const containerId = searchBoxContainerIdRef.current;
+
+    // Buscar el contenedor en el DOM usando el ID único
+    const containerElement = document.getElementById(containerId);
+    if (!containerElement) {
+      // Si no existe aún, esperar un poco y reintentar
+      const timeoutId = setTimeout(() => {
+        const retryElement = document.getElementById(containerId);
+        if (retryElement && !searchBoxElementRef.current) {
+          mountSearchBox(retryElement);
+        }
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+
+    mountSearchBox(containerElement);
+
+    function mountSearchBox(container: HTMLElement) {
+      // Crear el custom element
+      const searchBoxElement = document.createElement('mapbox-search-box');
+      searchBoxElement.setAttribute('access-token', MAPBOX_ACCESS_TOKEN || '');
+
+      // Configurar opciones si hay userLocation para proximity
+      if (userLocation) {
+        const options = {
+          proximity: [userLocation.longitude, userLocation.latitude] as [number, number],
+        };
+        searchBoxElement.setAttribute('options', JSON.stringify(options));
+      }
+
+      // Escuchar evento 'retrieve' para obtener coordenadas cuando se selecciona un resultado
+      const handleRetrieve = (event: Event) => {
+        const customEvent = event as CustomEvent;
+        const feature = customEvent.detail;
+
+        if (feature && feature.geometry && feature.geometry.coordinates) {
+          const [longitude, latitude] = feature.geometry.coordinates;
+          const newCoordinates = { latitude, longitude };
+
+          isInternalUpdateRef.current = true;
+
+          // Actualizar coordenadas
+          setCoordinates(newCoordinates);
+
+          // Actualizar input con place_name (texto humano)
+          const placeName = feature.properties?.['place_name'] || feature.text || '';
+          setSelectedAddress(placeName);
+          setSearchText('');
+
+          // P1-01: Sincronizar mapa con Search Box - centrar mapa en las coordenadas seleccionadas
+          if (mapViewRef.current) {
+            mapViewRef.current.flyToCoordinates(newCoordinates, 15); // Zoom 15 para contexto urbano
+          }
+
+          // Notificar cambio externo
+          onLocationChange(newCoordinates);
+
+          // Reset flag
+          setTimeout(() => {
+            isInternalUpdateRef.current = false;
+          }, 100);
+        }
+      };
+
+      searchBoxElement.addEventListener('retrieve', handleRetrieve);
+
+      // Agregar al DOM
+      container.appendChild(searchBoxElement);
+      searchBoxElementRef.current = searchBoxElement;
+    }
+
+    // Cleanup
+    return () => {
+      if (searchBoxElementRef.current) {
+        const container = document.getElementById(containerId);
+        if (container && container.contains(searchBoxElementRef.current)) {
+          // El event listener se remueve automáticamente cuando se remueve el elemento
+          searchBoxElementRef.current.remove();
+        }
+        searchBoxElementRef.current = null;
+      }
+    };
+  }, [isSearchBoxLoaded, searchBoxError, userLocation, onLocationChange]);
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  // Calcular región inicial para el mapa
+  const mapRegion: Region = coordinates
     ? {
-        latitude: internalLocation.latitude,
-        longitude: internalLocation.longitude,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
       }
@@ -303,7 +386,7 @@ export function FormLocationSelector({
         longitudeDelta: 0.1,
       }
     : {
-        // Fallback: Riviera Maya, México (región por defecto para el demo)
+        // Fallback: Riviera Maya, México (región por defecto)
         latitude: 20.6170,
         longitude: -87.0798,
         latitudeDelta: 0.1,
@@ -311,12 +394,12 @@ export function FormLocationSelector({
       };
 
   // Spots para mostrar en el mapa (solo si hay ubicación seleccionada)
-  const mapSpots = internalLocation
+  const mapSpots = coordinates
     ? [
         {
           id: 'temp-location-selector',
           name: 'Selected Location',
-          location: internalLocation,
+          location: coordinates,
           photos: [],
           type: 'other' as const,
           createdAt: new Date(),
@@ -325,15 +408,116 @@ export function FormLocationSelector({
       ]
     : [];
 
+  // ============================================================================
+  // P1-01: BIFURCACIÓN WEB vs NATIVE
+  // ============================================================================
+
+  // WEB: Usar Mapbox Search Box oficial (con fallback a implementación actual)
+  if (Platform.OS === 'web') {
+    // Si el Search Box está cargado y no hay error, usar el componente oficial
+    const useOfficialSearchBox = isSearchBoxLoaded && !searchBoxError && MAPBOX_ACCESS_TOKEN;
+
+    return (
+      <View style={[styles.container, style]}>
+        {/* Input de búsqueda - Web */}
+        <View style={styles.searchContainer}>
+          {useOfficialSearchBox ? (
+            // Mapbox Search Box oficial
+            <View
+              style={styles.searchInput}
+              nativeID={searchBoxContainerIdRef.current}
+              // @ts-ignore - nativeID es válido en React Native Web
+            >
+              {/* El custom element se monta vía useEffect usando el nativeID */}
+            </View>
+          ) : (
+            // Fallback: Implementación actual (si Search Box no está disponible)
+            <>
+              <FormTextInput
+                value={selectedAddress || searchText}
+                onChangeText={(text) => {
+                  setSearchText(text);
+                  setSelectedAddress(null);
+                  handleSearch(text);
+                }}
+                placeholder="Search by address"
+                onSubmitEditing={() => {
+                  if (searchResults.length > 0) {
+                    handleSelectResult(searchResults[0]);
+                  }
+                }}
+                disabled={disabled}
+                rightIcon={
+                  isSearching
+                    ? undefined
+                    : selectedAddress || searchText.trim().length > 0
+                      ? 'close'
+                      : 'search'
+                }
+                onRightIconPress={handleClear}
+                style={styles.searchInput}
+              />
+
+              {/* Dropdown de resultados de búsqueda */}
+              {showResults && searchResults.length > 0 && (
+                <View style={[styles.resultsContainer, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
+                  <FlatList
+                    data={searchResults}
+                    keyExtractor={(item, index) => `${item.latitude}-${item.longitude}-${index}`}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={[styles.resultItem, { borderBottomColor: colors.icon + '10' }]}
+                        onPress={() => handleSelectResult(item)}
+                        activeOpacity={0.7}>
+                        <Text style={[textStyles.body, { color: colors.text }]} numberOfLines={2}>
+                          {item.description}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    scrollEnabled={false}
+                    keyboardShouldPersistTaps="handled"
+                  />
+                </View>
+              )}
+            </>
+          )}
+        </View>
+
+        {/* Mapa - siempre visible */}
+        <View style={[styles.mapContainer, { height: mapHeight }]}>
+          <FlowyaMapView
+            ref={mapViewRef}
+            key={coordinates ? `${coordinates.latitude.toFixed(4)}-${coordinates.longitude.toFixed(4)}` : 'no-location'}
+            spots={mapSpots}
+            onSpotPress={() => {}}
+            onLongPress={handleMapPress}
+            initialRegion={mapRegion}
+            userLocation={userLocation}
+            showUserLocation={!!userLocation}
+          />
+        </View>
+
+        {/* Instrucciones */}
+        {!disabled && (
+          <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
+            Click on the map to select location
+          </Text>
+        )}
+      </View>
+    );
+  }
+
+  // NATIVE: Implementación actual (SIN CAMBIOS)
   return (
     <View style={[styles.container, style]}>
       {/* Input de búsqueda */}
       <View style={styles.searchContainer}>
         <FormTextInput
-          value={searchQuery}
+          value={selectedAddress || searchText}
           onChangeText={(text) => {
-            setSearchQuery(text);
-            handleSearchAddress(text);
+            setSearchText(text);
+            setSelectedAddress(null); // Limpiar selección cuando el usuario escribe
+            handleSearch(text);
           }}
           placeholder="Search by address"
           onSubmitEditing={() => {
@@ -342,15 +526,17 @@ export function FormLocationSelector({
             }
           }}
           disabled={disabled}
-          rightIcon={isSearching ? undefined : 'search'}
-          onRightIconPress={() => {
-            if (searchQuery.trim()) {
-              handleSearchAddress(searchQuery);
-            }
-          }}
+          rightIcon={
+            isSearching
+              ? undefined
+              : selectedAddress || searchText.trim().length > 0
+                ? 'close'
+                : 'search'
+          }
+          onRightIconPress={handleClear}
           style={styles.searchInput}
         />
-        
+
         {/* Dropdown de resultados de búsqueda */}
         {showResults && searchResults.length > 0 && (
           <View style={[styles.resultsContainer, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
@@ -374,10 +560,10 @@ export function FormLocationSelector({
         )}
       </View>
 
-      {/* Mapa - siempre visible - contenedor debe estar vacío (solo el mapa) */}
+      {/* Mapa - siempre visible */}
       <View style={[styles.mapContainer, { height: mapHeight }]}>
         <FlowyaMapView
-          key={internalLocation ? `${internalLocation.latitude.toFixed(4)}-${internalLocation.longitude.toFixed(4)}` : 'no-location'}
+          key={coordinates ? `${coordinates.latitude.toFixed(4)}-${coordinates.longitude.toFixed(4)}` : 'no-location'}
           spots={mapSpots}
           onSpotPress={() => {}}
           onLongPress={handleMapPress}
@@ -387,17 +573,10 @@ export function FormLocationSelector({
         />
       </View>
 
-      {/* Instrucciones - fuera del contenedor del mapa */}
+      {/* Instrucciones */}
       {!disabled && (
         <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
-          {Platform.OS === 'web' ? 'Click' : 'Tap'} on the map to select location
-        </Text>
-      )}
-
-      {/* Coordenadas informativas (discreto) */}
-      {internalLocation && (
-        <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs, opacity: 0.6 }]}>
-          {internalLocation.latitude.toFixed(6)}, {internalLocation.longitude.toFixed(6)}
+          Tap on the map to select location
         </Text>
       )}
     </View>

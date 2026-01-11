@@ -59,6 +59,9 @@ export function InfoMeta({
     // En small, solo mostrar chip si se pasa explícitamente
     if (size === 'small') return null;
     
+    // Validar que chip.label no esté vacío
+    if (!chip.label || chip.label.trim().length === 0) return null;
+    
     return <Chip text={chip.label} variant="default" />;
   };
 
@@ -66,7 +69,7 @@ export function InfoMeta({
     if (distance === undefined || distance === null) return null;
     
     const distanceText = formatDistance(distance, useMiles);
-    if (!distanceText) return null;
+    if (!distanceText || distanceText.trim().length === 0) return null;
 
     return (
       <Pressable

@@ -2,17 +2,20 @@
  * NarrationContext - Estado de narración activa
  * Scope 3.5 + Scope 6: Gestión del sistema de narración
  * 
- * Funciones:
+ * P0-05: Audio eliminado - funciones de audio convertidas en no-ops para compatibilidad
+ * Los subtítulos se manejan mediante useFlowSubtitle hook en los componentes que los renderizan
+ * 
+ * Funciones mantenidas para compatibilidad (no-ops):
  * - playNarration
  * - stopNarration
  * - pauseNarration
- * - Manejo de triggers y reglas duras
- * - Integración con audioManager y narrationEngine
+ * - resumeNarration
+ * - toggleMute
+ * - triggerNarration
+ * - processQueue
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { audioManager, AudioSource } from '@/utils/audioManager';
-import { narrationEngine, NarrationTrigger } from '@/utils/narrationEngine';
+import { createContext, ReactNode, useCallback, useContext, useState } from 'react';
 
 export type NarrationType = 'anticipation' | 'presence' | 'transition' | 'context';
 
@@ -27,6 +30,9 @@ export interface Narration {
 }
 
 export type NarrationStatus = 'idle' | 'playing' | 'paused' | 'stopped' | 'error';
+
+// P0-05: Tipo simplificado para compatibilidad (ya no se usa NarrationTrigger real)
+export type NarrationTrigger = 'approaching' | 'arriving' | 'leaving' | 'between';
 
 interface NarrationContextType {
   currentNarration: Narration | null;
@@ -43,202 +49,79 @@ interface NarrationContextType {
 
 const NarrationContext = createContext<NarrationContextType | undefined>(undefined);
 
-/**
- * Convertir Narration a AudioSource para el audio manager
- * SCOPE 1: Retornar tipo "none" si no hay texto ni audio URL (silencio controlado)
- */
-function narrationToAudioSource(narration: Narration): AudioSource {
-  if (narration.audioUrl) {
-    // Prioridad 1: Audio pre-grabado (archivo)
-    return {
-      type: 'url',
-      source: narration.audioUrl,
-    };
-  } else if (narration.text && narration.text.trim().length > 0) {
-    // Prioridad 2: Text-to-Speech (solo si hay texto)
-    return {
-      type: 'tts',
-      source: narration.text,
-      language: 'en-US', // English for all narration texts
-      rate: 0.85, // More natural speed
-      pitch: 0.95, // Slightly lower pitch for better quality
-    };
-  } else {
-    // SCOPE 1: Silencio controlado - no hay audio ni texto
-    return {
-      type: 'none',
-      source: '',
-    };
-  }
-}
-
 export function NarrationProvider({ children }: { children: ReactNode }) {
+  // P0-05: Estado simplificado - solo para compatibilidad de interfaces
   const [currentNarration, setCurrentNarration] = useState<Narration | null>(null);
   const [status, setStatus] = useState<NarrationStatus>('idle');
-  const [isMuted, setIsMuted] = useState(false);
-  const processQueueRef = useRef<(() => Promise<void>) | null>(null);
+  // P0-05: isMuted siempre false - audio ya no se usa
+  const isMuted = false;
 
   /**
-   * Reproducir una narration
+   * P0-05: No-op - audio eliminado
+   * Mantenido para compatibilidad de interfaces
    */
-  const playNarration = useCallback(
-    async (narration: Narration): Promise<void> => {
-      try {
-        setCurrentNarration(narration);
-        setStatus('playing');
-        narrationEngine.markNarrationAsPlayed(narration);
-
-        const audioSource = narrationToAudioSource(narration);
-        
-        // SCOPE 2: Logging de estado de narración antes de reproducir
-        console.log('[Narration] playNarration called:', {
-          narrationId: narration.id,
-          narrationType: narration.type,
-          spotId: narration.spotId,
-          textLength: narration.text?.length ?? 0,
-          audioSourceType: audioSource.type,
-          textPreview: audioSource.type === 'tts' ? audioSource.source?.substring(0, 50) : undefined,
-        });
-        
-        await audioManager.play(audioSource);
-      } catch (error) {
-        // SCOPE 1: Manejo de errores robusto - restaurar UI sin propagar error
-        setStatus('stopped'); // Cambiar de 'error' a 'stopped' para restaurar UI
-        narrationEngine.markNarrationAsCancelled();
-        setCurrentNarration(null);
-        const errorObj = error instanceof Error ? error : new Error(String(error));
-        console.warn('[Narration] Playback failed, restoring UI state:', errorObj.message);
-        // NO hacer throw - permitir que el flujo continúe sin errores visibles
-      }
-    },
-    []
-  );
+  const playNarration = useCallback(async (narration: Narration): Promise<void> => {
+    // No-op: audio eliminado, solo actualizar estado para compatibilidad
+    setCurrentNarration(narration);
+    setStatus('playing');
+    // No hay audio que reproducir
+  }, []);
 
   /**
-   * Procesar siguiente narration en la cola
-   */
-  const processQueue = useCallback(async (): Promise<void> => {
-    const nextNarration = narrationEngine.getNextNarration();
-    if (nextNarration) {
-      await playNarration(nextNarration);
-    }
-  }, [playNarration]);
-
-  // Guardar referencia para usar en useEffect
-  processQueueRef.current = processQueue;
-
-  // Configurar callbacks del audio manager
-  useEffect(() => {
-    audioManager.setCallbacks({
-      onPlay: () => {
-        setStatus('playing');
-      },
-      onFinish: () => {
-        setStatus('stopped');
-        if (currentNarration) {
-          narrationEngine.markNarrationAsCompleted();
-        }
-        setCurrentNarration(null);
-        // Procesar siguiente en la cola
-        if (processQueueRef.current) {
-          processQueueRef.current();
-        }
-      },
-      onStop: () => {
-        setStatus('stopped');
-        narrationEngine.markNarrationAsCancelled();
-        setCurrentNarration(null);
-      },
-      onError: (error) => {
-        // SCOPE 1: Manejo de errores robusto - restaurar UI en lugar de mostrar error
-        setStatus('stopped'); // Cambiar de 'error' a 'stopped' para restaurar UI
-        narrationEngine.markNarrationAsCancelled();
-        setCurrentNarration(null);
-        console.warn('[Narration] Audio error occurred, restoring UI state:', error.message);
-        // NO loggear como error crítico - es parte del fallback normal
-        // El flujo continúa silenciosamente
-      },
-    });
-
-    // Sincronizar estado de muted
-    setIsMuted(audioManager.getIsMuted());
-
-    return () => {
-      audioManager.setCallbacks({});
-    };
-  }, [currentNarration]);
-
-  /**
-   * Detener narration actual
-   * SAFE: Idempotent - safe to call multiple times or when no narration is active
-   * Always resets state reliably, even if errors occur
+   * P0-05: No-op - audio eliminado
+   * Mantenido para compatibilidad, especialmente para closeFlow
    */
   const stopNarration = useCallback(async (): Promise<void> => {
-    try {
-      // CRITICAL: Stop audio first (includes Speech.stop() for TTS)
-      // audioManager.stop() is already safe and idempotent
-      await audioManager.stop();
-    } catch {
-      // Ignore audio stop errors - we'll still reset state
-      // This ensures stopNarration is always safe to call
-    }
-
-    try {
-      // Clear narration engine state (safe even if already cleared)
-      narrationEngine.markNarrationAsCancelled();
-      // Clear any queued narrations to prevent them from starting after stop
-      narrationEngine.clearQueue();
-    } catch {
-      // Ignore engine errors - state will still be reset below
-    }
-
-    // Always reset React state, regardless of errors above
-    // This ensures stopNarration is idempotent and always safe
+    // No-op: audio eliminado, solo resetear estado
     setStatus('stopped');
     setCurrentNarration(null);
   }, []);
 
   /**
-   * Pausar narration actual
+   * P0-05: No-op - audio eliminado
+   * Mantenido para compatibilidad de interfaces
    */
   const pauseNarration = useCallback(async (): Promise<void> => {
-    await audioManager.pause();
+    // No-op: audio eliminado
     setStatus('paused');
   }, []);
 
   /**
-   * Reanudar narration actual
+   * P0-05: No-op - audio eliminado
+   * Mantenido para compatibilidad de interfaces
    */
   const resumeNarration = useCallback(async (): Promise<void> => {
-    await audioManager.resume();
+    // No-op: audio eliminado
     setStatus('playing');
   }, []);
 
   /**
-   * Silenciar/activar sonido
+   * P0-05: No-op - audio eliminado
+   * Mantenido para compatibilidad de interfaces
    */
   const toggleMute = useCallback(async (): Promise<void> => {
-    const newMutedState = !isMuted;
-    await audioManager.setMuted(newMutedState);
-    setIsMuted(newMutedState);
-  }, [isMuted]);
+    // No-op: audio eliminado, isMuted siempre es false
+  }, []);
 
   /**
-   * Agregar narration a la cola mediante trigger
+   * P0-05: No-op - audio eliminado
+   * Mantenido para compatibilidad de interfaces (useNarrationTriggers)
    */
   const triggerNarration = useCallback(
     (trigger: NarrationTrigger, narration: Narration): boolean => {
-      const queued = narrationEngine.queueNarration(narration, trigger);
-      if (queued) {
-        // Si no hay narration reproduciéndose, procesar inmediatamente
-        if (status === 'idle' || status === 'stopped') {
-          processQueue();
-        }
-      }
-      return queued;
+      // No-op: audio eliminado, ya no hay cola de audio
+      return false;
     },
-    [status, processQueue]
+    []
   );
+
+  /**
+   * P0-05: No-op - audio eliminado
+   * Mantenido para compatibilidad de interfaces
+   */
+  const processQueue = useCallback(async (): Promise<void> => {
+    // No-op: audio eliminado, ya no hay cola que procesar
+  }, []);
 
   const value: NarrationContextType = {
     currentNarration,

@@ -4,6 +4,38 @@ Este documento registra todos los cambios, mejoras y ajustes realizados durante 
 
 ---
 
+## 2024-12-21 - Correcciones de Bug Fix
+
+### Corrección de errores de renderizado: Texto vacío en componentes View
+- **Categoría**: Bug Fix
+- **Estado**: ✅ Completado
+- **Contexto del cambio**: 
+  - Error detectado en consola: "Unexpected text node: ." en React Native
+  - El error ocurría cuando se intentaba renderizar texto vacío o solo espacios directamente dentro de componentes `<View>`
+  - React Native no permite nodos de texto vacíos como hijos directos de `<View>`, solo permite componentes React o `null`
+- **Descripción del ajuste realizado**:
+  - **`components/ui/InfoMeta.tsx`**:
+    - Agregada validación en `renderChip()` para verificar que `chip.label` no esté vacío o solo espacios antes de renderizar
+    - Agregada validación en `renderDistance()` para verificar que `distanceText.trim().length > 0` antes de renderizar
+    - Esto previene que se rendericen componentes `Chip` o `Pressable` con texto vacío
+  - **`components/ui/Chip.tsx`**:
+    - Agregada validación al inicio del componente para retornar `null` si `text` está vacío o es solo espacios (`text.trim().length === 0`)
+    - Defensa en profundidad para evitar renderizado de texto vacío incluso si se pasa como prop
+  - **`components/SpotInlineCard.tsx`**:
+    - Agregada validación para verificar que `spot.description.trim().length > 0` antes de renderizar el `<Text>` de descripción
+    - Previene renderizado de descripciones vacías o solo espacios
+- **Archivos modificados**:
+  - `components/ui/InfoMeta.tsx`: Agregadas validaciones en `renderChip()` y `renderDistance()`
+  - `components/ui/Chip.tsx`: Agregada validación al inicio del componente
+  - `components/SpotInlineCard.tsx`: Agregada validación en renderizado de descripción
+- **Riesgos considerados**:
+  - ✅ Validaciones agregadas son defensivas y no cambian funcionalidad existente
+  - ✅ Componentes retornan `null` cuando no hay contenido válido, comportamiento esperado en React
+  - ✅ No se afecta la lógica de negocio, solo se previene renderizado de contenido inválido
+  - ✅ Compatible con el comportamiento existente cuando hay contenido válido
+
+---
+
 ## 2024-12-20 - Mejoras de UI/UX
 
 ### FlowCard - Reestructuración de layout

@@ -53,6 +53,8 @@ export default function CreateSpotScreen() {
   // Hook de gestión de estado del formulario
   const form = useSpotForm({
     onSave: (spotData) => {
+      // P0-03: Si hay spot existente, NO crear nuevo spot (esta verificación se hace en handleSave antes de llamar onSave)
+      // Si llegamos aquí, es porque NO hay spot existente
       const newSpot = createSpot(spotData);
       setShowSuccessMessage(true);
       // Redirigir a SpotDetail después de crear (no al mapa)
@@ -64,6 +66,18 @@ export default function CreateSpotScreen() {
       router.back();
     },
   });
+
+  // P0-03: Handler para guardar que verifica si hay spot existente antes de crear duplicado
+  const handleSave = () => {
+    if (form.existingSpot) {
+      // Si hay spot existente, NO crear nuevo spot, redirigir al existente
+      router.replace(`/spot-detail?id=${form.existingSpot.id}`);
+      return;
+    }
+    
+    // Si NO hay spot existente, proceder con guardado normal (llama a form.handleSave que ejecuta onSave)
+    form.handleSave();
+  };
 
   // Initialize location from query params or base location
   useEffect(() => {
@@ -259,12 +273,12 @@ export default function CreateSpotScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* SCOPE 2: Badge/indicador visual cuando se detecta spot existente */}
+      {/* P0-03: Badge/indicador visual cuando se detecta spot existente */}
       {form.existingSpot && (
         <View style={[styles.existingSpotBadge, { backgroundColor: colors.tint + '15', borderColor: colors.tint + '40' }]}>
           <Icon name="info" size={16} color={colors.tint} />
           <Text style={[textStyles.caption, { color: colors.tint, marginLeft: spacing.xs }]}>
-            Existing spot detected. Content loaded automatically.
+            Este spot ya existe. Se ha cargado la información existente.
           </Text>
         </View>
       )}
@@ -423,7 +437,7 @@ export default function CreateSpotScreen() {
             styles.sendButton,
             { backgroundColor: form.isValid ? colors.tint : colors.icon + '40' },
           ]}
-          onPress={form.handleSave}
+          onPress={handleSave}
           disabled={!form.isValid}
           activeOpacity={0.7}>
           <Text style={[textStyles.bodyMedium, { color: form.isValid ? colors.background : colors.icon }]}>

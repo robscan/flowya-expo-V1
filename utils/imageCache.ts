@@ -52,6 +52,15 @@ export function isImageAvailable(uri: string): boolean {
 }
 
 /**
+ * Elimina una URI específica del cache en memoria
+ * Útil para invalidar el cache de una imagen cuando se actualiza
+ * @param uri URI de la imagen a invalidar
+ */
+export function removeImageState(uri: string): void {
+  imageCache.delete(uri);
+}
+
+/**
  * Limpia el cache en memoria (útil para testing o reset manual)
  */
 export function clearImageCache(): void {

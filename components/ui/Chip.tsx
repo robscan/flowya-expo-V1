@@ -35,6 +35,11 @@ export function Chip({ text, variant = 'default', icon }: ChipProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
+  // Validar que text no esté vacío (defensa en profundidad)
+  if (!text || text.trim().length === 0) {
+    return null;
+  }
+
   const getVariantStyles = () => {
     switch (variant) {
       case 'subtle':

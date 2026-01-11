@@ -2,16 +2,21 @@
  * Audio Manager - Gestión de reproducción de audio
  * Scope 6: Sistema de Narration - Audio Manager
  * 
- * Funcionalidades:
+ * @deprecated P0-05: Audio eliminado del Flow. Este archivo está deprecado y no debe usarse en nuevo código.
+ * Los subtítulos del Flow se manejan mediante useFlowSubtitle hook, sin audio.
+ * 
+ * Funcionalidades (deprecadas):
  * - Reproducción de audio pre-grabado (expo-av)
  * - Text-to-Speech (expo-speech)
  * - Control de volumen, pausa, stop
  * - Manejo de errores
+ * 
+ * Este archivo se mantiene temporalmente por compatibilidad, pero NO debe usarse en nuevo código relacionado con Flow.
  */
 
-import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
-import { Platform } from 'react-native';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import * as Speech from 'expo-speech';
+import { Platform } from 'react-native';
 
 export type AudioSource = {
   type: 'url' | 'tts' | 'none'; // SCOPE 1: Agregar tipo "none" para silencio controlado

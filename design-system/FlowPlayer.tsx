@@ -6,14 +6,8 @@
  * Sin cambios funcionales - solo refactorización estructural
  */
 
-import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
-
 import { FlowPlayerControls } from '@/components/FlowPlayerControls';
-import { useFlow } from '@/contexts/FlowContext';
-import { useNarration } from '@/contexts/NarrationContext';
 import { useSaved } from '@/contexts/SavedContext';
-import { useSpot } from '@/contexts/SpotContext';
 import { Flow } from '@/data/flows';
 import { Spot } from '@/data/spots';
 
@@ -44,65 +38,15 @@ export function FlowPlayer({
   getSpotById,
   isVisible = true, // SCOPE 2: Por defecto visible
 }: FlowPlayerProps) {
-  const narration = useNarration();
   const { toggleLikeSpotFromPlayer, toggleNotMyVibeSpot } = useSaved();
 
-  // SCOPE 1: Reproducir narración inicial solo cuando usuario activa el flow (Start Flow action)
-  // Ref para rastrear si ya se reprodujo la narración inicial para este flow
-  const initialNarrationPlayedRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!flow || flowStatus !== 'active') {
-      return;
-    }
-
-    // SCOPE 1: Reproducir narración inicial solo una vez cuando el flow se activa
-    // Solo si es mobile web o nativo (no desktop web)
-    if (initialNarrationPlayedRef.current !== flow.id) {
-      initialNarrationPlayedRef.current = flow.id;
-
-      // Verificar que no sea desktop web (TTS deshabilitado)
-      const isDesktopWeb = Platform.OS === 'web' && typeof window !== 'undefined' && !window.matchMedia('(pointer: coarse)').matches;
-
-      if (!isDesktopWeb) {
-        console.log('[Audio] Start Flow triggered - playing initial narration');
-        const initialNarration = {
-          id: `narration-initial-${flow.id}`,
-          type: 'context' as const,
-          text: 'Iniciamos recorrido',
-        };
-
-        try {
-          narration.playNarration(initialNarration).catch((error) => {
-            console.error('Error playing initial narration:', error);
-          });
-        } catch (error) {
-          console.error('Error calling playNarration:', error);
-        }
-      }
-    }
-
-    // Cleanup: detener narrations cuando el flow se cierra
-    return () => {
-      try {
-        narration.stopNarration();
-        // Reset ref cuando el flow se cierra
-        if (flowStatus === 'idle') {
-          initialNarrationPlayedRef.current = null;
-        }
-      } catch (error) {
-        console.error('Error in cleanup stopNarration:', error);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flowId, flowStatus]); // Cuando cambia el flow o su estado
+  // P0-05: Audio eliminado - los subtítulos se muestran automáticamente mediante useFlowSubtitle en FlowPlayerControls
 
   return (
     <FlowPlayerControls
       variant="screen"
       showPrevious={true}
       showNext={true}
-      showMute={false}
       showAffinity={true}
       currentSpotId={currentSpotId ?? undefined}
       currentSpot={currentSpot ?? null}

@@ -25,6 +25,7 @@ import { useFlow } from '@/contexts/FlowContext';
 import { useOverlay } from '@/contexts/OverlayContext';
 import { usePath } from '@/contexts/PathContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useFlowSubtitle } from '@/hooks/useFlowSubtitle';
 
 interface FlowMiniBarProps {
   /** Callback cuando se toca la barra para expandir a FlowScreen */
@@ -39,6 +40,7 @@ export function FlowMiniBar({ onExpand }: FlowMiniBarProps) {
   const { getFlowById } = usePath();
   const { isTabBarVisible, tabBarHeight } = useOverlay();
   const bottomAnim = useRef(new Animated.Value(isTabBarVisible ? tabBarHeight : 0)).current;
+  const subtitle = useFlowSubtitle(); // P0-06: Obtener subtítulo actual basado en eventos
 
   // Determinar visibilidad: solo visible cuando flow está activo o pausado
   const isVisible = flowState.status === 'active' || flowState.status === 'paused';
@@ -89,9 +91,16 @@ export function FlowMiniBar({ onExpand }: FlowMiniBarProps) {
           <View style={styles.content}>
             {/* Texto de estado y indicador */}
             <View style={styles.textContainer}>
-              <Text style={[textStyles.heading5, { color: colors.text }]}>
-                Now moving
-              </Text>
+              {/* P0-06: Mostrar subtítulo si existe, sino "Now moving" - Patrón declarativo consistente con FlowPlayerControls */}
+              {(subtitle?.shortText && subtitle.shortText.trim().length > 0) ? (
+                <Text style={[textStyles.heading5, { color: colors.text }]} numberOfLines={1}>
+                  {subtitle.shortText || ''}
+                </Text>
+              ) : (
+                <Text style={[textStyles.heading5, { color: colors.text }]}>
+                  Now moving
+                </Text>
+              )}
               <Text style={[textStyles.bodySmall, { color: colors.icon }]}>
                 {spotsText}
               </Text>

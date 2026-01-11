@@ -40,6 +40,7 @@ interface MapboxViewWebProps {
 export interface MapboxViewWebRef {
   centerOnUserLocation: () => void;
   centerOnSpot: (spotId: string) => void;
+  flyToCoordinates: (coordinates: { latitude: number; longitude: number }, zoom?: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
   resize: () => void;
@@ -224,6 +225,15 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
         });
       }
     },
+    flyToCoordinates: (coordinates: { latitude: number; longitude: number }, zoom: number = 15) => {
+      if (!mapInstanceRef.current) return;
+      setCurrentZoom(zoom);
+      mapInstanceRef.current.flyTo({
+        center: [coordinates.longitude, coordinates.latitude],
+        zoom,
+        duration: 500,
+      });
+    },
     zoomIn: () => {
       if (!mapInstanceRef.current) return;
       const currentZoom = mapInstanceRef.current.getZoom();
@@ -244,6 +254,28 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       mapInstanceRef.current.resize();
     },
   }), [userLocation, spots]);
+
+  // Inyectar estilos para ocultar controles de Mapbox en document.head
+  useEffect(() => {
+    const styleId = 'mapbox-view-web-styles';
+    // Evitar duplicados
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .mapboxgl-ctrl-logo { display: none !important; }
+      .mapboxgl-ctrl-attrib { display: none !important; }
+    `;
+    document.head.appendChild(style);
+
+    return () => {
+      const existingStyle = document.getElementById(styleId);
+      if (existingStyle) {
+        document.head.removeChild(existingStyle);
+      }
+    };
+  }, []);
 
   // Cargar Mapbox y crear instancia
   useEffect(() => {
@@ -628,13 +660,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
   }
 
   return (
-    <View ref={containerRef} style={styles.container}>
-      {/* CSS para ocultar controles de Mapbox */}
-      <style>{`
-        .mapboxgl-ctrl-logo { display: none !important; }
-        .mapboxgl-ctrl-attrib { display: none !important; }
-      `}</style>
-    </View>
+    <View ref={containerRef} style={styles.container} />
   );
 });
 

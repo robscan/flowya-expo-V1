@@ -11,8 +11,9 @@
  * - Spot actual y siguiente
  */
 
-import React, { createContext, ReactNode, useContext, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
+import { createContext, ReactNode, useContext, useMemo, useRef, useState } from 'react';
+import { flowEventEmitter } from '@/utils/flowEventEmitter';
 import { usePath } from './PathContext';
 
 export type FlowStatus = 'idle' | 'active' | 'paused';
@@ -67,6 +68,10 @@ export function FlowProvider({ children }: { children: ReactNode }) {
   const [flowState, setFlowState] = useState<FlowState>(defaultFlowState);
   const router = useRouter();
   const { getFlowById, updateFlow } = usePath();
+  
+  // Refs para eventos one-shot (guardas para evitar emisión múltiple)
+  const flowStartedEmittedRef = useRef<boolean>(false);
+  const flowCompletedEmittedRef = useRef<boolean>(false);
 
   // Calcular spot IDs actual y siguiente basado en el estado
   const { currentSpotId, nextSpotId, progress } = useMemo(() => {
@@ -107,6 +112,11 @@ export function FlowProvider({ children }: { children: ReactNode }) {
   }, [flowState.currentPathId, flowState.currentSpotIndex, flowState.status, getFlowById]);
 
   const startFlow = (pathId: string) => {
+    // Resetear eventos one-shot emitidos para nuevo Flow
+    flowEventEmitter.resetOneShots();
+    flowStartedEmittedRef.current = false;
+    flowCompletedEmittedRef.current = false;
+
     setFlowState({
       status: 'active',
       currentPathId: pathId,
@@ -116,6 +126,13 @@ export function FlowProvider({ children }: { children: ReactNode }) {
       pausedAt: null,
       isMinimized: false,
     });
+    
+    // P0-08: Emitir evento FLOW_STARTED (one-shot)
+    if (!flowStartedEmittedRef.current) {
+      flowEventEmitter.emit('FLOW_STARTED');
+      flowStartedEmittedRef.current = true;
+    }
+    
     // Navegar a la pantalla de flow
     router.push('/flow-screen');
   };
@@ -169,6 +186,12 @@ export function FlowProvider({ children }: { children: ReactNode }) {
         // Ignore narration errors - stopNarration is already hardened to be safe
         // We continue with state cleanup even if narration stop fails
       }
+    }
+
+    // P0-08: Emitir evento FLOW_COMPLETED (one-shot) antes de limpiar estado
+    if (!flowCompletedEmittedRef.current) {
+      flowEventEmitter.emit('FLOW_COMPLETED');
+      flowCompletedEmittedRef.current = true;
     }
 
     // Step 2: Clear active flow state
@@ -261,7 +284,17 @@ export function FlowProvider({ children }: { children: ReactNode }) {
     } else {
       // Completamos todos los bloques del spot actual, avanzar al siguiente spot
       const nextSpotIndex = flowState.currentSpotIndex + 1;
-      if (nextSpotIndex < flow.spots.length) {
+      const totalSpots = flow.spots.length;
+      
+      // P0-08: Emitir evento SPOT_COMPLETED
+      // El momento (transition vs end) se determina en el hook useFlowSubtitle
+      flowEventEmitter.emit('SPOT_COMPLETED', {
+        spotId: flow.spots[flowState.currentSpotIndex],
+        spotIndex: flowState.currentSpotIndex,
+        totalSpots,
+      });
+      
+      if (nextSpotIndex < totalSpots) {
         setFlowState({
           ...flowState,
           currentSpotIndex: nextSpotIndex,
