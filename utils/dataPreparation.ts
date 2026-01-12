@@ -94,6 +94,9 @@ export function prepareHomeData(
   const usedSpotIds = new Set<string>();
 
   // 1. Nearby spots (highest priority)
+  // V1.2 REGLA CANÓNICA: Nearby SIEMPRE se muestra cuando hay spots cercanos
+  // NO filtra por estado de Pin (to_visit / visited)
+  // Es una sección contextual de viaje, no de descubrimiento editorial
   const nearbySpots: SpotWithDistance[] = (() => {
     if (!baseLocation) return [];
     
@@ -121,11 +124,14 @@ export function prepareHomeData(
 
   // 2. For You spots (based on user interactions)
   // V1.2: Simplificado - no usa likedSpots/savedSpots legacy
+  // V1.2: Usa snapshot de isSpotPinned para evitar re-filtrado inmediato
+  // El cambio de estado Pin NO mueve el card fuera de su lista actual durante la sesión
   const forYouSpots: SpotWithDistance[] = (() => {
     // V1.2: Excluir spots con Pin de esta sección (ya están en Pinned)
+    // Usa snapshot para evitar re-filtrado inmediato al cambiar estado de Pin
     const forYou = filteredSpots
       .filter((spot) => !usedSpotIds.has(spot.id))
-      .filter((spot) => !isSpotPinned(spot.id)) // V1.2: Excluir spots con Pin
+      .filter((spot) => !isSpotPinned(spot.id)) // V1.2: Usa snapshot (evita re-filtrado inmediato)
       .slice(0, 10)
       .map((spot) => {
         usedSpotIds.add(spot.id);
@@ -140,10 +146,12 @@ export function prepareHomeData(
 
   // 3. Recommended spots (popular spots not in previous sections)
   // V1.2: Simplificado - no usa likedSpots/savedSpots legacy
+  // V1.2: Usa snapshot de isSpotPinned para evitar re-filtrado inmediato
+  // El cambio de estado Pin NO mueve el card fuera de su lista actual durante la sesión
   const recommendedSpots: SpotWithDistance[] = (() => {
     const scored = filteredSpots
       .filter((spot) => !usedSpotIds.has(spot.id))
-      .filter((spot) => !isSpotPinned(spot.id)) // V1.2: Excluir spots con Pin
+      .filter((spot) => !isSpotPinned(spot.id)) // V1.2: Usa snapshot (evita re-filtrado inmediato)
       .map((spot) => {
         let score = 0;
         if (spot.name) score += 1;
@@ -168,13 +176,15 @@ export function prepareHomeData(
   // IMPORTANTE: Esta sección es GLOBAL, NO depende del filtro de región
   // Usa TODOS los spots, no solo filteredSpots
   // Siempre visible, incluso si no hay spots cercanos
-  // V1.2: Usa sistema de Pins para excluir spots pinned
+  // V1.2: Usa snapshot de isSpotPinned para evitar re-filtrado inmediato
+  // El cambio de estado Pin NO mueve el card fuera de su lista actual durante la sesión
   const maybeYouLikeSpots: SpotWithDistance[] = (() => {
     // Usar TODOS los spots (no filteredSpots) para secciones globales
     const availableSpots = spots.filter((spot) => !usedSpotIds.has(spot.id));
+    // V1.2: Usa snapshot (evita re-filtrado inmediato al cambiar estado de Pin)
     const featuredGems = getFeaturedSpots(
       availableSpots,
-      isSpotPinned, // V1.2: Sistema de Pins
+      isSpotPinned, // V1.2: Sistema de Pins (snapshot pasado desde Home)
       10
     );
     const maybeYouLike = featuredGems.map((gem) => {
@@ -192,9 +202,12 @@ export function prepareHomeData(
   // IMPORTANTE: Esta sección es GLOBAL, NO depende del filtro de región
   // Usa TODOS los spots, ordenados por createdAt DESC
   // Siempre visible, incluso si no hay spots cercanos
+  // V1.2: NO filtra por estado de Pin - muestra todos los spots recientes
+  // El cambio de estado Pin NO mueve el card fuera de su lista actual durante la sesión
   const newSpots: SpotWithDistance[] = (() => {
     // Usar TODOS los spots (no filteredSpots) para secciones globales
     const availableSpots = spots.filter((spot) => !usedSpotIds.has(spot.id));
+    // V1.2: getRecentSpots NO filtra por Pin - muestra todos los spots recientes
     const recentGems = getRecentSpots(
       availableSpots,
       10

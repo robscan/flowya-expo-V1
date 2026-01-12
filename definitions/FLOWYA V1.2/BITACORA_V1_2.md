@@ -1136,3 +1136,73 @@ Las entradas de esta bitácora se registrarán conforme se implementen los cambi
 - La exclusión por Pin sigue siendo válida, pero aplicada solo en render inicial o refresh
 - No se agregan nuevas secciones ni se modifica modelo de datos
 - Ajuste limitado a control de render / timing de actualización
+
+---
+
+### [V1.2-AJUSTE-07] Ajustes Finales UX - Reglas Canónicas y Comportamiento de Secciones
+**Fecha:** 2026-01-11  
+**Estado:** ✅ Aplicado
+
+**Contexto del cambio:**
+- Ajustes finales tras testing manual repetido
+- Establecer reglas canónicas para comportamiento de secciones en Home
+- Resolver problema de duplicación y comportamiento inconsistente
+
+**Descripción del ajuste realizado:**
+
+1. **Regla Canónica: Nearby Places**
+   - Nearby SIEMPRE se muestra cuando hay spots cercanos
+   - NO filtra por estado de Pin (to_visit / visited)
+   - Es una sección contextual de viaje, no de descubrimiento editorial
+   - Documentado explícitamente en `dataPreparation.ts`
+
+2. **New Spots**
+   - NO filtra por estado de Pin (to_visit / visited)
+   - Muestra todos los spots recientes independientemente de estado de Pin
+   - El cambio de estado Pin NO mueve el card fuera de su lista actual durante la sesión
+   - Corregido `getAllGems()` para que New no filtre por Pin (consistencia)
+
+3. **For You, Recommended, Maybe You Like**
+   - Usan snapshot de `isSpotPinned` para evitar re-filtrado inmediato
+   - El cambio de estado Pin NO mueve el card fuera de su lista actual durante la sesión
+   - El cambio de estado se refleja solo visualmente en el card
+   - La reclasificación ocurre únicamente al refresh o al reentrar a la vista
+   - Documentado explícitamente en cada sección
+
+4. **Comportamiento de Visited**
+   - Comportamiento idéntico a to_visit en V1.2
+   - NO oculta cards inmediatamente
+   - NO mueve cards inmediatamente
+   - NO reclasifica inmediatamente
+   - Usa mismo snapshot que to_visit
+
+**Archivos tocados:**
+- `utils/dataPreparation.ts` (reglas canónicas y documentación)
+- `utils/gemsLogic.ts` (corrección getAllGems para New)
+
+**Archivos NO tocados:**
+- `app/(tabs)/home.tsx` - Snapshot ya implementado en ajuste anterior
+- Modelo de datos - Sin cambios
+- No se agregan nuevas secciones
+
+**Riesgos considerados:**
+- **Consistencia:** Todas las secciones ahora siguen reglas claras y documentadas
+- **Duplicación:** Sistema de `usedSpotIds` previene duplicación entre secciones
+- **UX:** Cards mantienen posición durante sesión, mejorando experiencia de usuario
+
+**Testing requerido:**
+- Verificar que Nearby muestra spots cercanos independientemente de estado de Pin
+- Verificar que New NO filtra por Pin
+- Verificar que For You, Recommended, Maybe You Like NO re-filtran inmediatamente
+- Verificar que cambio de estado Pin se refleja visualmente pero no mueve cards
+- Verificar que NO hay duplicación de spots entre secciones
+- Verificar que Visited tiene mismo comportamiento que to_visit
+
+**Estado:** ✅ Implementación completada
+
+**Nota:**
+- Reglas canónicas establecidas y documentadas
+- Nearby es sección contextual de viaje, no editorial
+- New NO filtra por Pin - muestra todos los spots recientes
+- Todas las secciones usan snapshot para evitar re-filtrado inmediato
+- Comportamiento consistente entre to_visit y visited

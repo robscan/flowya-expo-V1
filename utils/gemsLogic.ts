@@ -202,7 +202,7 @@ export function getAllGems(
   
   return {
     featured: getFeaturedSpots(spots, isSpotPinned, featuredLimit, notMyVibeSpots, spotTypeAffinity),
-    recent: getRecentSpots(spots.filter((spot) => !isSpotPinned(spot.id)), recentLimit), // V1.2: Excluir spots con Pin de recientes
+    recent: getRecentSpots(spots, recentLimit), // V1.2: New NO filtra por Pin - muestra todos los spots recientes
     suggested: getSuggestedSpots(spots, isSpotPinned, suggestedLimit, notMyVibeSpots, spotTypeAffinity),
   };
 }
