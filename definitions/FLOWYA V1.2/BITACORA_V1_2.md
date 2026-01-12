@@ -1078,3 +1078,61 @@ Las entradas de esta bitácora se registrarán conforme se implementen los cambi
 **Nota:** 
 - `visitedAt` preserva fecha de primera visita, no última visita
 - Comportamiento actual es intencional y correcto
+
+---
+
+### [V1.2-AJUSTE-06] Ajuste UX: Evitar re-filtrado inmediato de cards en Home
+**Fecha:** 2026-01-11  
+**Estado:** ✅ Aplicado
+
+**Contexto del cambio:**
+- Problema UX detectado en testing manual: Cards desaparecen inmediatamente al hacer Pin/Unpin
+- El sistema reacciona correctamente a nivel de datos, pero la UI reordena/filtra inmediatamente
+- Esto genera confusión y fricción (el objeto "desaparece" de la vista del usuario)
+
+**Descripción del ajuste realizado:**
+- Implementado sistema de snapshot de `isSpotPinned` en `app/(tabs)/home.tsx`:
+  - Snapshot capturado al cargar inicialmente
+  - Snapshot actualizado solo en:
+    - Carga inicial (cuando `hasLoadedOnce` pasa a `true`)
+    - Refresh manual (pull-to-refresh)
+    - Reentrar a la vista (usando `useFocusEffect`)
+  - `prepareHomeData()` ahora usa snapshot en lugar de función actual
+  - Cards mantienen su posición durante la sesión actual
+  - Cambio de estado Pin se refleja visualmente en el card, pero no causa re-filtrado inmediato
+
+**Comportamiento resultante:**
+- Al activar/desactivar Pin desde Home (New, Maybe You Like, Nearby, Recommended):
+  - ✅ NO se reordenan cards inmediatamente
+  - ✅ NO se ocultan cards en ese momento
+  - ✅ Card mantiene su posición actual
+  - ✅ Cambio de estado Pin se refleja visualmente en el card
+  - ✅ Reclasificación ocurre solo tras refresh o al reentrar a la vista
+
+**Archivos tocados:**
+- `app/(tabs)/home.tsx` (sistema de snapshot de Pins)
+
+**Archivos NO tocados:**
+- `utils/dataPreparation.ts` - Sin cambios, sigue funcionando igual
+- `utils/gemsLogic.ts` - Sin cambios, sigue funcionando igual
+- Modelo de datos - Sin cambios
+
+**Riesgos considerados:**
+- **Snapshot desactualizado:** Mitigado actualizando en momentos apropiados (carga, refresh, reentrar)
+- **Performance:** Snapshot usa Set para lookup O(1), bajo overhead
+- **UX:** Mejora significativa - usuario puede confirmar visualmente que Pin se activó
+
+**Testing requerido:**
+- Verificar que cards NO desaparecen inmediatamente al hacer Pin
+- Verificar que cards mantienen posición durante sesión
+- Verificar que refresh actualiza correctamente
+- Verificar que reentrar a vista actualiza correctamente
+- Verificar que cambio de estado Pin se refleja visualmente en el card
+
+**Estado:** ✅ Implementación completada
+
+**Nota:**
+- Este ajuste resuelve el problema UX de cards desapareciendo inmediatamente
+- La exclusión por Pin sigue siendo válida, pero aplicada solo en render inicial o refresh
+- No se agregan nuevas secciones ni se modifica modelo de datos
+- Ajuste limitado a control de render / timing de actualización

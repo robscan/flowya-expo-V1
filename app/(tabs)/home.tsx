@@ -14,7 +14,7 @@
  * - React no tiene motivos para re-renderizar innecesariamente
  */
 
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, FlatList, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
 
@@ -312,6 +312,25 @@ export default function HomeScreen() {
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
   
+  // V1.2: Snapshot de isSpotPinned para evitar re-filtrado inmediato
+  // El snapshot se actualiza solo en: carga inicial, refresh, o reentrar a la vista
+  const pinnedSnapshotRef = useRef<Set<string>>(new Set());
+  const updatePinnedSnapshot = useCallback(() => {
+    // Capturar estado actual de todos los spots pinned
+    const pinnedSet = new Set<string>();
+    allSpots.forEach((spot) => {
+      if (isSpotPinned(spot.id)) {
+        pinnedSet.add(spot.id);
+      }
+    });
+    pinnedSnapshotRef.current = pinnedSet;
+  }, [allSpots, isSpotPinned]);
+  
+  // Función wrapper que usa el snapshot en lugar de la función actual
+  const isSpotPinnedSnapshot = useCallback((spotId: string): boolean => {
+    return pinnedSnapshotRef.current.has(spotId);
+  }, []);
+  
   // Scroll visibility
   const { isHeaderVisible, isBottomNavVisible, handleScroll } = useScrollVisibility({ 
     threshold: 24 
@@ -333,16 +352,28 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!isLoading && !hasLoadedOnce) {
       setHasLoadedOnce(true);
+      // V1.2: Capturar snapshot inicial de Pins
+      updatePinnedSnapshot();
     }
-  }, [isLoading, hasLoadedOnce]);
+  }, [isLoading, hasLoadedOnce, updatePinnedSnapshot]);
+
+  // V1.2: Actualizar snapshot al reentrar a la vista
+  useFocusEffect(
+    useCallback(() => {
+      if (hasLoadedOnce) {
+        updatePinnedSnapshot();
+      }
+    }, [hasLoadedOnce, updatePinnedSnapshot])
+  );
 
   // Preparación de datos memoizada (usando regionId canónico)
+  // V1.2: Usar snapshot de isSpotPinned para evitar re-filtrado inmediato
   const homeData = useMemo(() => {
     if (!hasLoadedOnce) return emptyHomeData;
     // FASE 7: Usar allSpots (UserSpots + WorldSpots)
-    // V1.2: Usar sistema de Pins en lugar de likedSpots/savedSpots legacy
-    return prepareHomeData(allSpots, paths, baseLocation, isSpotPinned, selectedRegionId);
-  }, [hasLoadedOnce, allSpots, paths, baseLocation, isSpotPinned, selectedRegionId]);
+    // V1.2: Usar snapshot de Pins en lugar de función actual (evita re-filtrado inmediato)
+    return prepareHomeData(allSpots, paths, baseLocation, isSpotPinnedSnapshot, selectedRegionId);
+  }, [hasLoadedOnce, allSpots, paths, baseLocation, isSpotPinnedSnapshot, selectedRegionId]);
 
   // Handlers memoizados
   const handleSpotPress = useCallback((spot: Spot) => {
@@ -369,6 +400,8 @@ export default function HomeScreen() {
     setIsRefreshing(true);
     try {
       await Promise.all([refreshSpots(), refreshFlows()]);
+      // V1.2: Actualizar snapshot de Pins al hacer refresh
+      updatePinnedSnapshot();
       // NO resetear hasLoadedOnce, solo refrescar datos
     } catch (error) {
       console.error('Error refreshing:', error);
