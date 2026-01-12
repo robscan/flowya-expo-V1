@@ -976,3 +976,105 @@ Las entradas de esta bitácora se registrarán conforme se implementen los cambi
 
 **Última actualización:** 2026-01-11  
 **Estado:** Fase 1 completada ✅, Fase 2.6 completada ✅ (validación autenticación ✅, comportamiento híbrido ✅), Fase 3 completada ✅, Fase 4 completada ✅, Fase 5 completada ✅ (markers ✅, filtro ✅, compartir mapas ✅, compartir flows ✅), Ajuste 03 completado ✅ (Toast con Modal ✅, corrección modal primera vez ✅), Ajuste 04 completado ✅ (limpieza Profile ✅, corrección Sign out ✅, limpieza pines al cerrar sesión ✅), Ajuste 05 completado ✅ (icono distancia en InfoMeta ✅), documento de testing manual creado ✅, pendiente ejecución de testing manual en tiempo de ejecución
+
+---
+
+### [V1.2-CIERRE-01] Fixes de Cierre V1.2 - gemsLogic y Eliminación liked-spots
+**Fecha:** 2026-01-11  
+**Estado:** ✅ Aplicado
+
+**Contexto del cambio:**
+- Cierre de V1.2: Fixes correctivos para estabilización
+- Actualización de gemsLogic.ts para usar sistema de Pins
+- Eliminación de pantalla deprecated liked-spots.tsx
+
+**Descripción del ajuste realizado:**
+
+1. **Actualización gemsLogic.ts:**
+   - Reemplazado uso de `likedSpots` y `savedSpots` (legacy) por sistema de Pins
+   - Funciones ahora reciben `isSpotPinned: (spotId: string) => boolean` como parámetro
+   - **Regla V1.2:** Gems EXCLUYE cualquier spot que tenga Pin (cualquier estado), sin diferenciar estado
+   - Filtro binario: pinned / not pinned (sin scoring avanzado por estado)
+   - Funciones actualizadas:
+     - `getFeaturedSpots()`: Filtra spots con Pin antes de calcular score
+     - `getSuggestedSpots()`: Excluye spots con Pin
+     - `getSuggestedPaths()`: Usa `getPinnedSpots()` en lugar de `savedSpots`
+     - `getAllGems()`: Actualizado para usar `isSpotPinned`
+     - `getRecentSpots()`: Filtra spots con Pin
+   - `calculatePopularityScore()`: Simplificado, ya no considera likedSpots/savedSpots
+
+2. **Actualización dataPreparation.ts:**
+   - `prepareHomeData()`: Actualizado para recibir `isSpotPinned` en lugar de `likedSpots` y `savedSpots`
+   - Secciones actualizadas:
+     - `forYouSpots`: Excluye spots con Pin
+     - `recommendedSpots`: Excluye spots con Pin
+     - `maybeYouLikeSpots`: Usa `getFeaturedSpots()` con sistema de Pins
+
+3. **Actualización app/(tabs)/home.tsx:**
+   - Reemplazado `likedSpots, savedSpots` por `isSpotPinned` del hook `useSaved()`
+   - Actualizada llamada a `prepareHomeData()` con nuevo parámetro
+
+4. **Eliminación liked-spots.tsx:**
+   - Eliminado archivo `app/liked-spots.tsx` completamente
+   - Eliminada ruta `liked-spots` de `app/_layout.tsx`
+   - Like ya no existe como concepto en el producto (reemplazado por Pin)
+
+**Archivos tocados:**
+- `utils/gemsLogic.ts` (actualizado para usar sistema de Pins)
+- `utils/dataPreparation.ts` (actualizado para usar sistema de Pins)
+- `app/(tabs)/home.tsx` (actualizado para usar sistema de Pins)
+- `app/liked-spots.tsx` (ELIMINADO)
+- `app/_layout.tsx` (eliminada ruta liked-spots)
+
+**Archivos NO tocados:**
+- `contexts/SavedContext.tsx` - Campos legacy (likedSpots, savedSpots) se mantienen para compatibilidad temporal
+- Otros archivos que usan likedSpots/savedSpots - Se mantienen para compatibilidad temporal
+
+**Riesgos considerados:**
+- **Compatibilidad:** Funciones legacy (likedSpots, savedSpots) se mantienen en SavedContext para compatibilidad temporal
+- **Gems:** Ahora excluye correctamente spots con Pin, mejorando recomendaciones
+- **Eliminación liked-spots:** Pantalla deprecated eliminada limpiamente, sin redirecciones
+
+**Testing requerido:**
+- Verificar que Gems no muestra spots con Pin (cualquier estado)
+- Verificar que recomendaciones funcionan correctamente
+- Verificar que no hay errores de TypeScript
+- Verificar que ruta liked-spots ya no existe
+
+**Estado:** ✅ Implementación completada
+
+**Nota:** 
+- gemsLogic.ts ahora usa sistema de Pins como filtro binario (pinned / not pinned)
+- No se aplica scoring avanzado ni pesos por estado (to_visit vs visited) - queda fuera de v1.2
+- liked-spots.tsx eliminado completamente, sin redirecciones ni mensajes deprecated
+
+---
+
+### [V1.2-CIERRE-02] Documentación visitedAt
+**Fecha:** 2026-01-11  
+**Estado:** ✅ Aplicado
+
+**Contexto del cambio:**
+- Documentación explícita del comportamiento de `visitedAt` en sistema de Pins
+
+**Descripción del ajuste realizado:**
+- Documentado comportamiento de `visitedAt` en `contexts/SavedContext.tsx`:
+  - `visitedAt` representa la **PRIMERA vez** que el usuario marca un spot como 'visited'
+  - Si se cambia de 'visited' → 'to_visit' → 'visited' nuevamente, `visitedAt` mantiene la fecha original
+  - Comportamiento intencional: preserva fecha de primera visita, no última visita
+  - No se modifica lógica en `changePinState()` - comportamiento actual es correcto
+
+**Archivos tocados:**
+- `definitions/FLOWYA V1.2/BITACORA_V1_2.md` (esta entrada)
+
+**Archivos NO tocados:**
+- `contexts/SavedContext.tsx` - Lógica no modificada, solo documentada
+
+**Riesgos considerados:**
+- Ninguno: Solo documentación, no cambios de código
+
+**Estado:** ✅ Documentación completada
+
+**Nota:** 
+- `visitedAt` preserva fecha de primera visita, no última visita
+- Comportamiento actual es intencional y correcto
