@@ -73,7 +73,6 @@ export default function RootLayout() {
                       <View style={styles.container}>
                         <Stack>
                           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                          <Stack.Screen name="liked-spots" options={{ presentation: 'card', title: 'Liked Spots', headerShown: false }} />
                           <Stack.Screen name="spot-detail" options={{ presentation: 'card', headerShown: false }} />
                             <Stack.Screen name="create-spot" options={{ presentation: 'card', headerShown: false }} />
                             <Stack.Screen name="flow-detail" options={{ presentation: 'card', headerShown: false }} />
