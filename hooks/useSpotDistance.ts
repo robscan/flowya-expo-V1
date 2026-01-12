@@ -19,14 +19,15 @@ import { useSpot } from '@/contexts/SpotContext';
 import { calculateDistanceToSpot } from '@/utils/distance';
 
 /**
- * Selector puro para calcular distancia de un Spot
+ * FASE 4-5: Selector puro para calcular distancia de un Spot
+ * Compatible con ambos formatos: lat/lng y latitude/longitude
  * 
- * @param spot Spot para calcular distancia
+ * @param spot Spot para calcular distancia (compatible con ambos formatos)
  * @param baseLocation Ubicación base estable
  * @returns Distancia en metros o undefined
  */
 export function getSpotDistance(
-  spot: { location: { latitude: number; longitude: number } },
+  spot: { location: { lat: number; lng: number } | { latitude: number; longitude: number } },
   baseLocation: BaseLocation | null
 ): number | undefined {
   if (!baseLocation) return undefined;

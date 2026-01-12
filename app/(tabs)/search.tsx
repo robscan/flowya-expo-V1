@@ -15,6 +15,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { FlowCard } from '@/components/FlowCard';
+import { SpotGrid } from '@/components/SpotGrid';
 import { SpotMediaCard } from '@/components/SpotMediaCard';
 import { Icon } from '@/components/ui/Icon';
 import { SectionHeader } from '@/components/ui/SectionHeader';
@@ -25,12 +26,14 @@ import { fontFamilyMedium, textStyles } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
 import { usePath } from '@/contexts/PathContext';
 import { useSpot } from '@/contexts/SpotContext';
+import { useWorldSpots } from '@/contexts/WorldSpotContext';
 import { Spot, SpotType } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { getSpotDistance } from '@/hooks/useSpotDistance';
 import { anyLoading, shouldShowSkeleton } from '@/utils/loadingHelpers';
 import { searchAll } from '@/utils/searchLogic';
+import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
 
 
 export default function SearchScreen() {
@@ -44,11 +47,15 @@ export default function SearchScreen() {
   const { baseLocation } = useBaseLocation();
 
   const { spots, isLoading: isLoadingSpots } = useSpot();
+  const { worldSpots, isLoading: isLoadingWorldSpots } = useWorldSpots();
   const { paths, isLoading: isLoadingPaths } = usePath();
   const { startFlow } = useFlow();
 
+  // FASE 7: Combinar UserSpots y WorldSpots
+  const allSpots: UnifiedSpot[] = combineSpots(spots, worldSpots);
+  
   // Combinar estados de carga para sugerencias iniciales
-  const isLoading = anyLoading(isLoadingSpots, isLoadingPaths);
+  const isLoading = anyLoading(isLoadingSpots, isLoadingWorldSpots, isLoadingPaths);
 
 
 
@@ -94,8 +101,9 @@ export default function SearchScreen() {
       }
     } else {
       // No location: show varied spots
+      // FASE 7: Usar allSpots (UserSpots + WorldSpots)
       const usedTypes = new Set<SpotType>();
-      for (const spot of spots) {
+      for (const spot of allSpots) {
         if (suggested.length >= 6) break;
         if (!usedTypes.has(spot.type) || suggested.length < 3) {
           suggested.push({ spot, distance: undefined });
@@ -105,7 +113,7 @@ export default function SearchScreen() {
     }
     
     return suggested;
-  }, [spots, baseLocation, searchQuery]);
+  }, [allSpots, baseLocation, searchQuery]);
   
   const suggestedSpots = useMemo(() => {
     return suggestedSpotsWithDistance.map(item => item.spot);
@@ -147,7 +155,7 @@ export default function SearchScreen() {
     }
     
     return results;
-  }, [searchQuery, spots, paths, baseLocation]);
+  }, [searchQuery, allSpots, paths, baseLocation]);
 
   // CANONICAL: Determine what to show
   const hasQuery = searchQuery.trim().length >= 2;
@@ -193,7 +201,11 @@ export default function SearchScreen() {
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
+          keyboardShouldPersistTaps="handled"
+          // @ts-ignore - Web-specific CSS properties
+          {...(Platform.OS === 'web' && {
+            WebkitOverflowScrolling: 'touch',
+          })}>
           {/* CANONICAL: Search header with integrated input */}
           <SectionHeader
             variant="search"
@@ -224,31 +236,14 @@ export default function SearchScreen() {
               {searchResults.spots.length > 0 && (
                 <View style={styles.section}>
                   <SectionHeader title="Spots" variant="large" />
-                  <FlatList
-                    data={searchResults.spots as { type: 'spot'; spot: Spot; relevanceScore: number; distance?: number }[]}
-                    numColumns={2}
-                    keyExtractor={(item) => item.spot!.id}
-                    columnWrapperStyle={styles.gridRow}
-                    contentContainerStyle={styles.gridContent}
-                    scrollEnabled={false}
-                    // SCOPE 8.1: Lazy load real - solo renderizar lo visible + buffer pequeño
-                    windowSize={5}
-                    initialNumToRender={6}
-                    maxToRenderPerBatch={2}
-                    removeClippedSubviews={Platform.OS !== 'web'}
-                    renderItem={({ item: result }) => {
-                      if (!result.spot) return null;
-                      return (
-                        <View style={styles.gridItem}>
-                          <SpotMediaCard
-                            spot={result.spot}
-                            size="small"
-                            distance={result.distance}
-                            onPress={() => handleSpotPress(result.spot!)}
-                          />
-                        </View>
-                      );
-                    }}
+                  <SpotGrid
+                    spots={searchResults.spots
+                      .filter((result) => result.spot)
+                      .map((result) => ({
+                        spot: result.spot!,
+                        distance: result.distance,
+                      }))}
+                    onSpotPress={handleSpotPress}
                   />
                 </View>
               )}
@@ -329,30 +324,9 @@ export default function SearchScreen() {
                   style={styles.gridContent}
                 />
               ) : (
-                <FlatList
-                  data={suggestedSpotsWithDistance}
-                  numColumns={2}
-                  keyExtractor={(item) => item.spot.id}
-                  columnWrapperStyle={styles.gridRow}
-                  contentContainerStyle={styles.gridContent}
-                  scrollEnabled={false}
-                  // SCOPE 8.1: Lazy load real - solo renderizar lo visible + buffer pequeño
-                  windowSize={5}
-                  initialNumToRender={6}
-                  maxToRenderPerBatch={2}
-                  removeClippedSubviews={Platform.OS !== 'web'}
-                  renderItem={({ item: itemWithDistance }) => {
-                    return (
-                      <View style={styles.gridItem}>
-                        <SpotMediaCard
-                          spot={itemWithDistance.spot}
-                          size="small"
-                          distance={itemWithDistance.distance}
-                          onPress={() => handleSpotPress(itemWithDistance.spot)}
-                        />
-                      </View>
-                    );
-                  }}
+                <SpotGrid
+                  spots={suggestedSpotsWithDistance}
+                  onSpotPress={handleSpotPress}
                 />
               )}
             </View>

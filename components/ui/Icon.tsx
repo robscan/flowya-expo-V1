@@ -37,6 +37,7 @@ export const iconMap = {
   notMyVibe: 'thumb-down',
   navigation: 'navigation',
   directions: 'directions',
+  distance: 'near-me', // Icono para distancia (proximidad desde usuario)
   add: 'add',
   'add-location': 'add-location',
   star: 'star',
@@ -80,6 +81,7 @@ export const iconMap = {
   fullscreen: 'fullscreen',
   'fullscreen-exit': 'fullscreen-exit',
   visibility: 'visibility',
+  pin: 'push-pin', // V1.2: Icono para Pin (marcar lugar personal) - diferenciado de 'map'
 } as const;
 
 export type IconName = keyof typeof iconMap;

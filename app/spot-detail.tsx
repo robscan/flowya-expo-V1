@@ -29,7 +29,8 @@ import { AIContentPreview } from '@/components/ui/AIContentPreview';
 import { AIGenerateButton } from '@/components/ui/AIGenerateButton';
 import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
 import { FormField } from '@/components/ui/FormField';
-import { FormIconSelector } from '@/components/ui/FormIconSelector';
+// FASE 4: FormIconSelector eliminado - campos avanzados eliminados
+// import { FormIconSelector } from '@/components/ui/FormIconSelector';
 import { LocationSelectorWeb } from '@/components/ui/LocationSelectorWeb';
 import { FormTextArea } from '@/components/ui/FormTextArea';
 import { FormTextInput } from '@/components/ui/FormTextInput';
@@ -38,6 +39,7 @@ import { GlassView } from '@/components/ui/GlassView';
 import { Icon, IconName } from '@/components/ui/Icon';
 import { InfoMeta } from '@/components/ui/InfoMeta';
 import { MapControls } from '@/components/ui/MapControls';
+import { PinStateModal } from '@/components/ui/PinStateModal';
 import { Toast } from '@/components/ui/Toast';
 import { borderRadius, borderTokens } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
@@ -47,9 +49,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useFlow } from '@/contexts/FlowContext';
 import { useOverlay } from '@/contexts/OverlayContext';
 import { usePath } from '@/contexts/PathContext';
-import { useSaved } from '@/contexts/SavedContext';
+import { useSaved, PinState } from '@/contexts/SavedContext';
+import { showAlert } from '@/utils/alertPolyfill';
+import { hasSeenPinModal, markPinModalSeen } from '@/utils/pinFirstTime';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import { useSpot } from '@/contexts/SpotContext';
-import { Spot, SpotHours } from '@/data/spots';
+import { useWorldSpots, WorldSpot } from '@/contexts/WorldSpotContext';
+import { Spot } from '@/data/spots';
+import { isWorldSpot, UnifiedSpot } from '@/utils/worldSpotHelpers';
+// FASE 4: SpotHours eliminado - campos avanzados eliminados
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
@@ -59,7 +67,8 @@ import { auditSpotEditorial } from '@/utils/spotEditorialAudit';
 import { getValidImage, hasValidImage } from '@/utils/imageHelpers';
 import { mapMovementModeToNavigationMode, openNavigationApp } from '@/utils/navigationHelpers';
 import { canDeleteSpot } from '@/utils/permissions';
-import { formatCost, formatHours, getSpotTypeLabel } from '@/utils/spotFormHelpers';
+import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
+// FASE 4: formatHours, formatCost eliminados - campos avanzados eliminados
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const IMAGE_HEIGHT = SCREEN_HEIGHT * 0.4; // 40% of screen height
@@ -71,8 +80,9 @@ export default function SpotDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { getSpotById, updateSpot, deleteSpot, markSpotAsSeen, markSpotAsAvailable, getSpotLoadState } = useSpot();
-  const { isSpotSaved, toggleSaveSpot } = useSaved();
+  const { getSpotById, updateSpot, deleteSpot, markSpotAsSeen, markSpotAsAvailable, getSpotLoadState, generateSpotContent, createSpot } = useSpot();
+  const { getWorldSpotById, convertWorldSpotToUserSpot } = useWorldSpots();
+  const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState, pins, updatePinNotes, addPinPhoto, removePinPhoto } = useSaved();
   const { createPath } = usePath();
   // SCOPE 9: Obtener flowState, currentSpotId y funciones de Flow
   const { flowState, currentSpotId, expandFlow, addSpotToFlow, startFlow } = useFlow();
@@ -93,16 +103,43 @@ export default function SpotDetailScreen() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   
   // Animaciones para feedback visual
-  const [saveButtonScale] = useState(() => new Animated.Value(1));
-  const [likeButtonScale] = useState(() => new Animated.Value(1));
+  const [pinButtonScale] = useState(() => new Animated.Value(1));
+  
+  
+  // V1.2: Estados para Diario de Viaje
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [notesText, setNotesText] = useState('');
+  
+  // Estados para modal de pin primera vez
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [hasSeenFirstTime, setHasSeenFirstTime] = useState<boolean | null>(null);
   
   // Estados para selector de iconos
-  const [showIconSelector, setShowIconSelector] = useState<{ field: '1' | '2' | 'restrictions' | 'accessibility' } | null>(null);
-  const [editPlanInfoIconRestrictions, setEditPlanInfoIconRestrictions] = useState<IconName>('paw');
-  const [editPlanInfoIconAccessibility, setEditPlanInfoIconAccessibility] = useState<IconName>('accessibility');
+  // FASE 4: showIconSelector eliminado - campos avanzados eliminados (howToVisit, restrictions, accessibility)
+  // const [showIconSelector, setShowIconSelector] = useState<{ field: '1' | '2' | 'restrictions' | 'accessibility' } | null>(null);
+  // const [editPlanInfoIconRestrictions, setEditPlanInfoIconRestrictions] = useState<IconName>('paw');
+  // const [editPlanInfoIconAccessibility, setEditPlanInfoIconAccessibility] = useState<IconName>('accessibility');
 
-  // Get spot from context
-  const spot = id ? getSpotById(id) : null;
+  // FASE 7: Get spot from context (UserSpot) or WorldSpot
+  const userSpot = id ? getSpotById(id) : null;
+  const worldSpot = id ? getWorldSpotById(id) : null;
+  const spot: UnifiedSpot | null = userSpot || worldSpot || null;
+  const isWorldSpotFlag = spot ? isWorldSpot(spot) : false;
+
+  // Debug: Log spot data para detectar problemas de carga
+  useEffect(() => {
+    if (spot && __DEV__) {
+      console.log(`[SpotDetail] Spot cargado: ${spot.id}`, {
+        name: spot.name,
+        hasShortDescription: !!spot.shortDescription,
+        shortDescriptionLength: spot.shortDescription?.length || 0,
+        shortDescriptionPreview: spot.shortDescription?.substring(0, 50) || 'N/A',
+        isWorldSpot: isWorldSpotFlag,
+        hasWhyItMatters: !!spot.whyItMatters,
+        hasDescription: !!spot.description,
+      });
+    }
+  }, [spot?.id, isWorldSpotFlag]);
 
   // Marcar Spot como 'seen' al montar (automáticamente)
   useEffect(() => {
@@ -113,7 +150,9 @@ export default function SpotDetailScreen() {
     // Si el Spot tiene imagen principal, marcar como 'available' después de un breve delay
     // (esto permite que OptimizedImage inicie la carga si es necesario)
     // El cache de imágenes se maneja independientemente, esto solo marca el Spot como disponible
-    if (spot && hasValidImage(spot.photos)) {
+    // FASE 5: Usar image.url en lugar de photos[0] (compatible con ambos formatos)
+    const spotImageUrl = spot?.image?.url || (spot?.photos && spot.photos.length > 0 ? spot.photos[0] : '');
+    if (spot && hasValidImage(spot.photos, spotImageUrl)) {
       // Usar un pequeño delay para permitir que OptimizedImage verifique su cache
       const timer = setTimeout(() => {
         markSpotAsAvailable(id);
@@ -149,6 +188,26 @@ export default function SpotDetailScreen() {
     }
   }, []);
 
+  // Verificar si usuario ya vio el modal de pins (cargar al montar)
+  useEffect(() => {
+    hasSeenPinModal().then((seen) => {
+      setHasSeenFirstTime(seen);
+    });
+  }, []);
+
+  // Inicializar notesText cuando cambia el pin o se abre el editor - DEBE estar antes del return temprano
+  // Usamos pinData que depende de spot.id, pero el efecto siempre se ejecuta (con guard interno)
+  useEffect(() => {
+    if (!id) return;
+    const currentPinData = pins[id];
+    const currentPersonalNotes = currentPinData?.notes || '';
+    if (isEditingNotes && currentPersonalNotes) {
+      setNotesText(currentPersonalNotes);
+    } else if (!isEditingNotes) {
+      setNotesText('');
+    }
+  }, [id, isEditingNotes, pins]);
+
   // CANONICAL: Centrar mapa en spot al montar (siempre, no en userLocation)
   useEffect(() => {
     if (!spot || isEditMode) return;
@@ -178,28 +237,42 @@ export default function SpotDetailScreen() {
   }, [isFullscreen, spot?.id, isEditMode]);
 
   // Hook de gestión de estado del formulario (solo en modo edición)
+  // FASE 7: No permitir edición de WorldSpots
   const form = useSpotForm({
-    initialSpot: spot || null,
-    isEditMode,
+    initialSpot: (spot && !isWorldSpotFlag) ? spot : null,
+    isEditMode: isEditMode && !isWorldSpotFlag,
     onSave: (spotData) => {
-      if (!spot) return;
+      if (!spot || isWorldSpotFlag) return;
       const updates: Partial<Spot> = {
         name: spotData.name,
+        // FASE 4-5: Actualizar campos nuevos
+        shortDescription: spotData.shortDescription,
+        hasGeneratedContent: spotData.hasGeneratedContent,
+        image: spotData.image,
+        location: spotData.location,
+        // Legacy para compatibilidad temporal
         description: spotData.description,
         whyItMatters: spotData.whyItMatters,
         culturalContext: spotData.culturalContext,
         type: spotData.type,
-        hours: spotData.hours,
-        cost: spotData.cost,
-        restrictions: spotData.restrictions,
-        accessibility: spotData.accessibility,
-        howToVisit: spotData.howToVisit,
+        photos: spotData.photos,
+        // FASE 4: Campos eliminados - hours, cost, restrictions, accessibility, howToVisit
       };
       if (spotData.photos && JSON.stringify(spotData.photos) !== JSON.stringify(spot.photos || [])) {
         updates.photos = spotData.photos;
       }
-      if (spotData.location && (spotData.location.latitude !== spot.location.latitude || spotData.location.longitude !== spot.location.longitude)) {
-        updates.location = spotData.location;
+      // FASE 4-5: Actualizar location (compatible con ambos formatos)
+      if (spotData.location && spot.location) {
+        const spotLoc: { lat?: number; lng?: number; latitude?: number; longitude?: number } = spot.location as any;
+        const dataLoc: { lat?: number; lng?: number; latitude?: number; longitude?: number } = spotData.location as any;
+        const spotLat = 'lat' in spotLoc && spotLoc.lat !== undefined ? spotLoc.lat : (spotLoc.latitude || 0);
+        const spotLng = 'lng' in spotLoc && spotLoc.lng !== undefined ? spotLoc.lng : (spotLoc.longitude || 0);
+        const dataLat = 'lat' in dataLoc && dataLoc.lat !== undefined ? dataLoc.lat : (dataLoc.latitude || 0);
+        const dataLng = 'lng' in dataLoc && dataLoc.lng !== undefined ? dataLoc.lng : (dataLoc.longitude || 0);
+        
+        if (dataLat !== spotLat || dataLng !== spotLng) {
+          updates.location = spotData.location;
+        }
       }
       updateSpot(spot.id, updates);
       setIsEditMode(false);
@@ -211,44 +284,29 @@ export default function SpotDetailScreen() {
   });
 
 
-  // Helpers para trabajar con howToVisit desde form.howToVisit
-  const getHowToVisitBestTime = () => form.howToVisit?.bestTime?.text || '';
-  const getHowToVisitBestTimeIcon = () => (form.howToVisit?.bestTime?.icon as IconName) || 'sun';
-  const getHowToVisitPhotography = () => form.howToVisit?.photography?.text || '';
-  const getHowToVisitPhotographyIcon = () => (form.howToVisit?.photography?.icon as IconName) || 'camera';
-
-  const setHowToVisitBestTime = (text: string, icon?: IconName) => {
-    form.setHowToVisit({
-      ...form.howToVisit,
-      bestTime: text ? { icon: icon || getHowToVisitBestTimeIcon(), text } : undefined,
-      photography: form.howToVisit?.photography,
-    });
-  };
-
-  const setHowToVisitPhotography = (text: string, icon?: IconName) => {
-    form.setHowToVisit({
-      ...form.howToVisit,
-      bestTime: form.howToVisit?.bestTime,
-      photography: text ? { icon: icon || getHowToVisitPhotographyIcon(), text } : undefined,
-    });
-  };
-
-  const setHowToVisitBestTimeIcon = (icon: IconName) => {
-    const currentText = getHowToVisitBestTime();
-    if (currentText) {
-      setHowToVisitBestTime(currentText, icon);
-    }
-  };
-
-  const setHowToVisitPhotographyIcon = (icon: IconName) => {
-    const currentText = getHowToVisitPhotography();
-    if (currentText) {
-      setHowToVisitPhotography(currentText, icon);
-    }
-  };
+  // FASE 4: howToVisit eliminado - campos avanzados eliminados
+  // Todos los helpers de howToVisit han sido eliminados
 
   // Calcular distancia usando hook canónico - DEBE estar antes del return temprano
   const distance = useSpotDistance(id || null, baseLocation);
+
+  // V1.2: Hook para selección de imágenes (para fotos personales) - DEBE estar antes del return temprano
+  const imageUploadHook = useImageUpload({
+    allowsEditing: true,
+    aspect: [4, 3],
+    quality: 75,
+    onOptimized: (uri) => {
+      if (id) {
+        addPinPhoto(id, uri);
+        setToastMessage('Foto agregada');
+        setShowToast(true);
+      }
+    },
+    onError: (error) => {
+      console.error('Error adding photo:', error);
+      Alert.alert('Error', 'No se pudo agregar la foto. Intenta de nuevo.');
+    },
+  });
 
   if (!spot) {
     return (
@@ -269,9 +327,14 @@ export default function SpotDetailScreen() {
     );
   }
 
-  const isSaved = isSpotSaved(spot.id);
-  const hoursText = formatHours(isEditMode ? form.hours : spot.hours);
-  const costText = formatCost(isEditMode ? form.cost : spot.cost);
+  const isPinned = isSpotPinned(spot.id);
+  const pinState = getPinState(spot.id);
+  const pinData = pins[spot.id];
+  const isVisitedPin = pinState === 'visited';
+  const personalNotes = pinData?.notes || '';
+  const personalPhotos = pinData?.personalPhotos || [];
+  
+  // FASE 4: hours y cost eliminados - campos avanzados eliminados
 
   const handleBack = () => {
     // Si está en fullscreen, salir primero del fullscreen
@@ -290,28 +353,114 @@ export default function SpotDetailScreen() {
     }
   };
 
-  const handleSave = () => {
+  // Handler para seleccionar estado en modal
+  const handlePinStateSelect = (state: PinState) => {
+    // FASE 7: pinSpot retorna el ID del User Spot (puede ser convertido desde World Spot)
+    const userSpotId = pinSpot(spot.id, state);
+    setShowPinModal(false);
+    markPinModalSeen();
+    setHasSeenFirstTime(true); // Actualizar estado local después de marcar
+    setToastMessage(state === 'visited' ? 'Pinned · Visited' : 'Pinned · To visit');
+    setShowToast(true);
+    
+    // FASE 7: Si se convirtió a User Spot, redirigir al User Spot
+    if (userSpotId !== spot.id && isWorldSpotFlag) {
+      // Pequeño delay para permitir que el User Spot se cree
+      setTimeout(() => {
+        router.replace(`/spot-detail?id=${userSpotId}`);
+      }, 100);
+    }
+    
     // Animación de feedback visual
     Animated.sequence([
-      Animated.timing(saveButtonScale, {
+      Animated.timing(pinButtonScale, {
         toValue: 0.9,
         duration: 100,
         useNativeDriver: true,
       }),
-      Animated.timing(saveButtonScale, {
+      Animated.timing(pinButtonScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const handlePinPress = async () => {
+    // V1.2: Validar autenticación
+    if (!isAuthenticated) {
+      showAlert(
+        'Iniciar sesión requerido',
+        'Debes iniciar sesión para guardar pines.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Iniciar sesión',
+            onPress: () => router.push('/(tabs)/login'),
+          },
+        ]
+      );
+      return;
+    }
+    
+    // Animación de feedback visual
+    Animated.sequence([
+      Animated.timing(pinButtonScale, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(pinButtonScale, {
         toValue: 1,
         duration: 100,
         useNativeDriver: true,
       }),
     ]).start();
     
-    const wasSaved = isSaved;
-    toggleSaveSpot(spot.id);
+    // Si no está pinned
+    if (!isPinned) {
+      // Verificar si es primera vez (verificar siempre desde AsyncStorage para consistencia)
+      const seen = await hasSeenPinModal();
+      if (!seen) {
+        // Primera vez: mostrar modal
+        setHasSeenFirstTime(false);
+        setShowPinModal(true);
+        return;
+      }
+      
+      // No es primera vez: pin directamente con to_visit
+      if (hasSeenFirstTime === null) {
+        setHasSeenFirstTime(true);
+      }
+      // FASE 7: pinSpot retorna el ID del User Spot (puede ser convertido desde World Spot)
+      const userSpotId = pinSpot(spot.id, 'to_visit');
+      setToastMessage('Pinned · To visit');
+      setShowToast(true);
+      
+      // FASE 7: Si se convirtió a User Spot, redirigir al User Spot
+      if (userSpotId !== spot.id && isWorldSpotFlag) {
+        // Pequeño delay para permitir que el User Spot se cree
+        setTimeout(() => {
+          router.replace(`/spot-detail?id=${userSpotId}`);
+        }, 100);
+      }
+      return;
+    }
     
-    // Show toast
-    setToastMessage(wasSaved ? 'Lugar removido de guardados' : 'Lugar guardado');
-    setShowToast(true);
+    // Ya está pinned: toggle cíclico
+    if (pinState === 'to_visit') {
+      // Cambiar a visited
+      changePinState(spot.id, 'visited');
+      setToastMessage('Changed to Visited');
+      setShowToast(true);
+    } else if (pinState === 'visited') {
+      // Eliminar pin
+      unpinSpot(spot.id);
+      setToastMessage('Pin removido');
+      setShowToast(true);
+    }
   };
+
 
   const handleShare = async () => {
     try {
@@ -338,12 +487,52 @@ export default function SpotDetailScreen() {
     setIsMenuVisible(false);
   };
 
+  // V1.2: Handlers para Diario de Viaje
+  const handleStartEditingNotes = () => {
+    setIsEditingNotes(true);
+    setNotesText(personalNotes);
+  };
+
+  const handleSaveNotes = () => {
+    if (!spot) return;
+    updatePinNotes(spot.id, notesText);
+    setIsEditingNotes(false);
+    setToastMessage('Notas guardadas');
+    setShowToast(true);
+  };
+
+  const handleCancelEditingNotes = () => {
+    setIsEditingNotes(false);
+    setNotesText(personalNotes);
+  };
+
+  const handleAddPhoto = async () => {
+    if (!spot) return;
+    try {
+      await imageUploadHook.pickFromGallery();
+    } catch (error) {
+      console.error('Error adding photo:', error);
+      Alert.alert('Error', 'No se pudo agregar la foto. Intenta de nuevo.');
+    }
+  };
+
+  const handleRemovePhoto = (photoUrl: string) => {
+    if (!spot) return;
+    removePinPhoto(spot.id, photoUrl);
+    setToastMessage('Foto eliminada');
+    setShowToast(true);
+  };
+
   const handleSuggestEdit = () => {
     if (!spot) return;
+    // FASE 7: No permitir edición de WorldSpots
+    if (isWorldSpotFlag) {
+      Alert.alert('No editable', 'Los lugares del mundo no se pueden editar. Puedes guardarlos o marcarlos como visitados.');
+      setIsMenuVisible(false);
+      return;
+    }
     setIsMenuVisible(false);
-    // Inicializar iconos de plan info (si no están en form)
-    setEditPlanInfoIconRestrictions('paw');
-    setEditPlanInfoIconAccessibility('accessibility');
+    // FASE 4: setEditPlanInfoIconRestrictions y setEditPlanInfoIconAccessibility eliminados - campos avanzados eliminados
     setIsEditMode(true);
     // form.howToVisit ya se inicializa desde initialSpot en useSpotForm
   };
@@ -356,28 +545,22 @@ export default function SpotDetailScreen() {
     }
   };
 
+  // FASE 4: Actualizar handleAcceptAIContent para usar solo shortDescription
   const handleAcceptAIContent = () => {
     if (form.previewContent) {
-      // SCOPE 2: Aceptar todos los campos generados por IA
-      if (form.previewContent.spotDescription && !form.spotDescription) {
-        form.setSpotDescription(form.previewContent.spotDescription);
-        form.setDescription(form.previewContent.spotDescription);
-        form.setWhyItMatters(form.previewContent.whyItMatters || form.previewContent.spotDescription);
+      // FASE 4: Aceptar solo shortDescription (IA solo genera shortDescription)
+      if (form.previewContent.shortDescription && !form.shortDescription) {
+        form.setShortDescription(form.previewContent.shortDescription);
+        // Legacy: también actualizar campos legacy para compatibilidad temporal
+        form.setDescription(form.previewContent.shortDescription);
+        form.setWhyItMatters(form.previewContent.shortDescription);
       }
-      if (form.previewContent.whyItMatters) {
-        form.setWhyItMatters(form.previewContent.whyItMatters);
-        form.setDescription(form.previewContent.whyItMatters);
-      }
-      if (form.previewContent.planInfo && !form.planInfo) {
-        form.setPlanInfo(form.previewContent.planInfo);
-      }
-      if (form.previewContent.culturalContext) {
-        form.setCulturalContext(form.previewContent.culturalContext);
-      }
-      if (form.previewContent.howToVisit) {
-        // Form.howToVisit ya maneja toda la estructura
-        form.setHowToVisit(form.previewContent.howToVisit);
-      }
+      // FASE 4: Marcar que tiene contenido generado
+      form.setHasGeneratedContent(true);
+      
+      // Legacy: campos legacy (para compatibilidad temporal)
+      if (form.previewContent.planInfo) form.setPlanInfo(form.previewContent.planInfo);
+      if (form.previewContent.culturalContext) form.setCulturalContext(form.previewContent.culturalContext);
     }
     setShowAIPreview(false);
     form.setPreviewContent(null);
@@ -390,7 +573,7 @@ export default function SpotDetailScreen() {
 
   const handleSaveEdit = () => {
     if (!spot) return;
-    // form.howToVisit ya está actualizado desde los helpers
+    // FASE 4: Campos eliminados - howToVisit, hours, cost, restrictions, accessibility
     form.handleSave();
   };
 
@@ -399,13 +582,13 @@ export default function SpotDetailScreen() {
       setShowCancelConfirm(true);
     } else {
       form.handleCancel();
-      setShowIconSelector(null);
+      // FASE 4: setShowIconSelector eliminado - campos avanzados eliminados
     }
   };
 
   const handleConfirmCancel = () => {
     form.handleCancel();
-    setShowIconSelector(null);
+    // FASE 4: setShowIconSelector eliminado - campos avanzados eliminados
     setShowCancelConfirm(false);
   };
 
@@ -530,8 +713,13 @@ export default function SpotDetailScreen() {
     
     // Si no hay ubicación del usuario, usar ubicación del spot como origen
     // (aunque idealmente deberíamos tener la ubicación actual del usuario)
-    const originLocation = baseLocation || spot.location;
-    const destinationLocation = spot.location;
+    // FASE 4-5: Convertir locations a formato latitude/longitude para openNavigationApp
+    const originLocation = baseLocation || ('lat' in spot.location
+      ? { latitude: spot.location.lat, longitude: spot.location.lng }
+      : spot.location);
+    const destinationLocation = 'lat' in spot.location
+      ? { latitude: spot.location.lat, longitude: spot.location.lng }
+      : spot.location;
     
     // Usar modo walking por defecto (se puede hacer dinámico según el flow si aplica)
     const navigationMode = mapMovementModeToNavigationMode('walking');
@@ -618,13 +806,19 @@ export default function SpotDetailScreen() {
             ref={mapViewFullscreenRef}
             spots={[spot]}
             onSpotPress={() => {}}
-            initialRegion={{
-              latitude: spot.location.latitude,
-              longitude: spot.location.longitude,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-            userLocation={baseLocation}
+            initialRegion={(() => {
+              // FASE 4-5: Normalizar location a formato latitude/longitude
+              const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+              const lat = loc.lat ?? loc.latitude ?? 0;
+              const lng = loc.lng ?? loc.longitude ?? 0;
+              return {
+                latitude: lat,
+                longitude: lng,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              };
+            })()}
+            userLocation={baseLocation ? { latitude: baseLocation.latitude, longitude: baseLocation.longitude } : null}
             showUserLocation={!!baseLocation}
             highlightedSpotId={spot.id}
             disableNativeControls={true}
@@ -668,15 +862,32 @@ export default function SpotDetailScreen() {
       {!isFullscreen && (
       <ScrollView
         style={styles.scrollView}
+        // @ts-ignore - Web-specific CSS properties
+        {...(Platform.OS === 'web' && {
+          overflow: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',
+        })}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={true}
+        nestedScrollEnabled={true}
+        bounces={true}
+        alwaysBounceVertical={false}
+        keyboardShouldPersistTaps="handled">
         
         {/* ContentHeader with image hero */}
         {(() => {
-          // En modo edición: usar fotos del form; en modo visualización: usar fotos del spot
-          const displayPhotos = isEditMode ? form.photos : (spot.photos || []);
-          const validImage = displayPhotos.length > 0 ? displayPhotos[0] : null;
+          // FASE 5: En modo edición: usar image.url del form; en modo visualización: usar image.url del spot (compatible con ambos formatos)
+          const displayImageUrl = isEditMode 
+            ? form.image?.url || (form.photos && form.photos.length > 0 ? form.photos[0] : '')
+            : (spot.image?.url || (spot.photos && spot.photos.length > 0 ? spot.photos[0] : ''));
+          const validImage = displayImageUrl && displayImageUrl.trim().length > 0 ? displayImageUrl : null;
           const heroImage = validImage ? { uri: validImage } : null;
+          // Legacy: también mantener photos para ContentHeader (compatible temporalmente)
+          const displayPhotos = isEditMode 
+            ? (form.image?.url ? [form.image.url] : form.photos)
+            : (spot.image?.url ? [spot.image.url] : (spot.photos || []));
           
           // Left actions
           const leftActions: ContentHeaderAction[] = [
@@ -687,24 +898,30 @@ export default function SpotDetailScreen() {
             },
           ];
           
-          // Right actions (solo si no está en modo edición)
+          // FASE 7: Right actions (solo si no está en modo edición)
+          // Para WorldSpots, solo mostrar pin y share (no menu con edición/eliminación)
           const rightActions: ContentHeaderAction[] = !isEditMode
             ? [
                 {
-                  icon: 'bookmark',
-                  onPress: handleSave,
-                  tooltip: isSaved ? 'Guardado - Toca para quitar' : 'Guardar este lugar',
-                  isActive: isSaved,
-                  activeColor: isSaved ? colors.tint : undefined,
+                  icon: isPinned && pinState === 'visited' ? 'check-circle' : 'pin',
+                  onPress: handlePinPress,
+                  tooltip: isPinned 
+                    ? (pinState === 'visited' ? 'Visitado - Toca para quitar' : 'Por visitar - Toca para quitar')
+                    : 'Pin este lugar',
+                  isActive: isPinned,
+                  activeColor: isPinned 
+                    ? (pinState === 'visited' ? '#4CAF50' : '#2196F3')
+                    : undefined,
                 },
                 {
                   icon: 'share',
                   onPress: handleShare,
                 },
-                {
-                  icon: 'menu',
+                // FASE 7: Menu solo para UserSpots (no WorldSpots)
+                ...(isWorldSpotFlag ? [] : [{
+                  icon: 'menu' as const,
                   onPress: handleMenuPress,
-                },
+                }]),
               ]
             : [];
           
@@ -713,6 +930,7 @@ export default function SpotDetailScreen() {
               heroType="image"
               heroImage={displayPhotos.length === 1 ? heroImage : null}
               heroImages={displayPhotos.length > 1 ? displayPhotos : displayPhotos.length === 1 ? displayPhotos : []}
+              // FASE 5: displayPhotos mantiene compatibilidad temporal (fotos[] → image.url)
               heroHeight={IMAGE_HEIGHT}
               leftActions={leftActions}
               rightActions={rightActions}
@@ -722,29 +940,25 @@ export default function SpotDetailScreen() {
           );
         })()}
         
-        {/* Edit mode: Image management controls */}
+        {/* FASE 5: Edit mode: Image management (imagen única) */}
         {isEditMode && (
           <View style={[styles.imageEditSection, { backgroundColor: colors.background }]}>
             <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.sm }]}>
-              Photos
+              Image
             </Text>
             
-            {/* Grid de imágenes actuales */}
-            {form.photos.length > 0 && (
-              <View style={styles.imagesGrid}>
-                {form.photos.map((photoUri, index) => (
-                  <View key={`${photoUri}-${index}`} style={styles.imageEditItem}>
-                    <Image source={{ uri: photoUri }} style={styles.imageEditThumbnail} resizeMode="cover" />
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.imageRemoveButton,
-                        pressed && { opacity: 0.7 },
-                      ]}
-                      onPress={() => form.removeImage(index)}>
-                      <Icon name="close" size={16} color={colors.background} />
-                    </Pressable>
-                  </View>
-                ))}
+            {/* FASE 5: Imagen única (no grid) */}
+            {form.image?.url && form.image.url.trim().length > 0 && (
+              <View style={styles.imageEditItem}>
+                <Image source={{ uri: form.image.url }} style={styles.imageEditThumbnail} resizeMode="cover" />
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.imageRemoveButton,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  onPress={() => form.removeImage()}>
+                  <Icon name="close" size={16} color={colors.background} />
+                </Pressable>
               </View>
             )}
             
@@ -758,7 +972,7 @@ export default function SpotDetailScreen() {
                   opacity: pressed ? 0.7 : 1,
                 },
               ]}
-              onPress={form.addImage}
+              onPress={form.pickImage}
               disabled={form.isOptimizingImage}>
               {form.isOptimizingImage ? (
                 <>
@@ -813,6 +1027,76 @@ export default function SpotDetailScreen() {
               rating={{ value: 4.8, count: 128 }}
               size="large"
             />
+          )}
+
+          {/* FASE 4: Short Description field - solo en modo edición */}
+          {isEditMode && (
+            <>
+              {/* SCOPE 6.4: Hint discreto si hay campos faltantes */}
+              {(() => {
+                const editorialStatus = spot ? auditSpotEditorial(spot) : null;
+                const hasMissingFields = editorialStatus && (
+                  editorialStatus.spotDescription === 'missing' ||
+                  editorialStatus.howToVisit === 'missing' ||
+                  editorialStatus.planInfo === 'missing'
+                );
+                
+                return hasMissingFields ? (
+                  <View style={[styles.incompleteHint, { backgroundColor: colors.icon + '10', marginTop: spacing.sm }]}>
+                    <Icon name="info" size={14} color={colors.icon} />
+                    <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
+                      Este spot tiene información incompleta
+                    </Text>
+                  </View>
+                ) : null;
+              })()}
+              
+              {/* SCOPE 7: Botón "Enrich with AI" justo arriba del FormField */}
+              {/* FASE 7: Solo mostrar para UserSpots (no WorldSpots en edición) */}
+              {!form.existingSpot && !isWorldSpotFlag && (
+                isAIConfigured() ? (
+                  <View style={{ marginTop: spacing.sm, marginBottom: spacing.xs }}>
+                    <AIGenerateButton
+                      onPress={handleGenerateAI}
+                      isGenerating={form.aiState === 'loading'}
+                      size="small"
+                    />
+                  </View>
+                ) : (
+                  <View style={{
+                    backgroundColor: colors.icon + '10',
+                    borderColor: colors.icon + '30',
+                    borderWidth: 1,
+                    borderRadius: 12,
+                    paddingHorizontal: spacing.sm,
+                    paddingVertical: spacing.xs,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginTop: spacing.sm,
+                    marginBottom: spacing.xs,
+                  }}>
+                    <Icon name="info" size={14} color={colors.icon} />
+                    <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
+                      IA no configurada
+                    </Text>
+                  </View>
+                )
+              )}
+              
+              <FormField label="Short Description" style={{ marginTop: spacing.sm }}>
+                <FormTextArea
+                  value={form.shortDescription}
+                  onChangeText={(text) => {
+                    form.setShortDescription(text);
+                    // Legacy: también actualizar campos legacy para compatibilidad temporal
+                    form.setWhyItMatters(text);
+                    form.setDescription(text);
+                  }}
+                  placeholder="A brief, evocative description (1-2 lines). e.g. A viewpoint with panoramic city views..."
+                  numberOfLines={2}
+                />
+              </FormField>
+            </>
           )}
 
           {/* Primary Action Button - ocultar en modo edición */}
@@ -907,107 +1191,99 @@ export default function SpotDetailScreen() {
             </>
           )}
 
-          {/* Why it matters section */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={[textStyles.heading3, { color: colors.text, marginBottom: spacing.sm }]}>
-                  Why it matters
-                </Text>
-                {/* SCOPE 7: Botón removido del header */}
-              </View>
+          {/* Why it matters section - editable en modo edición, solo lectura en modo visualización */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[textStyles.heading3, { color: colors.text, marginBottom: spacing.sm }]}>
+                Why it matters
+              </Text>
+            </View>
             {isEditMode ? (
-              <>
-                {/* SCOPE 6.4: Hint discreto si hay campos faltantes */}
+              // En modo edición, mostrar campo editable
+              <FormField label="Why it matters" style={{ marginTop: spacing.sm }}>
+                <FormTextArea
+                  value={form.shortDescription || form.whyItMatters || form.description}
+                  onChangeText={(text) => {
+                    form.setShortDescription(text);
+                    // Legacy: también actualizar campos legacy para compatibilidad temporal
+                    form.setWhyItMatters(text);
+                    form.setDescription(text);
+                  }}
+                  placeholder="A brief, evocative description (1-2 lines). e.g. A viewpoint with panoramic city views..."
+                  numberOfLines={3}
+                />
+              </FormField>
+            ) : (
+              // En modo visualización, mostrar el contenido normal
+              <View>
                 {(() => {
-                  const editorialStatus = spot ? auditSpotEditorial(spot) : null;
-                  const hasMissingFields = editorialStatus && (
-                    editorialStatus.spotDescription === 'missing' ||
-                    editorialStatus.narration.anticipation === 'missing' ||
-                    editorialStatus.narration.presence === 'missing' ||
-                    editorialStatus.narration.transition === 'missing' ||
-                    editorialStatus.howToVisit === 'missing' ||
-                    editorialStatus.planInfo === 'missing'
-                  );
+                  // Prioridad: shortDescription > whyItMatters > description
+                  const displayText = spot.shortDescription || spot.whyItMatters || spot.description;
                   
-                  return hasMissingFields ? (
-                    <View style={[styles.incompleteHint, { backgroundColor: colors.icon + '10' }]}>
-                      <Icon name="info" size={14} color={colors.icon} />
-                      <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
-                        Este spot tiene información incompleta
+                  if (displayText && displayText.trim().length > 0) {
+                    return (
+                      <Text style={[textStyles.body, { color: colors.text }]}>
+                        {displayText}
                       </Text>
-                    </View>
-                  ) : null;
+                    );
+                  }
+                  
+                  // Si no hay texto y es WorldSpot, mostrar mensaje informativo
+                  if (isWorldSpotFlag && __DEV__) {
+                    console.warn(`[SpotDetail] WorldSpot ${spot.id} no tiene shortDescription, whyItMatters ni description`);
+                  }
+                  
+                  return null;
                 })()}
-                
-                {/* SCOPE 7: Botón "Enrich with AI" justo arriba del FormTextArea */}
-                {!form.existingSpot && (
-                  isAIConfigured() ? (
-                    <View style={{ marginBottom: spacing.sm }}>
+                {/* FASE 7: Botón para generar contenido con IA bajo demanda para WorldSpots */}
+                {isWorldSpotFlag && !spot.hasGeneratedContent && (!spot.shortDescription || spot.shortDescription.trim().length === 0) ? (
+                  <View style={{ marginTop: spacing.sm }}>
+                    {isAIConfigured() ? (
                       <AIGenerateButton
-                        onPress={handleGenerateAI}
-                        isGenerating={form.aiState === 'loading'}
+                        onPress={async () => {
+                          if (!spot) return;
+                          try {
+                            // FASE 7: Convertir WorldSpot a UserSpot antes de generar contenido
+                            const userSpot = convertWorldSpotToUserSpot(spot.id);
+                            createSpot(userSpot);
+                            // Generar contenido para el UserSpot convertido
+                            await generateSpotContent(userSpot.id);
+                            setToastMessage('Contenido generado');
+                            setShowToast(true);
+                            // Recargar para mostrar el contenido generado
+                            router.replace(`/spot-detail?id=${userSpot.id}`);
+                          } catch (error) {
+                            console.error('Error generating content:', error);
+                            Alert.alert('Error', 'No se pudo generar contenido. Intenta de nuevo.');
+                          }
+                        }}
+                        isGenerating={false}
                         size="small"
                       />
-                    </View>
-                  ) : (
-                    // SCOPE 0.4: Fail-safe - mostrar que IA no está configurada
-                    <View style={{
-                      backgroundColor: colors.icon + '10',
-                      borderColor: colors.icon + '30',
-                      borderWidth: 1,
-                      borderRadius: 12,
-                      paddingHorizontal: spacing.sm,
-                      paddingVertical: spacing.xs,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      marginBottom: spacing.sm,
-                    }}>
-                      <Icon name="info" size={14} color={colors.icon} />
-                      <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
-                        IA no configurada
-                      </Text>
-                    </View>
-                  )
-                )}
-                <FormTextArea
-                  value={form.whyItMatters || form.description}
-                  onChangeText={(text) => {
-                    form.setWhyItMatters(text);
-                    form.setDescription(text); // Mantener sincronizado por ahora
-                  }}
-                  placeholder="What makes this place special? e.g. A 16th-century temple representing colonial architecture..."
-                  numberOfLines={4}
-                />
-              </>
-            ) : (
-              (spot.whyItMatters || spot.description) && (
-                <Text style={[textStyles.body, { color: colors.text }]}>{spot.whyItMatters || spot.description}</Text>
-              )
+                    ) : (
+                      <View style={{
+                        backgroundColor: colors.icon + '10',
+                        borderColor: colors.icon + '30',
+                        borderWidth: 1,
+                        borderRadius: 12,
+                        paddingHorizontal: spacing.sm,
+                        paddingVertical: spacing.xs,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                      }}>
+                        <Icon name="info" size={14} color={colors.icon} />
+                        <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
+                          IA no configurada
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ) : null}
+              </View>
             )}
           </View>
 
-          {/* Cultural context section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[textStyles.heading3, { color: colors.text }]}>Cultural context</Text>
-              <Icon name="chevron-down" size={20} color={colors.icon} />
-            </View>
-            {isEditMode ? (
-              <FormTextArea
-                value={form.culturalContext}
-                onChangeText={form.setCulturalContext}
-                placeholder="Cultural and historical context. e.g. Built in 1650, this was the center of social life during colonial times..."
-                numberOfLines={4}
-                style={{ marginTop: spacing.sm }}
-              />
-            ) : (
-            spot.culturalContext && (
-            <Text style={[textStyles.body, { color: colors.text, marginTop: spacing.sm }]}>
-              {spot.culturalContext}
-            </Text>
-            )
-            )}
-          </View>
+          {/* FASE 4: Cultural context section ELIMINADO - campos avanzados eliminados */}
 
           {/* Location on map section */}
           <View style={styles.section}>
@@ -1019,9 +1295,15 @@ export default function SpotDetailScreen() {
                 <LocationSelectorWeb
                   location={form.location}
                   onLocationChange={(loc) => {
-                    form.setLocation(loc);
+                    // FASE 4-5: LocationSelectorWeb puede devolver ambos formatos, normalizar a lat/lng
+                    if ('lat' in loc) {
+                      form.setLocation(loc);
+                    } else {
+                      // Convertir de latitude/longitude a lat/lng
+                      form.setLocation({ lat: loc.latitude, lng: loc.longitude });
+                    }
                   }}
-                  userLocation={baseLocation}
+                  userLocation={baseLocation ? { latitude: baseLocation.latitude, longitude: baseLocation.longitude } : null}
                   mapHeight={300}
                 />
               </FormField>
@@ -1048,12 +1330,18 @@ export default function SpotDetailScreen() {
                     ref={mapViewRef}
                     spots={[spot]}
                     onSpotPress={() => {}}
-                    initialRegion={{
-                      latitude: spot.location.latitude,
-                      longitude: spot.location.longitude,
-                      latitudeDelta: 0.01,
-                      longitudeDelta: 0.01,
-                    }}
+                    initialRegion={(() => {
+                      // FASE 4-5: Normalizar location a formato latitude/longitude
+                      const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+                      const lat = loc.lat ?? loc.latitude ?? 0;
+                      const lng = loc.lng ?? loc.longitude ?? 0;
+                      return {
+                        latitude: lat,
+                        longitude: lng,
+                        latitudeDelta: 0.01,
+                        longitudeDelta: 0.01,
+                      };
+                    })()}
                     userLocation={baseLocation}
                     showUserLocation={!!baseLocation}
                     highlightedSpotId={spot.id}
@@ -1115,270 +1403,124 @@ export default function SpotDetailScreen() {
             )}
           </View>
 
-          {/* How to visit section */}
-          <View style={styles.section}>
-            <Text style={[textStyles.heading3, { color: colors.text, marginBottom: spacing.sm }]}>
-              How to visit
-            </Text>
-            {isEditMode ? (
-              <>
-                <View style={styles.howToVisitEditCard}>
-                  <Pressable
-                    onPress={() => setShowIconSelector({ field: '1' })}
-                    style={({ pressed }) => [
-                      styles.iconSelectorButton, 
-                      { 
-                        backgroundColor: colors.icon + '10', 
-                        borderColor: colors.icon + '30',
-                        opacity: pressed ? 0.7 : 1,
-                      }
-                    ]}>
-                    <Icon name={getHowToVisitBestTimeIcon()} size={24} color={colors.tint} />
-                  </Pressable>
-                  <FormTextArea
-                    value={getHowToVisitBestTime()}
-                    onChangeText={(text) => setHowToVisitBestTime(text)}
-                    placeholder="First tip (e.g., Visit early morning...)"
-                    numberOfLines={2}
-                    style={{ flex: 1, marginLeft: spacing.sm }}
-                  />
-                </View>
-                <View style={[styles.howToVisitEditCard, { marginTop: spacing.sm }]}>
-                  <Pressable
-                    onPress={() => setShowIconSelector({ field: '2' })}
-                    style={({ pressed }) => [
-                      styles.iconSelectorButton, 
-                      { 
-                        backgroundColor: colors.icon + '10', 
-                        borderColor: colors.icon + '30',
-                        opacity: pressed ? 0.7 : 1,
-                      }
-                    ]}>
-                    <Icon name={getHowToVisitPhotographyIcon()} size={24} color={colors.tint} />
-                  </Pressable>
-                  <FormTextArea
-                    value={getHowToVisitPhotography()}
-                    onChangeText={(text) => setHowToVisitPhotography(text)}
-                    placeholder="Second tip (e.g., Allowed everywhere...)"
-                    numberOfLines={2}
-                    style={{ flex: 1, marginLeft: spacing.sm }}
-                  />
-                </View>
-              </>
-            ) : (
-              <>
-            {(isEditMode ? form.howToVisit : spot.howToVisit)?.bestTime && (
-              <View style={[styles.howToVisitCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
-                <Icon name={(isEditMode ? form.howToVisit : spot.howToVisit)?.bestTime?.icon as any} size={24} color={colors.tint} />
-                <Text style={[textStyles.body, { color: colors.text, marginLeft: spacing.sm, flex: 1 }]}>
-                  {(isEditMode ? form.howToVisit : spot.howToVisit)?.bestTime?.text}
-                </Text>
-              </View>
-            )}
-            {(isEditMode ? form.howToVisit : spot.howToVisit)?.photography && (
-              <View style={[styles.howToVisitCard, { marginTop: spacing.sm, backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
-                <Icon name={(isEditMode ? form.howToVisit : spot.howToVisit)?.photography?.icon as any} size={24} color={colors.tint} />
-                <Text style={[textStyles.body, { color: colors.text, marginLeft: spacing.sm, flex: 1 }]}>
-                  {(isEditMode ? form.howToVisit : spot.howToVisit)?.photography?.text}
-                </Text>
-              </View>
-            )}
-              </>
-            )}
-          </View>
+          {/* FASE 4: How to visit section ELIMINADO - campos avanzados eliminados */}
 
-          {/* Plan info section */}
-          <View style={styles.section}>
-            <Text style={[textStyles.heading3, { color: colors.text, marginBottom: spacing.sm }]}>
-              Plan info
-            </Text>
-            {isEditMode ? (
-              <View style={styles.planInfoEditContainer}>
-                <View style={styles.planInfoEditRow}>
-                  <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Hours</Text>
-                  <View style={styles.hoursEditContainer}>
-                    {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const).map((day) => {
-                      const dayLabel = day.charAt(0).toUpperCase() + day.slice(1);
-                      return (
-                        <View key={day} style={styles.hoursEditRow}>
-                          <Text style={[textStyles.caption, { color: colors.text, width: 80, flexShrink: 0 }]}>{dayLabel}</Text>
-                          <FormTextInput
-                            value={form.hours?.[day] || ''}
-                            onChangeText={(text) => {
-                              const currentHours = form.hours || {};
-                              const updated: SpotHours = { ...currentHours };
-                              if (text.trim()) {
-                                updated[day] = text.trim();
-                              } else {
-                                delete updated[day];
-                              }
-                              form.setHours(Object.keys(updated).length > 0 ? updated : undefined);
-                            }}
-                            placeholder="8:00 - 20:00"
-                            style={{ flex: 1 }}
-                          />
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
-                <View style={styles.planInfoEditRow}>
-                  <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Restrictions & Accessibility</Text>
-                  <View style={styles.planInfoIconsEditContainer}>
-                    <View style={styles.planInfoIconTextEditContainer}>
-                      <Pressable
-                        onPress={() => setShowIconSelector({ field: 'restrictions' })}
-                        style={({ pressed }) => [
-                          styles.planInfoIconEditButton, 
-                          { 
-                            backgroundColor: colors.icon + '10', 
-                            borderColor: colors.icon + '30',
-                            opacity: pressed ? 0.7 : 1,
-                          }
-                        ]}>
-                        <Icon name={editPlanInfoIconRestrictions} size={24} color={colors.tint} />
-                      </Pressable>
-                      <FormTextInput
-                        value={form.restrictions}
-                        onChangeText={form.setRestrictions}
-                        placeholder="Restrictions (e.g., No pets)"
-                        style={{ flex: 1, marginLeft: spacing.sm }}
-                      />
-                    </View>
-                    <View style={[styles.planInfoIconTextEditContainer, { marginTop: spacing.sm }]}>
-                      <Pressable
-                        onPress={() => setShowIconSelector({ field: 'accessibility' })}
-                        style={({ pressed }) => [
-                          styles.planInfoIconEditButton, 
-                          { 
-                            backgroundColor: colors.icon + '10', 
-                            borderColor: colors.icon + '30',
-                            opacity: pressed ? 0.7 : 1,
-                          }
-                        ]}>
-                        <Icon name={editPlanInfoIconAccessibility} size={24} color={colors.tint} />
-                      </Pressable>
-                      <FormTextInput
-                        value={form.accessibility}
-                        onChangeText={form.setAccessibility}
-                        placeholder="Accessibility (e.g., Wheelchair accessible)"
-                        style={{ flex: 1, marginLeft: spacing.sm }}
-                      />
-                    </View>
-                  </View>
-                </View>
-                {/* SCOPE 4: Campo planInfo editable (información experiencial generada por IA) */}
-                {form.planInfo && (
-                  <View style={styles.planInfoEditRow}>
-                    <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Plan Info</Text>
-                    <FormTextArea
-                      value={form.planInfo}
-                      onChangeText={form.setPlanInfo}
-                      placeholder="Experiential information (best time of day, how it fits in a Flow)..."
-                      numberOfLines={3}
-                      style={{ marginTop: spacing.xs }}
-                    />
-                  </View>
-                )}
-                <View style={styles.planInfoEditRow}>
-                  <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Cost</Text>
-                  <View style={styles.costEditRow}>
-                    <FormTextInput
-                      value={form.cost?.amount?.toString() || ''}
-                      onChangeText={(text) => {
-                        const num = parseFloat(text);
-                        form.setCost({
-                          currency: form.cost?.currency || 'USD',
-                          amount: isNaN(num) ? 0 : num,
-                          description: form.cost?.description,
-                        });
-                      }}
-                      placeholder="Amount"
-                      keyboardType="numeric"
-                      style={{ flex: 1 }}
-                    />
-                    <FormTextInput
-                      value={form.cost?.currency || ''}
-                      onChangeText={(text) => {
-                        form.setCost({
-                          currency: text || 'USD',
-                          amount: form.cost?.amount || 0,
-                          description: form.cost?.description,
-                        });
-                      }}
-                      placeholder="Currency"
-                      style={{ width: 80, marginLeft: spacing.sm }}
-                    />
-                  </View>
-                  <FormTextInput
-                    value={form.cost?.description || ''}
-                    onChangeText={(text) => {
-                      form.setCost({
-                        currency: form.cost?.currency || 'USD',
-                        amount: form.cost?.amount || 0,
-                        description: text || undefined,
-                      });
-                    }}
-                    placeholder="Description (optional)"
-                    style={{ marginTop: spacing.sm }}
-                  />
-                </View>
-              </View>
-            ) : (
-            <>
-            {/* SCOPE 4: Mostrar planInfo si existe (solo texto, no en grid) */}
-            {spot.planInfo && (
-              <View style={[styles.section, { marginBottom: spacing.md }]}>
-                <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>Plan Info</Text>
-                <Text style={[textStyles.body, { color: colors.text }]}>
-                  {spot.planInfo}
-                </Text>
-              </View>
-            )}
-            <View style={styles.planInfoGrid}>
-              {hoursText && (
-                <View style={[styles.planInfoCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
-                  <Icon name="clock" size={24} color={colors.icon} />
-                  <View style={styles.infoCardContent}>
-                    <Text style={[textStyles.label, { color: colors.text }]}>HOURS</Text>
-                    <Text style={[textStyles.body, { color: colors.text }]}>{hoursText}</Text>
-                    <Text style={[textStyles.caption, { color: colors.tint, marginTop: spacing.xs / 2 }]}>
-                      Open now
+          {/* FASE 4: Plan info section ELIMINADO - campos avanzados eliminados (hours, cost, restrictions, accessibility, planInfo) */}
+
+          {/* V1.2: Personal Notes Section (solo si Pin existe) */}
+          {isPinned && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={[textStyles.heading3, { color: colors.text }]}>Personal Notes</Text>
+                {!isEditingNotes && (
+                  <Pressable
+                    onPress={handleStartEditingNotes}
+                    style={({ pressed }) => [
+                      styles.editButton,
+                      pressed && { opacity: 0.7 },
+                    ]}>
+                    <Icon name={personalNotes ? 'edit' : 'add'} size={18} color={colors.tint} />
+                    <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs / 2 }]}>
+                      {personalNotes ? 'Edit' : 'Add Notes'}
                     </Text>
+                  </Pressable>
+                )}
+              </View>
+              
+              {isEditingNotes ? (
+                <View style={{ marginTop: spacing.sm }}>
+                  <FormTextArea
+                    value={notesText}
+                    onChangeText={setNotesText}
+                    placeholder="Add your personal notes about this place..."
+                    numberOfLines={6}
+                    style={{ marginBottom: spacing.sm }}
+                  />
+                  <View style={styles.notesActions}>
+                    <Pressable
+                      onPress={handleCancelEditingNotes}
+                      style={({ pressed }) => [
+                        styles.notesActionButton,
+                        styles.notesCancelButton,
+                        {
+                          backgroundColor: colors.icon + '20',
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}>
+                      <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={handleSaveNotes}
+                      style={({ pressed }) => [
+                        styles.notesActionButton,
+                        styles.notesSaveButton,
+                        {
+                          backgroundColor: colors.tint,
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}>
+                      <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save</Text>
+                    </Pressable>
                   </View>
                 </View>
-              )}
-              {costText && (
-                <View style={[styles.planInfoCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
-                  <Icon name="money" size={24} color={colors.icon} />
-                  <View style={styles.infoCardContent}>
-                    <Text style={[textStyles.label, { color: colors.text }]}>COST</Text>
-                    <Text style={[textStyles.body, { color: colors.text }]}>{costText}</Text>
-                  </View>
-                </View>
-              )}
-              <View style={[styles.planInfoCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
-                <Icon name={editPlanInfoIconRestrictions} size={24} color={colors.icon} />
-                <View style={styles.infoCardContent}>
-                  <Text style={[textStyles.label, { color: colors.text }]}>RESTRICTIONS</Text>
-                  <Text style={[textStyles.body, { color: colors.text }]}>
-                    {spot.restrictions || 'No pets'}
+              ) : (
+                personalNotes ? (
+                  <Text style={[textStyles.body, { color: colors.text, marginTop: spacing.sm }]}>
+                    {personalNotes}
                   </Text>
-                </View>
-              </View>
-              <View style={[styles.planInfoCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)' }]}>
-                <Icon name={editPlanInfoIconAccessibility} size={24} color={colors.icon} />
-                <View style={styles.infoCardContent}>
-                  <Text style={[textStyles.label, { color: colors.text }]}>ACCESSIBILITY</Text>
-                  <Text style={[textStyles.body, { color: colors.text }]}>
-                    {spot.accessibility || 'Unknown'}
-                  </Text>
-                </View>
-              </View>
+                ) : null
+              )}
             </View>
-            </>
-            )}
-          </View>
+          )}
+
+          {/* V1.2: Personal Photos Section (solo si Pin existe) */}
+          {isPinned && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={[textStyles.heading3, { color: colors.text }]}>Personal Photos</Text>
+                <Pressable
+                  onPress={handleAddPhoto}
+                  style={({ pressed }) => [
+                    styles.editButton,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  disabled={imageUploadHook.isOptimizing}>
+                  {imageUploadHook.isOptimizing ? (
+                    <ActivityIndicator size="small" color={colors.tint} />
+                  ) : (
+                    <>
+                      <Icon name="camera" size={18} color={colors.tint} />
+                      <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs / 2 }]}>
+                        Add Photo
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+              
+              {personalPhotos.length > 0 ? (
+                <View style={styles.photosGrid}>
+                  {personalPhotos.map((photoUrl, index) => (
+                    <View key={`${photoUrl}-${index}`} style={styles.photoItem}>
+                      <Image source={{ uri: photoUrl }} style={styles.photoThumbnail} resizeMode="cover" />
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.photoRemoveButton,
+                          pressed && { opacity: 0.7 },
+                        ]}
+                        onPress={() => handleRemovePhoto(photoUrl)}>
+                        <Icon name="close" size={16} color={colors.background} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, fontStyle: 'italic' }]}>
+                  No photos yet. Add your personal photos from this visit.
+                </Text>
+              )}
+            </View>
+          )}
 
           {/* Bottom padding */}
           <View style={{ height: spacing['2xl'] }} />
@@ -1450,7 +1592,8 @@ export default function SpotDetailScreen() {
               </Text>
             </Pressable>
             {/* Visible para el creador del spot o administrador */}
-            {spot && user && canDeleteSpot(spot, user) && (
+            {/* FASE 7: No permitir eliminación de WorldSpots */}
+            {spot && user && !isWorldSpotFlag && canDeleteSpot(spot, user) && (
               <Pressable
                 style={({ pressed }) => [
                   styles.menuItem,
@@ -1517,27 +1660,13 @@ export default function SpotDetailScreen() {
       </Modal>
 
       {/* Icon Selector Modal - Using canonical component */}
-      <FormIconSelector
-        selectedIcon={
-          showIconSelector?.field === '1' ? getHowToVisitBestTimeIcon() :
-          showIconSelector?.field === '2' ? getHowToVisitPhotographyIcon() :
-          showIconSelector?.field === 'restrictions' ? editPlanInfoIconRestrictions :
-          showIconSelector?.field === 'accessibility' ? editPlanInfoIconAccessibility :
-          'sun'
-        }
-        onSelectIcon={(iconName) => {
-          if (showIconSelector?.field === '1') {
-            setHowToVisitBestTimeIcon(iconName);
-          } else if (showIconSelector?.field === '2') {
-            setHowToVisitPhotographyIcon(iconName);
-          } else if (showIconSelector?.field === 'restrictions') {
-            setEditPlanInfoIconRestrictions(iconName);
-          } else if (showIconSelector?.field === 'accessibility') {
-            setEditPlanInfoIconAccessibility(iconName);
-          }
-        }}
-        visible={showIconSelector !== null}
-        onClose={() => setShowIconSelector(null)}
+      {/* FASE 4: FormIconSelector eliminado - campos avanzados eliminados */}
+      
+      {/* Pin State Modal - Primera vez */}
+      <PinStateModal
+        visible={showPinModal}
+        onSelect={handlePinStateSelect}
+        onCancel={() => setShowPinModal(false)}
       />
       
       {/* Toast notification */}
@@ -1609,6 +1738,7 @@ export default function SpotDetailScreen() {
           </GlassView>
         </Pressable>
       </Modal>
+
     </View>
   );
 }
@@ -1672,6 +1802,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    paddingBottom: spacing['2xl'],
   },
   contentSection: {
     paddingTop: spacing.md,
@@ -1980,6 +2111,58 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     paddingBottom: spacing.md,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  notesActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+  },
+  notesActionButton: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  notesCancelButton: {
+    // Estilo manejado dinámicamente
+  },
+  notesSaveButton: {
+    // Estilo manejado dinámicamente
+  },
+  photosGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  photoItem: {
+    position: 'relative',
+    width: (SCREEN_WIDTH - spacing.md * 2 - spacing.sm * 2) / 3,
+    aspectRatio: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  photoThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  photoRemoveButton: {
+    position: 'absolute',
+    top: spacing.xs,
+    right: spacing.xs,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   imagesGrid: {
     flexDirection: 'row',

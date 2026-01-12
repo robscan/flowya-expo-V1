@@ -41,10 +41,13 @@ export function normalizeSpotName(name: string): string {
  * - Nombre debe coincidir después de normalización
  * - Ubicación debe estar dentro de 30 metros
  */
+/**
+ * FASE 4-5: Actualizado para aceptar ambos formatos de location (lat/lng y latitude/longitude)
+ */
 export function findExistingSpot(
   spots: Spot[],
   name: string | undefined,
-  location: { latitude: number; longitude: number }
+  location: { lat: number; lng: number } | { latitude: number; longitude: number }
 ): Spot | null {
   // SCOPE 1: Si no hay nombre, no detectar (según requerimientos)
   if (!name || name.trim().length === 0) {
@@ -52,6 +55,10 @@ export function findExistingSpot(
   }
 
   const normalizedName = normalizeSpotName(name);
+  
+  // FASE 4-5: Normalizar location a lat/lng
+  const locationLat = 'lat' in location ? location.lat : location.latitude;
+  const locationLng = 'lng' in location ? location.lng : location.longitude;
 
   // Buscar spots con nombre normalizado coincidente
   for (const spot of spots) {
@@ -64,12 +71,16 @@ export function findExistingSpot(
     
     // Si los nombres normalizados coinciden
     if (spotNormalizedName === normalizedName) {
+      // FASE 4-5: Normalizar location del spot a lat/lng
+      const spotLat = 'lat' in spot.location ? spot.location.lat : spot.location.latitude;
+      const spotLng = 'lng' in spot.location ? spot.location.lng : spot.location.longitude;
+      
       // Verificar distancia (≤ 30 metros)
       const distance = calculateDistance(
-        location.latitude,
-        location.longitude,
-        spot.location.latitude,
-        spot.location.longitude
+        locationLat,
+        locationLng,
+        spotLat,
+        spotLng
       );
 
       if (distance <= DETECTION_RADIUS_METERS) {

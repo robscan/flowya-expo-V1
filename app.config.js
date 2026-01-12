@@ -56,12 +56,12 @@ module.exports = {
     },
     // CRÍTICO: Inyectar variables de entorno en extra para builds estáticos
     // Estas variables estarán disponibles en Constants.expoConfig.extra en runtime
-    // SCOPE 0: OpenAI API Key - usar null si no existe para distinguir de cadena vacía
+    // SCOPE 0: OpenAI API Key - usar null si no existe o está vacía para distinguir de cadena vacía
     extra: {
       EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
       EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
       EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
-      EXPO_PUBLIC_OPENAI_API_KEY: process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? null,
+      EXPO_PUBLIC_OPENAI_API_KEY: (process.env.EXPO_PUBLIC_OPENAI_API_KEY && process.env.EXPO_PUBLIC_OPENAI_API_KEY.trim()) || null,
     },
   },
 };

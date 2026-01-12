@@ -19,19 +19,19 @@ import {
 import { AIContentPreview } from '@/components/ui/AIContentPreview';
 import { FormField } from '@/components/ui/FormField';
 import { FormImagePicker } from '@/components/ui/FormImagePicker';
-import { LocationSelectorWeb } from '@/components/ui/LocationSelectorWeb';
 import { FormTextArea } from '@/components/ui/FormTextArea';
 import { FormTextInput } from '@/components/ui/FormTextInput';
 import { FormTypeSelector } from '@/components/ui/FormTypeSelector';
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
+import { LocationSelectorWeb } from '@/components/ui/LocationSelectorWeb';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotForm } from '@/hooks/useSpotForm';
 import { isAIConfigured } from '@/utils/aiConfig';
 
@@ -47,8 +47,8 @@ export default function CreateSpotScreen() {
   const { baseLocation } = useBaseLocation();
   
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const [showAdvancedFields, setShowAdvancedFields] = useState(false);
-  const [showAIPreview, setShowAIPreview] = useState(false);
+  // FASE 4: showAdvancedFields eliminado - campos avanzados eliminados
+  // FASE 2: showAIPreview eliminado - IA desactivada en creación
 
   // Hook de gestión de estado del formulario
   const form = useSpotForm({
@@ -80,68 +80,43 @@ export default function CreateSpotScreen() {
     form.handleSave();
   };
 
-  // Initialize location from query params or base location
+  // FASE 4-5: Initialize location from query params or base location (formato nuevo)
   useEffect(() => {
     // Initialize current location from params or base location
     if (params.lat && params.lng) {
+      // FASE 4: Usar formato nuevo (lat/lng)
       form.setLocation({
-        latitude: parseFloat(params.lat),
-        longitude: parseFloat(params.lng),
+        lat: parseFloat(params.lat),
+        lng: parseFloat(params.lng),
       });
     } else if (baseLocation) {
-      form.setLocation(baseLocation);
+      // FASE 4: Convertir baseLocation a formato nuevo
+      form.setLocation({
+        lat: baseLocation.latitude,
+        lng: baseLocation.longitude,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.lat, params.lng, baseLocation]);
 
-  // Handle generate AI content
-  const handleGenerateAI = async () => {
-    // Validar que haya ubicación antes de generar (requerido por AI)
-    if (!form.location) {
-      // Podríamos mostrar un mensaje aquí, pero el botón no debería estar visible sin ubicación
-      // Esta validación es defensiva
-      return;
-    }
-    const generatedContent = await form.generateContent();
-    if (generatedContent) {
-      setShowAIPreview(true);
-    }
-  };
+  // FASE 2: Generación de IA desactivada en creación de Spot
+  // La IA solo se usa bajo demanda en Spot Detail (lazy generation)
+  // NO se ejecuta durante la creación de un Spot
+  // 
+  // handleGenerateAI - COMENTADO: Generación IA eliminada de creación
+  // const handleGenerateAI = async () => {
+  //   // FASE 2: NO generar contenido IA durante creación
+  //   // La generación de IA se hace solo bajo demanda en Spot Detail
+  // };
 
-  // Handle accept AI content
-  const handleAcceptAIContent = () => {
-    if (form.previewContent) {
-      // SCOPE 2: Aceptar todos los campos generados por IA
-      if (form.previewContent.spotDescription && !form.spotDescription) {
-        form.setSpotDescription(form.previewContent.spotDescription);
-        form.setDescription(form.previewContent.spotDescription);
-        form.setWhyItMatters(form.previewContent.whyItMatters || form.previewContent.spotDescription);
-      }
-      if (form.previewContent.whyItMatters && !form.whyItMatters) {
-        form.setWhyItMatters(form.previewContent.whyItMatters);
-        form.setDescription(form.previewContent.whyItMatters);
-      }
-      if (form.previewContent.planInfo && !form.planInfo) {
-        form.setPlanInfo(form.previewContent.planInfo);
-      }
-      if (form.previewContent.culturalContext && !form.culturalContext) {
-        form.setCulturalContext(form.previewContent.culturalContext);
-      }
-      if (form.previewContent.howToVisit && !form.howToVisit) {
-        form.setHowToVisit(form.previewContent.howToVisit);
-      }
-      // Narration se guarda automáticamente cuando se genera (no visible en UI)
-      // Ya se guardó en generateContent, no necesita acción adicional aquí
-    }
-    setShowAIPreview(false);
-    form.setPreviewContent(null);
-  };
-
-  // Handle reject AI content
-  const handleRejectAIContent = () => {
-    setShowAIPreview(false);
-    form.setPreviewContent(null);
-  };
+  // FASE 2: Handlers de IA desactivados en creación de Spot
+  // La IA solo se usa bajo demanda en Spot Detail (lazy generation)
+  // 
+  // handleAcceptAIContent - COMENTADO: Preview de IA eliminado de creación
+  // const handleAcceptAIContent = () => { ... };
+  // 
+  // handleRejectAIContent - COMENTADO: Preview de IA eliminado de creación
+  // const handleRejectAIContent = () => { ... };
 
   // Verificar autenticación - mostrar CTA si no está autenticado
   if (!authLoading && !isAuthenticated) {
@@ -291,7 +266,13 @@ export default function CreateSpotScreen() {
             <LocationSelectorWeb
               location={form.location}
               onLocationChange={(loc) => {
-                form.setLocation(loc);
+                // FASE 4-5: LocationSelectorWeb puede devolver ambos formatos, normalizar a lat/lng
+                if ('lat' in loc) {
+                  form.setLocation(loc);
+                } else {
+                  // Convertir de latitude/longitude a lat/lng
+                  form.setLocation({ lat: loc.latitude, lng: loc.longitude });
+                }
               }}
               onCommercialNameChange={(commercialName) => {
                 // CANONICAL: Solo poblar Name si existe nombre comercial (NO direcciones)
@@ -318,59 +299,49 @@ export default function CreateSpotScreen() {
             />
           </FormField>
 
-          <FormField label="Photo" required error={form.errors.photo}>
+          {/* FASE 5: Photo field (imagen única) */}
+          <FormField label="Image" required error={form.errors.photo}>
             <FormImagePicker
-              initialUri={form.photos.length > 0 ? form.photos[0] : null}
-              onPickImage={form.addImage}
-              onImageRemoved={() => form.removeImage(0)}
+              initialUri={form.image?.url || null}
+              onPickImage={form.pickImage}
+              onImageRemoved={() => form.removeImage()}
               height={200}
             />
           </FormField>
 
-          {/* SCOPE 7: Botón "Enrich with AI" justo arriba del campo Description */}
-          {!form.existingSpot && (
-            isAIConfigured() ? (
-              <TouchableOpacity
-                style={[
-                  styles.aiButtonInline, 
-                  { 
-                    backgroundColor: colors.tint + '15', 
-                    borderColor: colors.tint + '40',
-                    opacity: form.location ? 1 : 0.5,
-                    marginBottom: spacing.sm,
-                  }
-                ]}
-                onPress={handleGenerateAI}
-                disabled={form.aiState === 'loading' || !form.location}
-                activeOpacity={0.7}>
-                {form.aiState === 'loading' ? (
-                  <ActivityIndicator size="small" color={colors.tint} />
-                ) : (
-                  <>
-                    <Icon name="star" size={16} color={colors.tint} />
-                    <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
-                      Enrich with AI
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            ) : (
-              // SCOPE 0.4: Fail-safe - mostrar que IA no está configurada
-              <View style={[styles.aiButtonInline, { backgroundColor: colors.icon + '10', borderColor: colors.icon + '30', opacity: 0.6, marginBottom: spacing.sm }]}>
-                <Icon name="info" size={16} color={colors.icon} />
-                <Text style={[textStyles.bodyMedium, { color: colors.icon, marginLeft: spacing.xs }]}>
-                  IA no configurada
-                </Text>
-              </View>
-            )
+          {/* FASE 2: Botón "Enrich with AI" DESACTIVADO
+           * La generación de IA NO se ejecuta durante la creación de un Spot.
+           * La IA solo se usa bajo demanda cuando el usuario abre el detalle de un Spot sin contenido.
+           * 
+           * TODO: Eliminar completamente en Fase 4 cuando se refactorice UI
+           */}
+          {false && !form.existingSpot && isAIConfigured() && (
+            <TouchableOpacity
+              style={[
+                styles.aiButtonInline, 
+                { 
+                  backgroundColor: colors.icon + '10', 
+                  borderColor: colors.icon + '30',
+                  opacity: 0.5,
+                  marginBottom: spacing.sm,
+                }
+              ]}
+              disabled={true}
+              activeOpacity={0.7}>
+              <Icon name="info" size={16} color={colors.icon} />
+              <Text style={[textStyles.bodyMedium, { color: colors.icon, marginLeft: spacing.xs }]}>
+                AI disabled in creation
+              </Text>
+            </TouchableOpacity>
           )}
 
-          <FormField label="Description">
+          {/* FASE 4: Short Description field */}
+          <FormField label="Short Description">
             <FormTextArea
-              value={form.description}
-              onChangeText={form.setDescription}
-              placeholder="Brief description. e.g. A viewpoint with panoramic city views..."
-              numberOfLines={3}
+              value={form.shortDescription}
+              onChangeText={form.setShortDescription}
+              placeholder="A brief, evocative description (1-2 lines). e.g. A viewpoint with panoramic city views..."
+              numberOfLines={2}
             />
           </FormField>
 
@@ -382,50 +353,7 @@ export default function CreateSpotScreen() {
           </FormField>
         </View>
 
-        {/* Progressive Disclosure: Advanced Fields */}
-        {!showAdvancedFields && (
-          <TouchableOpacity
-            style={styles.showAdvancedButton}
-            onPress={() => setShowAdvancedFields(true)}
-            activeOpacity={0.7}>
-            <Text style={[textStyles.bodyMedium, { color: colors.tint }]}>
-              Show advanced fields
-            </Text>
-            <Icon name="chevron-down" size={20} color={colors.tint} />
-          </TouchableOpacity>
-        )}
-
-        {showAdvancedFields && (
-          <View style={styles.section}>
-            <TouchableOpacity
-              style={styles.hideAdvancedButton}
-              onPress={() => setShowAdvancedFields(false)}
-              activeOpacity={0.7}>
-              <Text style={[textStyles.bodyMedium, { color: colors.icon }]}>
-                Hide advanced fields
-              </Text>
-              <Icon name="minus" size={20} color={colors.icon} />
-            </TouchableOpacity>
-
-            <FormField label="Why it matters">
-              <FormTextArea
-                value={form.whyItMatters}
-                onChangeText={form.setWhyItMatters}
-                placeholder="What makes this place special?"
-                numberOfLines={4}
-              />
-            </FormField>
-
-            <FormField label="Cultural context">
-              <FormTextArea
-                value={form.culturalContext}
-                onChangeText={form.setCulturalContext}
-                placeholder="Cultural and historical context..."
-                numberOfLines={4}
-              />
-            </FormField>
-          </View>
-        )}
+        {/* FASE 4: Advanced Fields ELIMINADOS - campos avanzados eliminados (whyItMatters, culturalContext, planInfo, hours, cost, restrictions, accessibility, howToVisit) */}
       </ScrollView>
 
       {/* Actions */}
@@ -459,17 +387,19 @@ export default function CreateSpotScreen() {
         </View>
       )}
 
-      {/* AI Content Preview */}
-      {form.previewContent && (
+      {/* FASE 2: AI Content Preview DESACTIVADO
+       * La generación de IA NO se ejecuta durante la creación de un Spot.
+       * El preview de IA solo se usa en Spot Detail (lazy generation).
+       * 
+       * TODO: Eliminar completamente en Fase 4 cuando se refactorice UI
+       */}
+      {false && form.previewContent && (
         <AIContentPreview
-          content={form.previewContent}
-          visible={showAIPreview}
-          onAccept={handleAcceptAIContent}
-          onReject={handleRejectAIContent}
-          onEdit={() => {
-            handleAcceptAIContent();
-            setShowAdvancedFields(true);
-          }}
+          content={form.previewContent || { shortDescription: '' }}
+          visible={false}
+          onAccept={() => {}}
+          onReject={() => {}}
+          onEdit={() => {}}
           title="Generated Content"
         />
       )}

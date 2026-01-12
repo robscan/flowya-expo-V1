@@ -28,19 +28,23 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMapboxSearchBoxScript } from '@/hooks/useMapboxSearchBoxScript';
 import { MAPBOX_ACCESS_TOKEN } from '@/utils/mapsConfig';
 import { reverseGeocodeMapbox } from '@/utils/mapboxGeocoding';
+import { sanitizeSearchValue, isValidSearchQuery } from '@/utils/mapboxSearchBoxHelpers';
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
 import { MapControls } from '@/components/ui/MapControls';
 
+/**
+ * FASE 4-5: LocationSelectorWeb actualizado para aceptar ambos formatos (lat/lng y latitude/longitude)
+ */
 export interface LocationSelectorWebProps {
-  /** Ubicación actual */
-  location: { latitude: number; longitude: number } | null;
-  /** Callback cuando cambia la ubicación */
-  onLocationChange: (location: { latitude: number; longitude: number }) => void;
+  /** Ubicación actual (compatible con ambos formatos) */
+  location: { lat: number; lng: number } | { latitude: number; longitude: number } | null;
+  /** Callback cuando cambia la ubicación (compatible con ambos formatos) */
+  onLocationChange: (location: { lat: number; lng: number } | { latitude: number; longitude: number }) => void;
   /** Callback cuando hay un nombre comercial disponible (solo POI, NO direcciones) */
   onCommercialNameChange?: (commercialName: string | null) => void;
-  /** Ubicación del usuario (opcional) */
-  userLocation?: { latitude: number; longitude: number } | null;
+  /** Ubicación del usuario (opcional, compatible con ambos formatos) */
+  userLocation?: { lat: number; lng: number } | { latitude: number; longitude: number } | null;
   /** Si está deshabilitado */
   disabled?: boolean;
   /** Altura del mapa (default: 200) */
@@ -49,9 +53,43 @@ export interface LocationSelectorWebProps {
   style?: any;
 }
 
+/**
+ * FASE 4-5: LocationState actualizado para usar formato interno (latitude/longitude)
+ * pero aceptar ambos formatos en props
+ */
 interface LocationState {
   coordinates: { latitude: number; longitude: number } | null;
   address: string | null;
+}
+
+/**
+ * FASE 4-5: Helper para normalizar location a formato interno
+ */
+function normalizeLocationToInternal(
+  location: { lat: number; lng: number } | { latitude: number; longitude: number } | null
+): { latitude: number; longitude: number } | null {
+  if (!location) return null;
+  
+  if ('lat' in location && 'lng' in location) {
+    return { latitude: location.lat, longitude: location.lng };
+  } else if ('latitude' in location && 'longitude' in location) {
+    return location;
+  }
+  return null;
+}
+
+/**
+ * FASE 4-5: Helper para normalizar location a formato de salida (mantener formato de entrada)
+ */
+function normalizeLocationToOutput(
+  location: { latitude: number; longitude: number },
+  inputFormat: { lat: number; lng: number } | { latitude: number; longitude: number } | null
+): { lat: number; lng: number } | { latitude: number; longitude: number } {
+  // Si el input era lat/lng, devolver lat/lng; sino devolver latitude/longitude
+  if (inputFormat && 'lat' in inputFormat) {
+    return { lat: location.latitude, lng: location.longitude };
+  }
+  return location;
 }
 
 interface Region {
@@ -81,10 +119,16 @@ export function LocationSelectorWeb({
   // ESTADO ÚNICO
   // ============================================================================
 
+  // FASE 4-5: Normalizar locationProp a formato interno
+  const normalizedLocationProp = normalizeLocationToInternal(locationProp);
+  
   const [locationState, setLocationState] = useState<LocationState>({
-    coordinates: locationProp,
+    coordinates: normalizedLocationProp,
     address: null,
   });
+  
+  // Guardar formato original para mantenerlo en onLocationChange
+  const originalLocationFormatRef = useRef(locationProp);
 
   // ============================================================================
   // MAPBOX SEARCH BOX (WEB ONLY) - Rollback a componente anterior
@@ -104,15 +148,19 @@ export function LocationSelectorWeb({
   // SINCRONIZACIÓN CON PROPS EXTERNOS
   // ============================================================================
 
+  // FASE 4-5: Actualizar cuando cambia locationProp (compatible con ambos formatos)
   useEffect(() => {
-    if (locationProp) {
+    const normalized = normalizeLocationToInternal(locationProp);
+    originalLocationFormatRef.current = locationProp;
+    
+    if (normalized) {
       setLocationState((prev) => {
         if (
-          prev.coordinates?.latitude !== locationProp.latitude ||
-          prev.coordinates?.longitude !== locationProp.longitude
+          prev.coordinates?.latitude !== normalized.latitude ||
+          prev.coordinates?.longitude !== normalized.longitude
         ) {
           return {
-            coordinates: locationProp,
+            coordinates: normalized,
             address: prev.address, // Mantener address si existe
           };
         }
@@ -150,11 +198,25 @@ export function LocationSelectorWeb({
 
   /**
    * Establece el valor en el Mapbox Search Box y cierra el dropdown
+   * Previene errores 400 validando que el valor no sea coordenadas
    */
   const setSearchBoxValue = useCallback((value: string, closeDropdown = true) => {
     if (!searchBoxElementRef.current || !value) {
       return;
     }
+
+    // Validar que el valor no sea coordenadas antes de establecerlo
+    const sanitized = sanitizeSearchValue(value);
+    if (!sanitized) {
+      // Si el valor es coordenadas, no establecerlo (previene error 400)
+      if (__DEV__) {
+        console.warn('[LocationSelectorWeb] Skipped setting coordinates as search value:', value);
+      }
+      return;
+    }
+
+    // Guardar el valor sanitizado para usarlo en todos los setTimeout
+    const valueToSet = sanitized;
 
     setTimeout(() => {
       if (!searchBoxElementRef.current) {
@@ -166,16 +228,16 @@ export function LocationSelectorWeb({
         
         // Establecer atributo value en el componente web (algunos web components lo requieren)
         if (searchBox.hasAttribute) {
-          searchBox.setAttribute('value', value);
+          searchBox.setAttribute('value', valueToSet);
         }
         // También establecer como propiedad
         if (searchBox.value !== undefined) {
-          searchBox.value = value;
+          searchBox.value = valueToSet;
         }
         
         // Intentar método público si existe
         if (typeof searchBox.setValue === 'function') {
-          searchBox.setValue(value);
+          searchBox.setValue(valueToSet);
           if (closeDropdown && typeof searchBox.blur === 'function') {
             searchBox.blur();
           }
@@ -185,12 +247,12 @@ export function LocationSelectorWeb({
           const input = searchBox.shadowRoot.querySelector('input[type="text"], input[type="search"]');
           if (input) {
             // Primero establecer el atributo value en el componente web (algunos web components lo requieren)
-            searchBox.setAttribute('value', value);
+            searchBox.setAttribute('value', valueToSet);
             if (searchBox.value !== undefined) {
-              searchBox.value = value;
+              searchBox.value = valueToSet;
             }
             
-            (input as HTMLInputElement).value = value;
+            (input as HTMLInputElement).value = valueToSet;
             // Remover placeholder temporalmente para forzar que se muestre el valor
             const originalPlaceholder = (input as HTMLInputElement).placeholder;
             (input as HTMLInputElement).placeholder = '';
@@ -209,16 +271,16 @@ export function LocationSelectorWeb({
             // También disparar evento change para mayor compatibilidad
             input.dispatchEvent(new Event('change', { bubbles: true }));
             // Disparar evento en el componente web también
-            searchBox.dispatchEvent(new CustomEvent('input', { detail: { value }, bubbles: true }));
+            searchBox.dispatchEvent(new CustomEvent('input', { detail: { value: valueToSet }, bubbles: true }));
             // Forzar focus y blur para actualizar estado visual
             (input as HTMLInputElement).focus();
             setTimeout(() => {
               (input as HTMLInputElement).blur();
               // Re-verificar y re-establecer después del blur (el componente podría limpiarlo)
               setTimeout(() => {
-                if ((input as HTMLInputElement).value !== value && value) {
-                  (input as HTMLInputElement).value = value;
-                  searchBox.setAttribute('value', value);
+                if ((input as HTMLInputElement).value !== valueToSet && valueToSet) {
+                  (input as HTMLInputElement).value = valueToSet;
+                  searchBox.setAttribute('value', valueToSet);
                   input.dispatchEvent(new Event('input', { bubbles: true }));
                 }
               }, 50);
@@ -270,12 +332,12 @@ export function LocationSelectorWeb({
           const input = searchBox.querySelector('input[type="text"], input[type="search"]');
           if (input) {
             // Primero establecer el atributo value en el componente web (algunos web components lo requieren)
-            searchBox.setAttribute('value', value);
+            searchBox.setAttribute('value', valueToSet);
             if (searchBox.value !== undefined) {
-              searchBox.value = value;
+              searchBox.value = valueToSet;
             }
             
-            (input as HTMLInputElement).value = value;
+            (input as HTMLInputElement).value = valueToSet;
             // Remover placeholder temporalmente para forzar que se muestre el valor
             const originalPlaceholder = (input as HTMLInputElement).placeholder;
             (input as HTMLInputElement).placeholder = '';
@@ -330,16 +392,16 @@ export function LocationSelectorWeb({
             // También disparar evento change para mayor compatibilidad
             input.dispatchEvent(new Event('change', { bubbles: true }));
             // Disparar evento en el componente web también
-            searchBox.dispatchEvent(new CustomEvent('input', { detail: { value }, bubbles: true }));
+            searchBox.dispatchEvent(new CustomEvent('input', { detail: { value: valueToSet }, bubbles: true }));
             // Forzar focus y blur para actualizar estado visual
             (input as HTMLInputElement).focus();
             setTimeout(() => {
               (input as HTMLInputElement).blur();
               // Re-verificar y re-establecer después del blur (el componente podría limpiarlo)
               setTimeout(() => {
-                if ((input as HTMLInputElement).value !== value && value) {
-                  (input as HTMLInputElement).value = value;
-                  searchBox.setAttribute('value', value);
+                if ((input as HTMLInputElement).value !== valueToSet && valueToSet) {
+                  (input as HTMLInputElement).value = valueToSet;
+                  searchBox.setAttribute('value', valueToSet);
                   input.dispatchEvent(new Event('input', { bubbles: true }));
                 }
               }, 50);
@@ -467,12 +529,12 @@ export function LocationSelectorWeb({
           }
           
           // Si el valor fue limpiado, intentar establecerlo nuevamente
-          if (currentValue !== value && value) {
+          if (currentValue !== valueToSet && valueToSet) {
             // Re-establecer el valor y disparar eventos nuevamente
             if (searchBox.shadowRoot) {
               const input = searchBox.shadowRoot.querySelector('input[type="text"], input[type="search"]');
               if (input) {
-                (input as HTMLInputElement).value = value;
+                (input as HTMLInputElement).value = valueToSet;
                 (input as HTMLInputElement).placeholder = '';
                 input.dispatchEvent(new Event('input', { bubbles: true }));
                 input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -484,7 +546,7 @@ export function LocationSelectorWeb({
             } else {
               const input = searchBox.querySelector('input[type="text"], input[type="search"]');
               if (input) {
-                (input as HTMLInputElement).value = value;
+                (input as HTMLInputElement).value = valueToSet;
                 (input as HTMLInputElement).placeholder = '';
                 input.dispatchEvent(new Event('input', { bubbles: true }));
                 input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -609,7 +671,9 @@ export function LocationSelectorWeb({
         onCommercialNameChange?.(commercialName);
 
         // Notificar cambio externo
-        onLocationChange(newCoordinates);
+        // FASE 4-5: Normalizar a formato de salida (mantener formato de entrada)
+        const outputLocation = normalizeLocationToOutput(newCoordinates, originalLocationFormatRef.current);
+        onLocationChange(outputLocation);
       }
     },
     [onLocationChange, onCommercialNameChange, setSearchBoxValue]
@@ -671,7 +735,9 @@ export function LocationSelectorWeb({
       }
 
       // Notificar cambio externo
-      onLocationChange(newLocation);
+      // FASE 4-5: Normalizar a formato de salida (mantener formato de entrada)
+      const outputLocation = normalizeLocationToOutput(newLocation, originalLocationFormatRef.current);
+      onLocationChange(outputLocation);
     },
     [disabled, onLocationChange, onCommercialNameChange, setSearchBoxValue]
   );
@@ -694,8 +760,12 @@ export function LocationSelectorWeb({
     // Resolver address vía reverse geocode
     // Redondear coordenadas a 6 decimales ANTES de llamar a la API para evitar error 422
     try {
-      const latRounded = parseFloat(userLocation.latitude.toFixed(6));
-      const lngRounded = parseFloat(userLocation.longitude.toFixed(6));
+      // FASE 4-5: Normalizar userLocation a formato interno
+      const normalizedUserLocation = normalizeLocationToInternal(userLocation);
+      if (!normalizedUserLocation) return;
+      
+      const latRounded = parseFloat(normalizedUserLocation.latitude.toFixed(6));
+      const lngRounded = parseFloat(normalizedUserLocation.longitude.toFixed(6));
       const result = await reverseGeocodeMapbox(latRounded, lngRounded);
       const address = result?.formattedAddress || result?.city || 'Current location';
 
@@ -711,7 +781,14 @@ export function LocationSelectorWeb({
       }
 
       // Notificar cambio externo
-      onLocationChange(userLocation);
+      // FASE 4-5: Normalizar userLocation a formato de salida
+      if (userLocation) {
+        const normalizedUserLocation = normalizeLocationToInternal(userLocation);
+        if (normalizedUserLocation) {
+          const outputLocation = normalizeLocationToOutput(normalizedUserLocation, originalLocationFormatRef.current);
+          onLocationChange(outputLocation);
+        }
+      }
     } catch (error) {
       if (__DEV__) {
         console.error('Error reverse geocoding current location:', error);
@@ -726,7 +803,14 @@ export function LocationSelectorWeb({
         mapViewRef.current.flyToCoordinates(userLocation, 15);
       }
 
-      onLocationChange(userLocation);
+      // FASE 4-5: Normalizar userLocation a formato de salida
+      if (userLocation) {
+        const normalizedUserLocation = normalizeLocationToInternal(userLocation);
+        if (normalizedUserLocation) {
+          const outputLocation = normalizeLocationToOutput(normalizedUserLocation, originalLocationFormatRef.current);
+          onLocationChange(outputLocation);
+        }
+      }
     }
   }, [userLocation, onLocationChange, onCommercialNameChange]);
 
@@ -790,7 +874,11 @@ export function LocationSelectorWeb({
       // Configurar opciones si hay userLocation para proximity
       if (userLocation) {
         const options = {
-          proximity: [userLocation.longitude, userLocation.latitude] as [number, number],
+          // FASE 4-5: Normalizar userLocation para proximity
+          proximity: (() => {
+            const normalized = normalizeLocationToInternal(userLocation);
+            return normalized ? [normalized.longitude, normalized.latitude] as [number, number] : undefined;
+          })(),
         };
         searchBoxElement.setAttribute('options', JSON.stringify(options));
       }

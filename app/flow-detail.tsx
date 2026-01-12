@@ -124,7 +124,10 @@ export default function FlowDetailScreen() {
     const lastSpot = flowSpots[flowSpots.length - 1];
     
     const origin = baseLocation;
-    const destination = lastSpot.location;
+    // FASE 4-5: Convertir lastSpot.location a formato latitude/longitude para openNavigationApp
+    const destination = 'lat' in lastSpot.location 
+      ? { latitude: lastSpot.location.lat, longitude: lastSpot.location.lng }
+      : lastSpot.location;
     
     const mode = mapMovementModeToNavigationMode(flow.movementMode);
     
@@ -273,9 +276,12 @@ export default function FlowDetailScreen() {
         allPoints.push(baseLocation);
       }
       
-      // Incluir todos los spots del flow
+      // FASE 4-5: Incluir todos los spots del flow (convertir a formato latitude/longitude)
       flowSpots.forEach(spot => {
-        allPoints.push(spot.location);
+        const location = 'lat' in spot.location
+          ? { latitude: spot.location.lat, longitude: spot.location.lng }
+          : spot.location;
+        allPoints.push(location);
       });
       
       if (allPoints.length === 0) {
@@ -318,7 +324,7 @@ export default function FlowDetailScreen() {
           showRoute={false}
           flowSpots={flowSpots}
           showUserLocation={!!baseLocation}
-          userLocation={baseLocation}
+          userLocation={baseLocation ? { latitude: baseLocation.latitude, longitude: baseLocation.longitude } : null}
           initialRegion={calculateMapRegion()}
           currentSpotIndex={-1}
           flowSpotsOrder={flowSpots}

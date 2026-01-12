@@ -8,6 +8,7 @@
 
 import { Colors } from '@/constants/theme';
 import { Spot } from '@/data/spots';
+import { useSaved } from '@/contexts/SavedContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MAPBOX_ACCESS_TOKEN, isMapboxConfigured } from '@/utils/mapsConfig';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
@@ -52,10 +53,16 @@ function calculateInitialRegion(
   spots: Spot[],
   userLocation?: { latitude: number; longitude: number } | null
 ): Region {
-  // Prioridad 1: Si hay spots, calcular región basada en ellos
+  // FASE 4-5: Prioridad 1: Si hay spots, calcular región basada en ellos (compatible con ambos formatos)
   if (spots.length > 0) {
-    const latitudes = spots.map((spot) => spot.location.latitude);
-    const longitudes = spots.map((spot) => spot.location.longitude);
+    const latitudes = spots.map((spot) => {
+      const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+      return 'lat' in loc && loc.lat !== undefined ? loc.lat : (loc.latitude ?? 0);
+    });
+    const longitudes = spots.map((spot) => {
+      const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+      return 'lng' in loc && loc.lng !== undefined ? loc.lng : (loc.longitude ?? 0);
+    });
 
     const minLat = Math.min(...latitudes);
     const maxLat = Math.max(...latitudes);
@@ -194,6 +201,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
 }, ref) => {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const { isSpotPinned, getPinState } = useSaved();
   const containerRef = useRef<any>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -204,6 +212,37 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
   const [currentZoom, setCurrentZoom] = useState<number>(13);
 
   const region = initialRegion || calculateInitialRegion(spots, userLocation);
+  
+  // V1.2: Helper para obtener color e icono del marker según estado del pin
+  const getMarkerStyle = (spot: Spot) => {
+    const isPinned = isSpotPinned(spot.id);
+    const pinState = getPinState(spot.id);
+    
+    if (!isPinned || !pinState) {
+      // Normal marker (sin Pin)
+      return {
+        backgroundColor: colors.tint,
+        icon: 'map', // icono 'map' (place)
+        iconColor: colors.background,
+      };
+    }
+    
+    if (pinState === 'to_visit') {
+      // Pin To Visit marker (azul/cyan)
+      return {
+        backgroundColor: '#2196F3', // Azul Material Design
+        icon: 'pin', // icono 'pin' (location-on)
+        iconColor: '#FFFFFF',
+      };
+    }
+    
+    // Pin Visited marker (verde)
+    return {
+      backgroundColor: '#4CAF50', // Verde Material Design
+      icon: 'check-circle', // icono 'check-circle'
+      iconColor: '#FFFFFF',
+    };
+  };
 
   // Exponer funciones usando useImperativeHandle
   useImperativeHandle(ref, () => ({
@@ -221,8 +260,12 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       const spot = spots.find(s => s.id === spotId);
       if (spot) {
         setCurrentZoom(15);
+        // FASE 4-5: Normalizar location a formato longitude/latitude
+        const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+        const lng = 'lng' in loc && loc.lng !== undefined ? loc.lng : (loc.longitude ?? 0);
+        const lat = 'lat' in loc && loc.lat !== undefined ? loc.lat : (loc.latitude ?? 0);
         mapInstanceRef.current.jumpTo({
-          center: [spot.location.longitude, spot.location.latitude],
+          center: [lng, lat],
           zoom: 15, // Zoom cercano para contexto urbano (calles legibles)
         });
       }
@@ -357,10 +400,13 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
               const isHighlighted = highlightedSpotId === spot.id;
               const showLabel = map.getZoom() >= 14; // Mostrar nombres cuando zoom >= 14
               
+              // V1.2: Obtener estilo del marker según estado del pin
+              const markerStyle = getMarkerStyle(spot);
+              
               el.style.width = isHighlighted ? '40px' : '32px';
               el.style.height = isHighlighted ? '40px' : '32px';
               el.style.borderRadius = '50%';
-              el.style.backgroundColor = colors.tint;
+              el.style.backgroundColor = markerStyle.backgroundColor;
               el.style.border = `3px solid white`;
               el.style.cursor = 'pointer';
               el.style.display = 'flex';
@@ -391,8 +437,12 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
                 el.appendChild(label);
               }
 
+              // FASE 4-5: Normalizar location a formato longitude/latitude
+              const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+              const spotLng = 'lng' in loc && loc.lng !== undefined ? loc.lng : (loc.longitude ?? 0);
+              const spotLat = 'lat' in loc && loc.lat !== undefined ? loc.lat : (loc.latitude ?? 0);
               const marker = new mapboxgl.Marker({ element: el })
-                .setLngLat([spot.location.longitude, spot.location.latitude])
+                .setLngLat([spotLng, spotLat])
                 .addTo(map);
 
               // CANONICAL: Llamar directamente onSpotPress sin preview intermedio
@@ -404,7 +454,13 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
               // Mostrar popup si está destacado
               if (highlightedSpotId === spot.id) {
                 const popup = new mapboxgl.Popup({ offset: 25, closeButton: false })
-                  .setLngLat([spot.location.longitude, spot.location.latitude])
+                  // FASE 4-5: Normalizar location a formato longitude/latitude
+                .setLngLat((() => {
+                  const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+                  const lng = 'lng' in loc && loc.lng !== undefined ? loc.lng : (loc.longitude ?? 0);
+                  const lat = 'lat' in loc && loc.lat !== undefined ? loc.lat : (loc.latitude ?? 0);
+                  return [lng, lat];
+                })())
                   .setHTML(`<div style="padding: 8px; font-size: 14px; font-weight: 600;">${spot.name}</div>`)
                   .addTo(map);
                 popupRef.current = popup;
@@ -448,7 +504,13 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
 
             // Agregar ruta si está disponible
             if (showRoute && flowSpots && flowSpots.length >= 2) {
-              const coordinates = flowSpots.map(spot => [spot.location.longitude, spot.location.latitude]);
+              // FASE 4-5: Normalizar locations a formato longitude/latitude
+              const coordinates = flowSpots.map(spot => {
+                const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+                const lng = 'lng' in loc && loc.lng !== undefined ? loc.lng : (loc.longitude ?? 0);
+                const lat = 'lat' in loc && loc.lat !== undefined ? loc.lat : (loc.latitude ?? 0);
+                return [lng, lat];
+              });
               
               map.addSource('route', {
                 type: 'geojson',
@@ -481,11 +543,11 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
           // Click/Long press handler
           // Desktop: click simple en el mapa (fuera de marcadores) selecciona ubicación
           // Mobile: long press selecciona ubicación
-          let longPressTimer: NodeJS.Timeout | null = null;
+          let longPressTimer: ReturnType<typeof setTimeout> | null = null;
           let clickLocation: { lat: number; lng: number } | null = null;
           let isClick = false;
           
-          map.on('click', (e) => {
+          map.on('click', (e: any) => {
             // Si hay onClick prop, usarla directamente (para LocationSelectorWeb)
             if (onClick) {
               onClick({
@@ -514,7 +576,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
             }
           });
 
-          map.on('mousedown', (e) => {
+          map.on('mousedown', (e: any) => {
             // Long press handler (para mobile o cuando se mantiene presionado)
             longPressTimer = setTimeout(() => {
               if (onLongPress) {
@@ -524,7 +586,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
                 });
                 isClick = false; // Cancelar click si hay long press
               }
-            }, 500);
+            }, 500) as ReturnType<typeof setTimeout>;
           });
 
           map.on('mouseup', () => {
@@ -590,10 +652,14 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       const el = document.createElement('div');
       el.className = 'mapbox-marker';
       const isHighlighted = highlightedSpotId === spot.id;
+      
+      // V1.2: Obtener estilo del marker según estado del pin
+      const markerStyle = getMarkerStyle(spot);
+      
       el.style.width = isHighlighted ? '40px' : '32px';
       el.style.height = isHighlighted ? '40px' : '32px';
       el.style.borderRadius = '50%';
-      el.style.backgroundColor = colors.tint;
+      el.style.backgroundColor = markerStyle.backgroundColor;
       el.style.border = isHighlighted ? '3px solid #FF6B35' : '3px solid white';
       el.style.cursor = 'pointer';
       el.style.display = 'flex';
@@ -624,8 +690,12 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
         el.appendChild(label);
       }
 
+      // FASE 4-5: Normalizar location a formato longitude/latitude
+      const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+      const spotLng = 'lng' in loc && loc.lng !== undefined ? loc.lng : (loc.longitude ?? 0);
+      const spotLat = 'lat' in loc && loc.lat !== undefined ? loc.lat : (loc.latitude ?? 0);
       const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([spot.location.longitude, spot.location.latitude])
+        .setLngLat([spotLng, spotLat])
         .addTo(mapInstanceRef.current);
 
       // CANONICAL: Llamar directamente onSpotPress sin preview intermedio
@@ -636,8 +706,12 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
 
       // Mostrar popup si está destacado (el centrado ya lo maneja centerOnSpot)
       if (isHighlighted) {
+        // FASE 4-5: Normalizar location a formato longitude/latitude
+        const popupLoc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+        const popupLng = 'lng' in popupLoc && popupLoc.lng !== undefined ? popupLoc.lng : (popupLoc.longitude ?? 0);
+        const popupLat = 'lat' in popupLoc && popupLoc.lat !== undefined ? popupLoc.lat : (popupLoc.latitude ?? 0);
         const popup = new mapboxgl.Popup({ offset: 25, closeButton: false })
-          .setLngLat([spot.location.longitude, spot.location.latitude])
+          .setLngLat([popupLng, popupLat])
           .setHTML(`<div style="padding: 8px; font-size: 14px; font-weight: 600; color: ${colors.text};">${spot.name}</div>`)
           .addTo(mapInstanceRef.current);
         popupRef.current = popup;
@@ -645,7 +719,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
 
       return marker;
     });
-  }, [isLoaded, spots, highlightedSpotId, currentZoom, colors.tint, colors.text, colors.background, onSpotPress]);
+  }, [isLoaded, spots, highlightedSpotId, currentZoom, colors.tint, colors.text, colors.background, onSpotPress, isSpotPinned, getPinState]);
 
   // Actualizar mapa cuando cambia la ubicación del usuario (si el mapa ya está cargado)
   useEffect(() => {

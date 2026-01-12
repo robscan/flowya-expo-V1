@@ -52,10 +52,16 @@ function calculateInitialRegion(
   spots: Spot[],
   userLocation?: { latitude: number; longitude: number } | null
 ): Region {
-  // Prioridad 1: Si hay spots, calcular región basada en ellos
+  // FASE 4-5: Prioridad 1: Si hay spots, calcular región basada en ellos (compatible con ambos formatos)
   if (spots.length > 0) {
-    const latitudes = spots.map((spot) => spot.location.latitude);
-    const longitudes = spots.map((spot) => spot.location.longitude);
+    const latitudes = spots.map((spot) => {
+      const loc = spot.location;
+      return 'lat' in loc ? loc.lat : loc.latitude;
+    });
+    const longitudes = spots.map((spot) => {
+      const loc = spot.location;
+      return 'lng' in loc ? loc.lng : loc.longitude;
+    });
 
     const minLat = Math.min(...latitudes);
     const maxLat = Math.max(...latitudes);
@@ -196,8 +202,12 @@ const MapboxViewComponent = forwardRef<MapboxViewRef, MapboxViewProps>(({
       const spot = spots.find(s => s.id === spotId);
       if (spot) {
         currentZoomRef.current = 15;
+        // FASE 4-5: Normalizar location a formato longitude/latitude
+        const loc = spot.location;
+        const spotLng = 'lng' in loc ? loc.lng : loc.longitude;
+        const spotLat = 'lat' in loc ? loc.lat : loc.latitude;
         cameraRef.current.setCamera({
-          centerCoordinate: [spot.location.longitude, spot.location.latitude],
+          centerCoordinate: [spotLng, spotLat],
           zoomLevel: 15, // Zoom cercano para contexto urbano (calles legibles)
           animationDuration: 0, // Sin animación, centrado inmediato
         });
@@ -242,7 +252,13 @@ const MapboxViewComponent = forwardRef<MapboxViewRef, MapboxViewProps>(({
     }
 
     if (flowSpots && flowSpots.length >= 2) {
-      return flowSpots.map((spot) => [spot.location.longitude, spot.location.latitude]);
+      // FASE 4-5: Normalizar locations a formato longitude/latitude
+      return flowSpots.map((spot) => {
+        const loc = spot.location;
+        const lng = 'lng' in loc ? loc.lng : loc.longitude;
+        const lat = 'lat' in loc ? loc.lat : loc.latitude;
+        return [lng, lat];
+      });
     }
 
     return [];
@@ -337,11 +353,16 @@ const MapboxViewComponent = forwardRef<MapboxViewRef, MapboxViewProps>(({
             }
           }
           
+          // FASE 4-5: Normalizar location a formato longitude/latitude
+          const loc = spot.location;
+          const spotLng = 'lng' in loc ? loc.lng : loc.longitude;
+          const spotLat = 'lat' in loc ? loc.lat : loc.latitude;
+          
           return (
             <PointAnnotation
               key={spot.id}
               id={spot.id}
-              coordinate={[spot.location.longitude, spot.location.latitude]}
+              coordinate={[spotLng, spotLat]}
               onSelected={() => {
                 // CANONICAL: Llamar directamente onSpotPress sin preview intermedio
                 onSpotPress(spot);

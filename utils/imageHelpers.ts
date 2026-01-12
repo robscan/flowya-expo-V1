@@ -31,9 +31,16 @@ export function isStockImage(url: string | null | undefined): boolean {
 }
 
 /**
- * Verifica si un spot tiene una imagen válida (no stock)
+ * FASE 5: Verifica si un spot tiene una imagen válida (no stock)
+ * Compatible con ambos formatos: image.url y photos[]
  */
-export function hasValidImage(photos: string[] | undefined | null): boolean {
+export function hasValidImage(photos: string[] | undefined | null, imageUrl?: string): boolean {
+  // FASE 5: Priorizar image.url si existe (formato nuevo)
+  if (imageUrl && imageUrl.trim().length > 0) {
+    return !isStockImage(imageUrl);
+  }
+  
+  // Formato antiguo (photos[])
   if (!photos || photos.length === 0) return false;
   
   // Verificar si todas las imágenes son de stock
@@ -41,9 +48,16 @@ export function hasValidImage(photos: string[] | undefined | null): boolean {
 }
 
 /**
- * Obtiene la primera imagen válida (no stock) de un array de fotos
+ * FASE 5: Obtiene la imagen válida (no stock)
+ * Compatible con ambos formatos: image.url y photos[]
  */
-export function getValidImage(photos: string[] | undefined | null): string | null {
+export function getValidImage(photos: string[] | undefined | null, imageUrl?: string): string | null {
+  // FASE 5: Priorizar image.url si existe (formato nuevo)
+  if (imageUrl && imageUrl.trim().length > 0 && !isStockImage(imageUrl)) {
+    return imageUrl;
+  }
+  
+  // Formato antiguo (photos[])
   if (!photos || photos.length === 0) return null;
   
   // Buscar la primera imagen que no sea de stock

@@ -11,7 +11,11 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+
+import { useSpot } from './SpotContext';
+import { useWorldSpots } from './WorldSpotContext';
+import { useAuth } from './AuthContext';
 
 const STORAGE_KEY = '@flowya_saved';
 
@@ -32,11 +36,30 @@ export interface SpotTypeAffinity {
   count: number; // Cantidad de interacciones
 }
 
+// V1.2: Sistema de Pins - Estados y Datos
+export type PinState = 'to_visit' | 'visited';
+
+export interface PinData {
+  spotId: string;
+  state: PinState;
+  pinnedAt: Date;
+  visitedAt?: Date;
+  notes?: string;
+  personalPhotos?: string[];
+}
+
 interface SavedData {
+  // V1.2: Sistema de Pins (NUEVO)
+  pins: Record<string, PinData>; // spotId -> PinData
+  _migrationV1_2Completed?: boolean; // Flag de migración completada
+  
+  // TEMPORAL (mantener para migración y compatibilidad)
   likedSpots: string[]; // Spot IDs
   likedSpotsFromPlayer: string[]; // Spot IDs - likes hechos desde el player durante navegación
-  notMyVibeSpots: string[]; // Spot IDs
   savedSpots: string[]; // Spot IDs
+  
+  // MANTENER
+  notMyVibeSpots: string[]; // Spot IDs
   savedFlows: string[]; // Flow IDs (anteriormente savedPaths)
   savedFlowNames: Record<string, string>; // Map de flowId a nombre personalizado
   timeline: TimelineEntry[];
@@ -46,7 +69,19 @@ interface SavedData {
 }
 
 interface SavedContextType {
-  // Spots
+  // V1.2: Sistema de Pins (NUEVO)
+  pins: Record<string, PinData>;
+  pinSpot: (spotId: string, state: PinState) => string; // Retorna el ID del User Spot (puede ser el mismo o convertido)
+  unpinSpot: (spotId: string) => void;
+  changePinState: (spotId: string, newState: PinState) => void;
+  isSpotPinned: (spotId: string) => boolean;
+  getPinState: (spotId: string) => PinState | null;
+  getPinnedSpots: (state?: PinState) => string[];
+  // V1.2: Funciones de Diario de Viaje
+  updatePinNotes: (spotId: string, notes: string) => void;
+  addPinPhoto: (spotId: string, photoUrl: string) => void;
+  removePinPhoto: (spotId: string, photoUrl: string) => void;
+  // TEMPORAL (mantener para compatibilidad)
   likedSpots: string[];
   likedSpotsFromPlayer: string[]; // Likes hechos desde el player durante navegación
   notMyVibeSpots: string[];
@@ -83,6 +118,8 @@ interface SavedContextType {
 const SavedContext = createContext<SavedContextType | undefined>(undefined);
 
 const defaultData: SavedData = {
+  pins: {}, // V1.2: Sistema de Pins
+  _migrationV1_2Completed: false,
   likedSpots: [],
   likedSpotsFromPlayer: [],
   notMyVibeSpots: [],
@@ -98,6 +135,9 @@ const defaultData: SavedData = {
 export function SavedProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<SavedData>(defaultData);
   const [isLoading, setIsLoading] = useState(true);
+  const { isAuthenticated, user } = useAuth();
+  const { getWorldSpotById, convertWorldSpotToUserSpot } = useWorldSpots();
+  const { createSpot, getSpotById, spots } = useSpot();
 
   // Cargar datos desde AsyncStorage
   useEffect(() => {
@@ -111,16 +151,52 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     }
   }, [data, isLoading]);
 
+  // V1.2: Limpiar pines cuando el usuario cierra sesión
+  useEffect(() => {
+    if (!isAuthenticated && !isLoading) {
+      // Usuario cerró sesión, limpiar todos los pines
+      setData((prev) => ({
+        ...prev,
+        pins: {},
+      }));
+    }
+  }, [isAuthenticated, isLoading]);
+
   const loadData = async () => {
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       if (stored) {
-        const parsed = JSON.parse(stored);
+        let parsed: any = JSON.parse(stored);
         // Convertir timestamps a Date objects
-        parsed.timeline = parsed.timeline.map((entry: TimelineEntry) => ({
+        parsed.timeline = (parsed.timeline || []).map((entry: TimelineEntry) => ({
           ...entry,
           timestamp: new Date(entry.timestamp),
         }));
+        
+        // V1.2: Convertir pins dates a Date objects
+        if (parsed.pins) {
+          parsed.pins = Object.entries(parsed.pins).reduce((acc, [spotId, pin]: [string, any]) => {
+            acc[spotId] = {
+              ...pin,
+              pinnedAt: new Date(pin.pinnedAt),
+              visitedAt: pin.visitedAt ? new Date(pin.visitedAt) : undefined,
+            };
+            return acc;
+          }, {} as Record<string, PinData>);
+        } else {
+          parsed.pins = {};
+        }
+        
+        // V1.2: Inicializar flag de migración si no existe
+        if (parsed._migrationV1_2Completed === undefined) {
+          parsed._migrationV1_2Completed = false;
+        }
+        
+        // Migración V1.2: Migrar savedSpots y likedSpots a pins
+        if (!parsed._migrationV1_2Completed) {
+          parsed = migrateToPins(parsed);
+        }
+        
         // Migración: si tiene savedPaths pero no savedFlows, copiar
         if (parsed.savedPaths && !parsed.savedFlows) {
           parsed.savedFlows = parsed.savedPaths;
@@ -151,10 +227,94 @@ export function SavedProvider({ children }: { children: ReactNode }) {
 
   const saveData = async (dataToSave: SavedData) => {
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+      // V1.2: Serializar fechas de pins a ISO strings
+      const dataToSerialize = {
+        ...dataToSave,
+        pins: Object.entries(dataToSave.pins).reduce((acc, [spotId, pin]) => {
+          acc[spotId] = {
+            ...pin,
+            pinnedAt: pin.pinnedAt.toISOString(),
+            visitedAt: pin.visitedAt ? pin.visitedAt.toISOString() : undefined,
+          };
+          return acc;
+        }, {} as Record<string, any>),
+        timeline: dataToSave.timeline.map((entry) => ({
+          ...entry,
+          timestamp: entry.timestamp.toISOString(),
+        })),
+      };
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSerialize));
     } catch (error) {
       console.error('Error saving data:', error);
     }
+  };
+
+  // V1.2: Script de migración savedSpots/likedSpots → pins
+  const migrateToPins = (data: any): SavedData => {
+    const migratedData: SavedData = {
+      ...data,
+      pins: { ...(data.pins || {}) },
+    };
+
+    // Migrar savedSpots → pins (estado to_visit)
+    if (data.savedSpots && Array.isArray(data.savedSpots)) {
+      data.savedSpots.forEach((spotId: string) => {
+        if (!migratedData.pins[spotId]) {
+          migratedData.pins[spotId] = {
+            spotId,
+            state: 'to_visit',
+            pinnedAt: new Date(),
+            visitedAt: undefined,
+            notes: undefined,
+            personalPhotos: undefined,
+          };
+        }
+      });
+    }
+
+    // Migrar likedSpots → pins (estado to_visit, solo si no existe ya)
+    if (data.likedSpots && Array.isArray(data.likedSpots)) {
+      data.likedSpots.forEach((spotId: string) => {
+        if (!migratedData.pins[spotId]) {
+          migratedData.pins[spotId] = {
+            spotId,
+            state: 'to_visit',
+            pinnedAt: new Date(),
+            visitedAt: undefined,
+            notes: undefined,
+            personalPhotos: undefined,
+          };
+        }
+      });
+    }
+
+    // Migrar likedSpotsFromPlayer → pins (estado to_visit, solo si no existe ya)
+    if (data.likedSpotsFromPlayer && Array.isArray(data.likedSpotsFromPlayer)) {
+      data.likedSpotsFromPlayer.forEach((spotId: string) => {
+        if (!migratedData.pins[spotId]) {
+          migratedData.pins[spotId] = {
+            spotId,
+            state: 'to_visit',
+            pinnedAt: new Date(),
+            visitedAt: undefined,
+            notes: undefined,
+            personalPhotos: undefined,
+          };
+        }
+      });
+    }
+
+    // Marcar migración como completada
+    migratedData._migrationV1_2Completed = true;
+
+    console.log('[V1.2 Migration] Migrated spots to pins:', {
+      savedSpots: data.savedSpots?.length || 0,
+      likedSpots: data.likedSpots?.length || 0,
+      likedSpotsFromPlayer: data.likedSpotsFromPlayer?.length || 0,
+      totalPins: Object.keys(migratedData.pins).length,
+    });
+
+    return migratedData;
   };
 
   const addToTimeline = (
@@ -267,13 +427,15 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleSaveSpot = (spotId: string) => {
+    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
+    const actualSpotId = ensureUserSpot(spotId);
     setData((prev) => {
-      const isSaved = prev.savedSpots.includes(spotId);
+      const isSaved = prev.savedSpots.includes(actualSpotId);
       const newSavedSpots = isSaved
-        ? prev.savedSpots.filter((id) => id !== spotId)
-        : [...prev.savedSpots, spotId];
+        ? prev.savedSpots.filter((id) => id !== actualSpotId)
+        : [...prev.savedSpots, actualSpotId];
 
-      addToTimeline('spot', 'saved', spotId);
+      addToTimeline('spot', 'saved', actualSpotId);
 
       return {
         ...prev,
@@ -369,7 +531,332 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     return data.spotTypeAffinity[spotType];
   };
 
+  // V1.2: Funciones de Pin
+  // FASE 7: Helper para convertir WorldSpot a UserSpot si es necesario
+  // REGLA PRINCIPAL V1.2: Convierte WorldSpot a UserSpot al primer cambio de estatus
+  const ensureUserSpot = (spotId: string): string => {
+    // Validar que el usuario esté autenticado
+    if (!user?.id) {
+      throw new Error('User must be authenticated to convert WorldSpot to UserSpot');
+    }
+
+    // Verificar si es un WorldSpot
+    const worldSpot = getWorldSpotById(spotId);
+    if (worldSpot) {
+      // V1.2: ID estable para buscar si ya existe un UserSpot convertido
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      
+      // Verificar si ya existe un UserSpot convertido para este WorldSpot
+      const existingUserSpot = getSpotById(expectedUserSpotId);
+      if (existingUserSpot) {
+        // Ya existe, retornar el ID existente (evitar duplicados)
+        return existingUserSpot.id;
+      }
+
+      // No existe, convertir WorldSpot a UserSpot
+      const userSpot = convertWorldSpotToUserSpot(spotId, user.id);
+      // Crear el spot en SpotContext (se persiste automáticamente)
+      createSpot(userSpot);
+      // Retornar el nuevo ID del UserSpot
+      return userSpot.id;
+    }
+    // Si no es WorldSpot, retornar el ID original
+    return spotId;
+  };
+
+  const pinSpot = (spotId: string, state: PinState): string => {
+    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
+    // Esto crea el User Spot y retorna su ID
+    const actualSpotId = ensureUserSpot(spotId);
+    
+    setData((prev) => {
+      const now = new Date();
+      
+      // FASE 7: Transferir estado del pin al User Spot
+      // Si había un pin con el ID del World Spot, migrarlo al User Spot
+      const existingPin = prev.pins[spotId];
+      const existingUserSpotPin = prev.pins[actualSpotId];
+      
+      // Si ya existe un pin para el User Spot, actualizarlo
+      // Si existe un pin para el World Spot, migrarlo al User Spot
+      const pinData: PinData = existingUserSpotPin || existingPin ? {
+        spotId: actualSpotId,
+        state,
+        pinnedAt: existingPin?.pinnedAt || existingUserSpotPin?.pinnedAt || now,
+        visitedAt: state === 'visited' 
+          ? (existingPin?.visitedAt || existingUserSpotPin?.visitedAt || now)
+          : (existingPin?.visitedAt || existingUserSpotPin?.visitedAt),
+        notes: existingPin?.notes || existingUserSpotPin?.notes,
+        personalPhotos: existingPin?.personalPhotos || existingUserSpotPin?.personalPhotos,
+      } : {
+        spotId: actualSpotId,
+        state,
+        pinnedAt: now,
+        visitedAt: state === 'visited' ? now : undefined,
+        notes: undefined,
+        personalPhotos: undefined,
+      };
+
+      // Remover pin del World Spot si existe (migración)
+      const { [spotId]: removedWorldSpotPin, ...remainingPins } = prev.pins;
+
+      return {
+        ...prev,
+        pins: {
+          ...remainingPins,
+          [actualSpotId]: pinData,
+        },
+      };
+    });
+    
+    // FASE 7: Retornar el ID del User Spot para redirección
+    return actualSpotId;
+  };
+
+  const unpinSpot = (spotId: string) => {
+    // FASE 7: Usar el ID correcto (puede ser WorldSpot o UserSpot)
+    const worldSpot = getWorldSpotById(spotId);
+    let actualSpotId = spotId;
+    
+    if (worldSpot && user?.id) {
+      // V1.2: Buscar UserSpot convertido usando ID estable
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      if (expectedUserSpotId in data.pins) {
+        actualSpotId = expectedUserSpotId;
+      } else if (spotId in data.pins) {
+        // Si el pin está con el ID del WorldSpot, mantenerlo (caso legacy)
+        actualSpotId = spotId;
+      }
+    }
+    
+    setData((prev) => {
+      const { [actualSpotId]: removed, ...remainingPins } = prev.pins;
+      return {
+        ...prev,
+        pins: remainingPins,
+      };
+    });
+  };
+
+  const changePinState = (spotId: string, newState: PinState) => {
+    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
+    // V1.2: REGLA PRINCIPAL - Convertir al primer cambio de estatus si es WorldSpot
+    let actualSpotId = spotId;
+    const worldSpot = getWorldSpotById(spotId);
+    
+    // Si es WorldSpot, buscar o crear UserSpot convertido
+    if (worldSpot && user?.id) {
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      // Verificar si ya existe pin con el ID del WorldSpot (caso legacy) o con el UserSpot
+      if (spotId in data.pins) {
+        // Migrar pin del WorldSpot al UserSpot
+        actualSpotId = ensureUserSpot(spotId);
+        // Mover el pin al UserSpot
+        setData((prev) => {
+          const existingPin = prev.pins[spotId];
+          if (existingPin) {
+            const { [spotId]: removed, ...remainingPins } = prev.pins;
+            const now = new Date();
+            const updatedPin: PinData = {
+              ...existingPin,
+              spotId: actualSpotId,
+              state: newState,
+              visitedAt: newState === 'visited' ? (existingPin.visitedAt || now) : undefined,
+            };
+            return {
+              ...prev,
+              pins: {
+                ...remainingPins,
+                [actualSpotId]: updatedPin,
+              },
+            };
+          }
+          return prev;
+        });
+        return;
+      } else if (expectedUserSpotId in data.pins) {
+        actualSpotId = expectedUserSpotId;
+      } else {
+        // No existe pin, convertir WorldSpot a UserSpot
+        actualSpotId = ensureUserSpot(spotId);
+      }
+    }
+    
+    setData((prev) => {
+      const existingPin = prev.pins[actualSpotId];
+      if (!existingPin) {
+        return prev; // No hacer nada si no existe el pin
+      }
+
+      const now = new Date();
+      const updatedPin: PinData = {
+        ...existingPin,
+        state: newState,
+        visitedAt: newState === 'visited' ? (existingPin.visitedAt || now) : undefined,
+      };
+
+      return {
+        ...prev,
+        pins: {
+          ...prev.pins,
+          [actualSpotId]: updatedPin,
+        },
+      };
+    });
+  };
+
+  const isSpotPinned = (spotId: string): boolean => {
+    // FASE 7: Verificar tanto el ID original como el ID convertido (si es WorldSpot)
+    if (spotId in data.pins) return true;
+    const worldSpot = getWorldSpotById(spotId);
+    if (worldSpot && user?.id) {
+      // V1.2: Buscar UserSpot convertido usando ID estable
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      if (expectedUserSpotId in data.pins) return true;
+    }
+    return false;
+  };
+
+  const getPinState = (spotId: string): PinState | null => {
+    // FASE 7: Verificar tanto el ID original como el ID convertido (si es WorldSpot)
+    if (data.pins[spotId]) {
+      return data.pins[spotId].state;
+    }
+    const worldSpot = getWorldSpotById(spotId);
+    if (worldSpot && user?.id) {
+      // V1.2: Buscar UserSpot convertido usando ID estable
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      if (data.pins[expectedUserSpotId]) {
+        return data.pins[expectedUserSpotId].state;
+      }
+    }
+    return null;
+  };
+
+  const getPinnedSpots = (state?: PinState): string[] => {
+    const pins = Object.values(data.pins);
+    if (state) {
+      return pins.filter((pin) => pin.state === state).map((pin) => pin.spotId);
+    }
+    return pins.map((pin) => pin.spotId);
+  };
+
+  // V1.2: Funciones de Diario de Viaje
+  const updatePinNotes = (spotId: string, notes: string) => {
+    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
+    // V1.2: Buscar UserSpot convertido si existe, sino convertir
+    let actualSpotId = spotId;
+    const worldSpot = getWorldSpotById(spotId);
+    if (worldSpot && user?.id) {
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      if (expectedUserSpotId in data.pins) {
+        actualSpotId = expectedUserSpotId;
+      } else {
+        actualSpotId = ensureUserSpot(spotId);
+      }
+    }
+
+    setData((prev) => {
+      const pin = prev.pins[actualSpotId];
+      if (!pin) {
+        return prev; // Solo permitir si Pin existe
+      }
+      return {
+        ...prev,
+        pins: {
+          ...prev.pins,
+          [actualSpotId]: {
+            ...pin,
+            notes,
+          },
+        },
+      };
+    });
+  };
+
+  const addPinPhoto = (spotId: string, photoUrl: string) => {
+    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
+    // V1.2: Buscar UserSpot convertido si existe, sino convertir
+    let actualSpotId = spotId;
+    const worldSpot = getWorldSpotById(spotId);
+    if (worldSpot && user?.id) {
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      if (expectedUserSpotId in data.pins) {
+        actualSpotId = expectedUserSpotId;
+      } else {
+        actualSpotId = ensureUserSpot(spotId);
+      }
+    }
+
+    setData((prev) => {
+      const pin = prev.pins[actualSpotId];
+      if (!pin) {
+        return prev; // Solo permitir si Pin existe
+      }
+      const personalPhotos = pin.personalPhotos || [];
+      if (personalPhotos.includes(photoUrl)) {
+        return prev; // Ya existe, no agregar duplicado
+      }
+      return {
+        ...prev,
+        pins: {
+          ...prev.pins,
+          [actualSpotId]: {
+            ...pin,
+            personalPhotos: [...personalPhotos, photoUrl],
+          },
+        },
+      };
+    });
+  };
+
+  const removePinPhoto = (spotId: string, photoUrl: string) => {
+    // FASE 7: Usar el ID correcto (puede ser WorldSpot o UserSpot)
+    // V1.2: Buscar UserSpot convertido si existe, sino convertir
+    let actualSpotId = spotId;
+    const worldSpot = getWorldSpotById(spotId);
+    if (worldSpot && user?.id) {
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      if (expectedUserSpotId in data.pins) {
+        actualSpotId = expectedUserSpotId;
+      } else {
+        actualSpotId = ensureUserSpot(spotId);
+      }
+    }
+
+    setData((prev) => {
+      const pin = prev.pins[actualSpotId];
+      if (!pin) {
+        return prev; // Solo permitir si Pin existe
+      }
+      const personalPhotos = pin.personalPhotos || [];
+      return {
+        ...prev,
+        pins: {
+          ...prev.pins,
+          [actualSpotId]: {
+            ...pin,
+            personalPhotos: personalPhotos.filter((url) => url !== photoUrl),
+          },
+        },
+      };
+    });
+  };
+
   const value: SavedContextType = {
+    // V1.2: Sistema de Pins (NUEVO)
+    pins: data.pins,
+    pinSpot,
+    unpinSpot,
+    changePinState,
+    isSpotPinned,
+    getPinState,
+    getPinnedSpots,
+    // V1.2: Funciones de Diario de Viaje
+    updatePinNotes,
+    addPinPhoto,
+    removePinPhoto,
+    // TEMPORAL (mantener para compatibilidad)
     likedSpots: data.likedSpots,
     likedSpotsFromPlayer: data.likedSpotsFromPlayer,
     notMyVibeSpots: data.notMyVibeSpots,

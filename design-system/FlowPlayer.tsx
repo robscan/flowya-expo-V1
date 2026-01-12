@@ -38,7 +38,7 @@ export function FlowPlayer({
   getSpotById,
   isVisible = true, // SCOPE 2: Por defecto visible
 }: FlowPlayerProps) {
-  const { toggleLikeSpotFromPlayer, toggleNotMyVibeSpot } = useSaved();
+  const { toggleNotMyVibeSpot } = useSaved();
 
   // P0-05: Audio eliminado - los subtítulos se muestran automáticamente mediante useFlowSubtitle en FlowPlayerControls
 
@@ -55,11 +55,6 @@ export function FlowPlayer({
       flow={flow}
       nextSpotData={nextSpotData ?? null}
       isVisible={isVisible} // SCOPE 2: Pasar control de visibilidad
-      onLike={(spotId) => {
-        // SCOPE 5: Pasar tipo de spot para actualizar afinidad
-        const spot = getSpotById(spotId) ?? null;
-        toggleLikeSpotFromPlayer(spotId, spot?.type);
-      }}
       onNotMyVibe={(spotId) => {
         // SCOPE 5: Pasar tipo de spot para actualizar afinidad
         const spot = getSpotById(spotId) ?? null;

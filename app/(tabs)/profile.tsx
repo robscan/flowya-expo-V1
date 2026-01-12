@@ -12,35 +12,18 @@
  * - No auto-save, toasts, modals, experimental UI
  */
 
-import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { Colors } from '@/constants/theme';
+import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { spacing } from '@/constants/spacing';
+import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Icon } from '@/components/ui/Icon';
-import { iconTouchableContainer } from '@/components/ui/Icon';
-import { SettingsToggle } from '@/components/SettingsToggle';
-import { clearAllStorage } from '@/utils/clearStorage';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOverlay } from '@/contexts/OverlayContext';
-
-const PREFERENCES_KEY = '@flowya_preferences';
-
-interface UserPreferences {
-  narrationEnabled: boolean;
-  locationEnabled: boolean;
-  notificationsEnabled: boolean;
-}
-
-const defaultPreferences: UserPreferences = {
-  narrationEnabled: true,
-  locationEnabled: true,
-  notificationsEnabled: true,
-};
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { showAlert } from '@/utils/alertPolyfill';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme();
@@ -48,8 +31,6 @@ export default function ProfileScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const { user, isAuthenticated, signOut } = useAuth();
   const { setIsTabBarVisible } = useOverlay();
-  
-  const [preferences, setPreferences] = useState<UserPreferences>(defaultPreferences);
 
   // CANONICAL: Hide BottomTabBar for Profile
   useEffect(() => {
@@ -58,47 +39,6 @@ export default function ProfileScreen() {
       setIsTabBarVisible(true);
     };
   }, [setIsTabBarVisible]);
-
-  // Cargar preferencias
-  useEffect(() => {
-    loadPreferences();
-  }, []);
-
-  // Guardar preferencias
-  useEffect(() => {
-    if (preferences) {
-      savePreferences(preferences);
-      // Aplicar preferencias
-      if (preferences.narrationEnabled !== undefined) {
-        // La narration se maneja a través del contexto
-        // Aquí solo guardamos la preferencia
-      }
-    }
-  }, [preferences]);
-
-  const loadPreferences = async () => {
-    try {
-      const stored = await AsyncStorage.getItem(PREFERENCES_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setPreferences({ ...defaultPreferences, ...parsed });
-      }
-    } catch (error) {
-      console.error('Error loading preferences:', error);
-    }
-  };
-
-  const savePreferences = async (prefs: UserPreferences) => {
-    try {
-      await AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs));
-    } catch (error) {
-      console.error('Error saving preferences:', error);
-    }
-  };
-
-  const handlePreferenceChange = (key: keyof UserPreferences, value: boolean) => {
-    setPreferences((prev) => ({ ...prev, [key]: value }));
-  };
 
   // Navegación hacia atrás
   const handleBackPress = () => {
@@ -109,38 +49,8 @@ export default function ProfileScreen() {
     }
   };
 
-
-  const handleClearStorage = () => {
-    Alert.alert(
-      'Limpiar todos los datos',
-      '¿Estás seguro de que quieres eliminar todos los datos guardados?\n\nEsto incluye:\n• Todos los lugares creados\n• Todos los flows guardados\n• Tus lugares y flows favoritos\n• Historial de actividad\n\nEsta acción no se puede deshacer. La app se recargará después de limpiar los datos.',
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Limpiar todo',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await clearAllStorage();
-              Alert.alert('Data cleared', 'All data deleted. App will reload.');
-              // Recargar la app
-              if (typeof window !== 'undefined') {
-                window.location.reload();
-              }
-            } catch (error) {
-              Alert.alert('Error', 'Couldn\'t clear data. Try again.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const handleLogout = () => {
-    Alert.alert(
+    showAlert(
       'Cerrar Sesión',
       '¿Estás seguro de que quieres cerrar sesión?',
       [
@@ -156,7 +66,7 @@ export default function ProfileScreen() {
               await signOut();
               router.replace('/(tabs)/home');
             } catch (error) {
-                  Alert.alert('Error', 'Couldn\'t sign out. Check console for details.');
+              showAlert('Error', 'Couldn\'t sign out. Check console for details.');
             }
           },
         },
@@ -216,7 +126,7 @@ export default function ProfileScreen() {
               <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
                 {isAuthenticated && user
                   ? user.email || 'usuario@ejemplo.com'
-                  : 'Sign in to save preferences'}
+                  : 'Sign in to access your account'}
               </Text>
             </View>
           </View>
@@ -256,52 +166,6 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {/* GENERAL Section - Simple list, no cards */}
-        <View style={styles.section}>
-          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
-            General
-          </Text>
-          <SettingsToggle
-            label="Narration"
-            value={preferences.narrationEnabled}
-            onValueChange={(value) => handlePreferenceChange('narrationEnabled', value)}
-            description="Audio narrations during flow"
-          />
-          <View style={[styles.divider, { backgroundColor: colors.icon + '20' }]} />
-          <SettingsToggle
-            label="Location"
-            value={preferences.locationEnabled}
-            onValueChange={(value) => handlePreferenceChange('locationEnabled', value)}
-            description="Use location for nearby places"
-          />
-          <View style={[styles.divider, { backgroundColor: colors.icon + '20' }]} />
-          <SettingsToggle
-            label="Notifications"
-            value={preferences.notificationsEnabled}
-            onValueChange={(value) => handlePreferenceChange('notificationsEnabled', value)}
-            description="Notifications about new places and flows"
-          />
-        </View>
-
-        {/* My Content Section - Simple list item */}
-        <View style={styles.section}>
-          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
-            My content
-          </Text>
-          <TouchableOpacity
-            style={styles.listItem}
-            onPress={() => router.push('/liked-spots')}
-            activeOpacity={0.7}>
-            <View style={styles.listItemContent}>
-              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Liked places</Text>
-              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                Places you liked while moving
-              </Text>
-            </View>
-            <Icon name="chevron-right" size={20} color={colors.icon} />
-          </TouchableOpacity>
-        </View>
-
         {/* ACCOUNT Section - Simple list item */}
         {isAuthenticated && (
           <View style={styles.section}>
@@ -322,25 +186,6 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         )}
-
-        {/* DATA & PERMISSIONS Section - Simple list item */}
-        <View style={styles.section}>
-          <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md, textTransform: 'uppercase' }]}>
-            DATA & PERMISSIONS
-          </Text>
-          <TouchableOpacity
-            style={styles.listItem}
-            onPress={handleClearStorage}
-            activeOpacity={0.7}>
-            <View style={styles.listItemContent}>
-              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Clear all data</Text>
-              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                Delete spots, flows and saved data
-              </Text>
-            </View>
-            <Icon name="chevron-right" size={20} color={colors.icon} />
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </View>
   );

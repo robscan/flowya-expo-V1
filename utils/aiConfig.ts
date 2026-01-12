@@ -35,6 +35,7 @@ const getOpenAIKey = (): string => {
     return fromEnv.trim();
   }
   
+  // Retornar cadena vacía si no se encuentra en ninguna fuente
   return '';
 };
 
@@ -56,6 +57,9 @@ export const aiConfig: AIConfig = {
   timeout: 30000, // 30 segundos
 };
 
+// Variable estática para mostrar el warning solo una vez
+let hasShownWarning = false;
+
 /**
  * Validar que la API key esté configurada
  * SCOPE 0: Logging (sin exponer la key) y validación explícita
@@ -63,32 +67,10 @@ export const aiConfig: AIConfig = {
 export function isAIConfigured(): boolean {
   const hasKey = !!aiConfig.apiKey && aiConfig.apiKey.trim().length > 0;
   
-  // SCOPE 0.3: Validación explícita (debug) - log temporal
-  if (__DEV__) {
-    // Log explícito de si la key está cargada
-    console.log('[AI Config] Key loaded:', hasKey);
-    
-    if (hasKey) {
-      console.log('[AI Config] OpenAI API key configured (length:', aiConfig.apiKey?.length || 0, ')');
-      // Confirmar de dónde se leyó
-      const fromExtra = !!Constants.expoConfig?.extra?.['EXPO_PUBLIC_OPENAI_API_KEY'];
-      const fromEnv = !!process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-      console.log('[AI Config] Source - extra:', fromExtra, 'env:', fromEnv);
-    } else {
-      console.warn('[AI Config] OpenAI API key NOT configured');
-      console.warn('[AI Config] Set EXPO_PUBLIC_OPENAI_API_KEY in .env or Vercel Environment Variables');
-      // Debug: mostrar de dónde se está leyendo (sin exponer la key)
-      const fromExtra = !!Constants.expoConfig?.extra?.['EXPO_PUBLIC_OPENAI_API_KEY'];
-      const fromEnv = !!process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-      console.warn('[AI Config] Debug - from expoConfig.extra:', fromExtra, 'from process.env:', fromEnv);
-      
-      // SCOPE 0.3: Debug adicional - mostrar estructura de Constants
-      if (__DEV__) {
-        console.warn('[AI Config] Constants.expoConfig exists:', !!Constants.expoConfig);
-        console.warn('[AI Config] Constants.expoConfig.extra exists:', !!Constants.expoConfig?.extra);
-        console.warn('[AI Config] Constants.expoConfig.extra keys:', Constants.expoConfig?.extra ? Object.keys(Constants.expoConfig.extra) : []);
-      }
-    }
+  // Solo mostrar warning una vez en desarrollo cuando no está configurado
+  if (__DEV__ && !hasKey && !hasShownWarning) {
+    hasShownWarning = true;
+    console.warn('[AI Config] OpenAI API key NOT configured. Set EXPO_PUBLIC_OPENAI_API_KEY in .env or Vercel Environment Variables');
   }
   
   return hasKey;

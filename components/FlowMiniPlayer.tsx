@@ -5,45 +5,45 @@
  * FlowMiniBar representa estado de movimiento activo, no reproductor de audio.
  * 
  * Este archivo se mantiene temporalmente para referencia.
- * Se eliminará después de confirmar que la migración está completa.
+ * Se eliminar? despu?s de confirmar que la migraci?n est? completa.
  * 
- * Componente minimizado que muestra el estado del flow activo y permite controlar la reproducción.
- * Se posiciona sobre el tab bar cuando un flow está activo o pausado.
+ * Componente minimizado que muestra el estado del flow activo y permite controlar la reproducci?n.
+ * Se posiciona sobre el tab bar cuando un flow est? activo o pausado.
  * 
  * @component
  * 
  * ## Responsabilidades
  * 
- * ### SÍ tiene:
+ * ### S? tiene:
  * - Renderizar UI del mini player (imagen, nombre, distancia, controles)
  * - Reflejar estado del flow desde FlowContext
- * - Controlar reproducción básica (play/pause, previous/next, mute)
- * - Calcular y mostrar distancia al spot (si userLocation está disponible)
+ * - Controlar reproducci?n b?sica (play/pause, previous/next, mute)
+ * - Calcular y mostrar distancia al spot (si userLocation est? disponible)
  * - Toggle entre millas/km (estado interno)
- * - Posicionarse sobre el tab bar con animación
- * - Ocultarse cuando FlowScreen está abierto
+ * - Posicionarse sobre el tab bar con animaci?n
+ * - Ocultarse cuando FlowScreen est? abierto
  * 
  * ### NO tiene:
- * - Navegación (usa callback onExpand, el padre decide navegar)
- * - Gestión de ubicación (recibe userLocation como prop opcional)
- * - Edición de spots o modificación del flow
- * - Decisión de layout de pantalla (eso es responsabilidad del padre)
+ * - Navegaci?n (usa callback onExpand, el padre decide navegar)
+ * - Gesti?n de ubicaci?n (recibe userLocation como prop opcional)
+ * - Edici?n de spots o modificaci?n del flow
+ * - Decisi?n de layout de pantalla (eso es responsabilidad del padre)
  * 
  * ## Props
  * 
- * @param {() => void} [onExpand] - Callback cuando se expande el player (toca el player o botón expand).
+ * @param {() => void} [onExpand] - Callback cuando se expande el player (toca el player o bot?n expand).
  *                                  El componente llama expandFlow() del contexto y luego onExpand().
- * @param {{ latitude: number; longitude: number } | null} [userLocation] - Ubicación opcional del usuario
+ * @param {{ latitude: number; longitude: number } | null} [userLocation] - Ubicaci?n opcional del usuario
  *                                                                          para calcular distancia al spot.
  *                                                                          Si no se proporciona, no se muestra distancia.
  * 
  * ## Ejemplo de uso
  * 
  * ```tsx
- * // Uso básico (sin ubicación)
+ * // Uso b?sico (sin ubicaci?n)
  * <FlowMiniPlayer onExpand={() => router.push('/flow-screen')} />
  * 
- * // Con ubicación
+ * // Con ubicaci?n
  * const [location, setLocation] = useState(null);
  * <FlowMiniPlayer 
  *   userLocation={location}
@@ -72,9 +72,9 @@ import { calculateDistanceToSpot } from '@/utils/distance';
 import { getValidImage, hasValidImage } from '@/utils/imageHelpers';
 
 interface FlowMiniPlayerProps {
-  /** Callback cuando se expande el player (toca el player o botón expand) */
+  /** Callback cuando se expande el player (toca el player o bot?n expand) */
   onExpand?: () => void;
-  /** Ubicación opcional del usuario para calcular distancia al spot. Si no se proporciona, no se muestra distancia. */
+  /** Ubicaci?n opcional del usuario para calcular distancia al spot. Si no se proporciona, no se muestra distancia. */
   userLocation?: { latitude: number; longitude: number } | null;
 }
 
@@ -93,7 +93,7 @@ function formatDistance(distance?: number, useMiles: boolean = false): string | 
     return `${miles.toFixed(1)} mi`;
   }
   
-  // Sistema métrico
+  // Sistema m?trico
   if (distance < 1000) {
     return `${Math.round(distance)}m`;
   }
@@ -111,12 +111,12 @@ export function FlowMiniPlayer({ onExpand, userLocation: propUserLocation }: Flo
   const [useMiles, setUseMiles] = useState(false);
   const bottomAnim = useRef(new Animated.Value(tabBarHeight)).current;
 
-  // Determinar visibilidad: solo visible cuando flow está activo o pausado
+  // Determinar visibilidad: solo visible cuando flow est? activo o pausado
   const isVisible = flowState.status === 'active' || flowState.status === 'paused';
   const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
   const currentSpot = currentSpotId ? getSpotById(currentSpotId) : null;
 
-  // Ocultar cuando FlowScreen está abierta
+  // Ocultar cuando FlowScreen est? abierta
   const isFlowScreenOpen = pathname === '/flow-screen' || pathname?.includes('flow-screen');
 
   // Animar el bottom cuando cambia la altura del tab bar
@@ -133,12 +133,14 @@ export function FlowMiniPlayer({ onExpand, userLocation: propUserLocation }: Flo
     return null;
   }
 
-  // Calcular distancia al spot si userLocation está disponible
+  // Calcular distancia al spot si userLocation est? disponible
   const distance = propUserLocation ? calculateDistanceToSpot(propUserLocation, currentSpot.location) : null;
   const distanceText = formatDistance(distance || undefined, useMiles);
 
-  const hasImage = hasValidImage(currentSpot.photos);
-  const imageUrl = getValidImage(currentSpot.photos);
+  // FASE 5: Usar image.url en lugar de photos[0] (compatible con ambos formatos)
+  const spotImageUrl = currentSpot.image?.url || (currentSpot.photos && currentSpot.photos.length > 0 ? currentSpot.photos[0] : '');
+  const hasImage = hasValidImage(currentSpot.photos, spotImageUrl);
+  const imageUrl = getValidImage(currentSpot.photos, spotImageUrl);
 
   const handleDistancePress = (e: any) => {
     e.stopPropagation();
@@ -184,7 +186,7 @@ export function FlowMiniPlayer({ onExpand, userLocation: propUserLocation }: Flo
             </View>
           )}
 
-          {/* Información: Nombre y distancia */}
+          {/* Informaci?n: Nombre y distancia */}
           <View style={staticStyles.info}>
             <Text style={[staticStyles.spotName, { color: colors.text }]} numberOfLines={1}>
               {currentSpot.name || 'Current spot'}
@@ -204,7 +206,7 @@ export function FlowMiniPlayer({ onExpand, userLocation: propUserLocation }: Flo
             )}
           </View>
 
-          {/* Controles: Atrás, Play/Pause, Adelante, Mute */}
+          {/* Controles: Atr?s, Play/Pause, Adelante, Mute */}
           <FlowPlayerControls
             variant="mini"
             showPrevious={true}
@@ -220,7 +222,7 @@ export function FlowMiniPlayer({ onExpand, userLocation: propUserLocation }: Flo
   );
 }
 
-// Estilos estáticos
+// Estilos est?ticos
 const staticStyles = StyleSheet.create({
   container: {
     position: 'absolute',
@@ -233,14 +235,14 @@ const staticStyles = StyleSheet.create({
   },
   player: {
     borderRadius: 0, // Sin bordes redondeados - se fusiona con viewport
-    paddingVertical: spacing.xs / 2, // 4px padding vertical mínimo
-    paddingHorizontal: spacing.xs, // 8px padding horizontal mínimo
+    paddingVertical: spacing.xs / 2, // 4px padding vertical m?nimo
+    paddingHorizontal: spacing.xs, // 8px padding horizontal m?nimo
     overflow: 'hidden',
   },
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs, // 8px entre elementos (mínimo)
+    gap: spacing.xs, // 8px entre elementos (m?nimo)
   },
   spotImage: {
     width: 32, // 32px
@@ -257,24 +259,24 @@ const staticStyles = StyleSheet.create({
   },
   info: {
     flex: 1,
-    gap: 2, // 2px entre nombre y distancia (mínimo)
+    gap: 2, // 2px entre nombre y distancia (m?nimo)
   },
   spotName: {
     fontFamily: fontFamilyMedium,
-    fontSize: fontSize.xs, // 12px - tamaño más pequeño
+    fontSize: fontSize.xs, // 12px - tama?o m?s peque?o
     lineHeight: lineHeight.xs, // 16px
     fontWeight: '500',
   },
   distanceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2, // 2px entre icono y texto (mínimo)
+    gap: 2, // 2px entre icono y texto (m?nimo)
   },
   distanceText: {
     fontFamily,
-    fontSize: fontSize.xs, // 12px - mismo tamaño que nombre
+    fontSize: fontSize.xs, // 12px - mismo tama?o que nombre
     lineHeight: lineHeight.xs, // 16px
     fontWeight: '400',
   },
-  // controls y controlButton ahora están en FlowPlayerControls (con 48px mínimo)
+  // controls y controlButton ahora est?n en FlowPlayerControls (con 48px m?nimo)
 });

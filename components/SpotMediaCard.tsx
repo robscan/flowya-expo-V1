@@ -13,24 +13,28 @@
  */
 
 import { useRouter } from 'expo-router';
-import { memo, useCallback, useEffect, useMemo } from 'react';
-import { GestureResponderEvent, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { GestureResponderEvent, Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { Chip } from '@/components/ui/Chip';
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon, iconTouchableContainer } from '@/components/ui/Icon';
 import { InfoMeta } from '@/components/ui/InfoMeta';
 import { OptimizedImage } from '@/components/ui/OptimizedImage';
+import { PinStateModal } from '@/components/ui/PinStateModal';
+import { Toast } from '@/components/ui/Toast';
 import { borderRadius } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
-import { useSaved } from '@/contexts/SavedContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { PinState, useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { showAlert } from '@/utils/alertPolyfill';
+import { hasSeenPinModal, markPinModalSeen } from '@/utils/pinFirstTime';
 import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
-import { hasValidImage } from '@/utils/imageHelpers';
 
 interface SpotMediaCardProps {
   spot: Spot;
@@ -51,29 +55,106 @@ export const SpotMediaCard = memo(function SpotMediaCard({
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
   const { markSpotAsSeen } = useSpot();
-  const { toggleSaveSpot, isSpotSaved } = useSaved();
-  const hasImage = hasValidImage(spot.photos);
+  const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState } = useSaved();
+  const { isAuthenticated } = useAuth();
+  // FASE 5: Usar image.url en lugar de photos[0] (compatible con ambos formatos)
+  const imageUrl = spot.image?.url || (spot.photos && spot.photos.length > 0 ? spot.photos[0] : '');
+  const hasImage = imageUrl && imageUrl.trim().length > 0;
   const spotTypeLabel = getSpotTypeLabel(spot.type);
-  const isSaved = isSpotSaved(spot.id);
+  const isPinned = isSpotPinned(spot.id);
+  const pinState = getPinState(spot.id);
+  
+  // Estados para modal y Toast
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [hasSeenFirstTime, setHasSeenFirstTime] = useState<boolean | null>(null);
+
+  // Verificar si usuario ya vio el modal (cargar al montar)
+  useEffect(() => {
+    hasSeenPinModal().then((seen) => {
+      setHasSeenFirstTime(seen);
+    });
+  }, []);
 
   // Marcar Spot como 'seen' al montar (automáticamente)
   useEffect(() => {
     markSpotAsSeen(spot.id);
   }, [spot.id, markSpotAsSeen]);
 
-  // Memoizar source para evitar recreaciones innecesarias y prevenir loops
+  // FASE 5: Memoizar source usando image.url (compatible con ambos formatos)
   const imageSource = useMemo(() => {
-    if (!hasImage || !spot.photos || spot.photos.length === 0) {
+    if (!hasImage || !imageUrl) {
       return null;
     }
-    return { uri: spot.photos[0] };
-  }, [hasImage, spot.photos?.[0]]); // Solo cambiar cuando cambia la URI de la primera foto
+    return { uri: imageUrl };
+  }, [hasImage, imageUrl]); // Solo cambiar cuando cambia la URI de la imagen
 
-  // Handler para guardar spot
-  const handleSavePress = useCallback((e: GestureResponderEvent) => {
+  // Handler para seleccionar estado en modal
+  const handlePinStateSelect = useCallback((state: PinState) => {
+    pinSpot(spot.id, state);
+    setShowPinModal(false);
+    markPinModalSeen();
+    setHasSeenFirstTime(true); // Actualizar estado local después de marcar
+    setToastMessage(state === 'visited' ? 'Pinned · Visited' : 'Pinned · To visit');
+    setShowToast(true);
+  }, [spot.id, pinSpot]);
+
+  // Handler para Pin (V1.2: Toggle cíclico)
+  const handlePinPress = useCallback(async (e: GestureResponderEvent) => {
     e.stopPropagation(); // Prevenir que el card se abra
-    toggleSaveSpot(spot.id);
-  }, [spot.id, toggleSaveSpot]);
+    
+    // V1.2: Validar autenticación
+    if (!isAuthenticated) {
+      showAlert(
+        'Iniciar sesión requerido',
+        'Debes iniciar sesión para guardar pines.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Iniciar sesión',
+            onPress: () => router.push('/(tabs)/login'),
+          },
+        ]
+      );
+      return;
+    }
+    
+    // Si no está pinned
+    if (!isPinned) {
+      // Verificar si es primera vez (verificar siempre desde AsyncStorage para consistencia)
+      const seen = await hasSeenPinModal();
+      if (!seen) {
+        // Primera vez: mostrar modal
+        setHasSeenFirstTime(false);
+        setShowPinModal(true);
+        return;
+      }
+      
+      // No es primera vez: pin directamente con to_visit
+      if (hasSeenFirstTime === null) {
+        setHasSeenFirstTime(true);
+      }
+      pinSpot(spot.id, 'to_visit');
+      setToastMessage('Pinned · To visit');
+      setShowToast(true);
+      return;
+    }
+    
+    // Ya está pinned: toggle cíclico
+    if (pinState === 'to_visit') {
+      // Cambiar a visited
+      changePinState(spot.id, 'visited');
+      setToastMessage('Changed to Visited');
+      setShowToast(true);
+    } else if (pinState === 'visited') {
+      // Eliminar pin
+      unpinSpot(spot.id);
+      setToastMessage('Pin removido');
+      setShowToast(true);
+    }
+  }, [spot.id, isPinned, pinState, unpinSpot, pinSpot, changePinState, isAuthenticated, router, hasSeenFirstTime]);
+
 
   // Handler para navegar a Map
   const handleViewOnMap = useCallback((e: GestureResponderEvent) => {
@@ -84,7 +165,13 @@ export const SpotMediaCard = memo(function SpotMediaCard({
   // Render variant="small" (compacto para grid y sliders)
   if (size === 'small') {
     return (
-      <Pressable onPress={onPress} style={styles.smallCardContainer}>
+      <>
+        <TouchableOpacity 
+          onPress={onPress} 
+          style={styles.smallCardContainer} 
+          activeOpacity={0.7}
+          delayPressIn={Platform.OS === 'web' ? 150 : 0}
+        >
         {/* Imagen cuadrada 160px - siempre visible */}
         <View style={styles.smallImageContainer}>
           <OptimizedImage
@@ -110,7 +197,7 @@ export const SpotMediaCard = memo(function SpotMediaCard({
               <Chip text="Map" variant="default" icon="visibility" solidBackground={true} />
             </Pressable>
           </View>
-          {/* Icono de guardar sobre la imagen - extremo superior derecho */}
+          {/* Icono de Pin sobre la imagen - extremo superior derecho */}
           <View style={styles.bookmarkOverlay}>
             <View
               style={[
@@ -121,15 +208,15 @@ export const SpotMediaCard = memo(function SpotMediaCard({
                 },
               ]}>
               <Pressable
-                onPress={handleSavePress}
+                onPress={handlePinPress}
                 style={({ pressed }) => [
                   iconTouchableContainer.base,
                   pressed && { opacity: 0.7 }
                 ]}>
                 <Icon
-                  name="bookmark"
+                  name={isPinned && pinState === 'visited' ? 'check-circle' : 'pin'}
                   size={24}
-                  color={isSaved ? colors.tint : colors.text}
+                  color={isPinned ? (pinState === 'visited' ? '#4CAF50' : '#2196F3') : colors.text}
                 />
               </Pressable>
             </View>
@@ -151,13 +238,33 @@ export const SpotMediaCard = memo(function SpotMediaCard({
             size={size}
           />
         )}
-      </Pressable>
+      </TouchableOpacity>
+      <PinStateModal
+        visible={showPinModal}
+        onSelect={handlePinStateSelect}
+        onCancel={() => setShowPinModal(false)}
+      />
+      <Modal
+        visible={showToast}
+        transparent
+        animationType="none"
+        onRequestClose={() => setShowToast(false)}
+        statusBarTranslucent>
+        <Toast
+          message={toastMessage}
+          visible={showToast}
+          onHide={() => setShowToast(false)}
+          type="success"
+        />
+      </Modal>
+      </>
     );
   }
 
   // Render size="large" (default)
   return (
-    <Pressable onPress={onPress} style={styles.cardContainer}>
+    <>
+      <Pressable onPress={onPress} style={styles.cardContainer}>
       <GlassView
         style={styles.card}
         intensity="light"
@@ -190,7 +297,7 @@ export const SpotMediaCard = memo(function SpotMediaCard({
               <Chip text="Map" variant="default" icon="visibility" solidBackground={true} />
             </Pressable>
           </View>
-          {/* Icono de guardar sobre la imagen - extremo superior derecho */}
+          {/* Icono de Pin sobre la imagen - extremo superior derecho */}
           <View style={styles.bookmarkOverlay}>
             <View
               style={[
@@ -201,15 +308,15 @@ export const SpotMediaCard = memo(function SpotMediaCard({
                 },
               ]}>
               <Pressable
-                onPress={handleSavePress}
+                onPress={handlePinPress}
                 style={({ pressed }) => [
                   iconTouchableContainer.base,
                   pressed && { opacity: 0.7 }
                 ]}>
                 <Icon
-                  name="bookmark"
+                  name={isPinned && pinState === 'visited' ? 'check-circle' : 'pin'}
                   size={24}
-                  color={isSaved ? colors.tint : colors.text}
+                  color={isPinned ? (pinState === 'visited' ? '#4CAF50' : '#2196F3') : colors.text}
                 />
               </Pressable>
             </View>
@@ -240,6 +347,25 @@ export const SpotMediaCard = memo(function SpotMediaCard({
         </View>
       </GlassView>
     </Pressable>
+    <PinStateModal
+      visible={showPinModal}
+      onSelect={handlePinStateSelect}
+      onCancel={() => setShowPinModal(false)}
+    />
+    <Modal
+      visible={showToast}
+      transparent
+      animationType="none"
+      onRequestClose={() => setShowToast(false)}
+      statusBarTranslucent>
+      <Toast
+        message={toastMessage}
+        visible={showToast}
+        onHide={() => setShowToast(false)}
+        type="success"
+      />
+    </Modal>
+    </>
   );
 });
 
@@ -247,8 +373,8 @@ const styles = StyleSheet.create({
   // Variant large
   cardContainer: {
     marginBottom: spacing.xs,
-    // @ts-ignore - touch-action es válido en web
-    ...(Platform.OS === 'web' && { touchAction: 'manipulation' }),
+    // iOS Safari: Eliminar touch-action para permitir que el navegador maneje scroll naturalmente
+    // El ScrollView padre manejará el scroll correctamente
   },
   card: {
     borderRadius: borderRadius.lg,
@@ -269,8 +395,8 @@ const styles = StyleSheet.create({
   smallCardContainer: {
     // Container controls width, not the card
     width: '100%',
-    // @ts-ignore - touch-action es válido en web
-    ...(Platform.OS === 'web' && { touchAction: 'manipulation' }),
+    // iOS Safari: Eliminar touch-action para permitir que el navegador maneje scroll naturalmente
+    // El ScrollView padre manejará el scroll correctamente
   },
   smallImageContainer: {
     width: '100%',

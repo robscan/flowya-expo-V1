@@ -11,6 +11,7 @@
 
 import { Spot } from '@/data/spots';
 import { Path, getPathSpots } from '@/data/paths';
+import { UnifiedSpot } from '@/utils/worldSpotHelpers';
 
 export interface SearchResult {
   type: 'spot' | 'path';
@@ -36,8 +37,9 @@ function matchesText(text: string, searchQuery: string): boolean {
 
 /**
  * Calcular score de relevancia para un Spot
+ * FASE 7: Acepta UnifiedSpot (UserSpot | WorldSpot)
  */
-function calculateSpotRelevance(spot: Spot, query: string): number {
+function calculateSpotRelevance(spot: UnifiedSpot, query: string): number {
   let score = 0;
   const normalizedQuery = query.toLowerCase().trim();
   let hasMatch = false;
@@ -81,9 +83,10 @@ function calculateSpotRelevance(spot: Spot, query: string): number {
 
 /**
  * Buscar Spots
+ * FASE 7: Acepta UnifiedSpot[] (UserSpots + WorldSpots)
  */
 export function searchSpots(
-  spots: Spot[],
+  spots: UnifiedSpot[],
   query: string,
   limit: number = 20
 ): SearchResult[] {
@@ -106,10 +109,11 @@ export function searchSpots(
 
 /**
  * Buscar Paths que contienen Spots relacionados
+ * FASE 7: Acepta UnifiedSpot[] (UserSpots + WorldSpots)
  */
 export function searchPaths(
   paths: Path[],
-  allSpots: Spot[],
+  allSpots: UnifiedSpot[],
   query: string,
   limit: number = 10
 ): SearchResult[] {
@@ -163,9 +167,10 @@ export function searchPaths(
 
 /**
  * Búsqueda completa (Spots + Paths)
+ * FASE 7: Acepta UnifiedSpot[] (UserSpots + WorldSpots)
  */
 export function searchAll(
-  spots: Spot[],
+  spots: UnifiedSpot[],
   paths: Path[],
   query: string,
   options: {

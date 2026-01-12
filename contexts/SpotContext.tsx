@@ -9,20 +9,23 @@
  * - Manejo de Spots incompletos (por diseño, los spots pueden ser incompletos)
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
 
-import { Spot , mockSpots } from '@/data/spots';
-import { generateSpotContent as generateAIContent, GenerateContentOptions } from '@/utils/aiContentGenerator';
-import { migrateOwnersLegacy } from '@/utils/ownerMigration';
 import { migrateSpotsRegions } from '@/core/region';
-import { normalizeAllSpots } from '@/utils/spotNormalizer';
+import { mockSpots, Spot } from '@/data/spots';
+import { generateSpotContent as generateAIContent, GenerateContentOptions } from '@/utils/aiContentGenerator';
 import { removeImageState } from '@/utils/imageCache';
+import { migrateOwnersLegacy } from '@/utils/ownerMigration';
+import { canMigrateSpot, isValidSpotV1_2, migrateSpotToV1_2 } from '@/utils/spotMigration';
+import { normalizeAllSpots } from '@/utils/spotNormalizer';
+import { auditAllSpots, logAuditReport, fixSpots as fixAllSpots } from '@/utils/spotAudit';
 import { useAuth } from './AuthContext';
 
 const STORAGE_KEY = '@flowya_spots';
 const REGION_REMIGRATION_KEY = '@flowya_region_remigration_done';
 const LEGACY_MARKED_KEY = '@flowya_legacy_marked';
+const V1_2_MIGRATION_KEY = '@flowya_v1_2_migration_done';
 
 // ============================================================================
 // TIPOS DE CACHE
@@ -204,6 +207,100 @@ export function SpotProvider({ children }: { children: ReactNode }) {
         // SCOPE 6.2: Normalizar spots legacy al cargar
         loadedSpots = normalizeAllSpots(loadedSpots);
         
+        // FASE 6A: Migración V1.2 - Migrar spots legacy al modelo V1.2 (UNA SOLA VEZ)
+        const shouldMigrateToV1_2 = async (): Promise<boolean> => {
+          try {
+            const done = await AsyncStorage.getItem(V1_2_MIGRATION_KEY);
+            return done !== 'true';
+          } catch {
+            return false;
+          }
+        };
+        
+        if (await shouldMigrateToV1_2()) {
+          const spotsBeforeMigration = [...loadedSpots];
+          const migratedSpots: Spot[] = [];
+          const migrationErrors: { spotId: string; error: string }[] = [];
+          
+          for (const spot of loadedSpots) {
+            try {
+              // Verificar si el spot necesita migración (tiene campos legacy)
+              const needsMigration = 
+                !isValidSpotV1_2(spot) || // No cumple con modelo V1.2
+                ('latitude' in spot.location && 'longitude' in spot.location) || // Formato antiguo de location
+                (spot.photos && spot.photos.length > 0 && !spot.image?.url) || // Tiene photos pero no image
+                (!spot.shortDescription && (spot.description || spot.whyItMatters)) || // Tiene description/whyItMatters pero no shortDescription
+                (spot.hasGeneratedContent === undefined && spot.aiGenerated !== undefined); // Tiene aiGenerated pero no hasGeneratedContent
+              
+              if (needsMigration && canMigrateSpot(spot)) {
+                // Migrar spot a V1.2
+                const migrated = migrateSpotToV1_2(spot);
+                
+                // Validar que el spot migrado es válido
+                if (isValidSpotV1_2(migrated)) {
+                  // Convertir SpotV1_2 a Spot (manteniendo campos legacy para compatibilidad temporal)
+                  const migratedSpot: Spot = {
+                    ...migrated,
+                    // Mantener campos legacy temporalmente para compatibilidad
+                    photos: spot.photos,
+                    description: spot.description,
+                    whyItMatters: spot.whyItMatters,
+                    culturalContext: spot.culturalContext,
+                    planInfo: spot.planInfo,
+                    hours: spot.hours,
+                    cost: spot.cost,
+                    restrictions: spot.restrictions,
+                    accessibility: spot.accessibility,
+                    aiGenerated: spot.aiGenerated,
+                    isLegacySpot: spot.isLegacySpot,
+                    createdBy: spot.createdBy,
+                    locationRegion: spot.locationRegion,
+                    locationLatitude: spot.locationLatitude,
+                    locationLongitude: spot.locationLongitude,
+                    createdAt: spot.createdAt,
+                    updatedAt: new Date(), // Actualizar timestamp
+                  };
+                  migratedSpots.push(migratedSpot);
+                } else {
+                  migrationErrors.push({
+                    spotId: spot.id,
+                    error: 'Spot migrado no es válido según modelo V1.2',
+                  });
+                  // Mantener spot original si la migración falla
+                  migratedSpots.push(spot);
+                }
+              } else {
+                // Spot ya está en formato V1.2 o no puede migrarse, mantenerlo
+                migratedSpots.push(spot);
+              }
+            } catch (error: any) {
+              migrationErrors.push({
+                spotId: spot.id,
+                error: `Error al migrar: ${error.message || String(error)}`,
+              });
+              // Mantener spot original si hay error
+              migratedSpots.push(spot);
+            }
+          }
+          
+          // Actualizar loadedSpots con spots migrados
+          loadedSpots = migratedSpots;
+          
+          // Guardar spots migrados
+          await saveSpots(loadedSpots);
+          
+          // Marcar migración como completada
+          await AsyncStorage.setItem(V1_2_MIGRATION_KEY, 'true');
+          
+          if (__DEV__) {
+            const migratedCount = loadedSpots.length - migrationErrors.length;
+            console.log(`[FASE 6A] Migrated ${migratedCount} spots to V1.2 model`);
+            if (migrationErrors.length > 0) {
+              console.warn(`[FASE 6A] ${migrationErrors.length} spots had migration errors:`, migrationErrors);
+            }
+          }
+        }
+        
         // SCOPE 6.3: Marcar spots existentes como legacy (una sola vez)
         const shouldMarkLegacy = async (): Promise<boolean> => {
           try {
@@ -238,6 +335,87 @@ export function SpotProvider({ children }: { children: ReactNode }) {
         // SCOPE 6.2: Normalizar spots legacy al cargar
         loadedSpots = normalizeAllSpots(loadedSpots);
         
+        // FASE 6A: Migración V1.2 - Migrar spots legacy al modelo V1.2 (UNA SOLA VEZ)
+        const shouldMigrateToV1_2 = async (): Promise<boolean> => {
+          try {
+            const done = await AsyncStorage.getItem(V1_2_MIGRATION_KEY);
+            return done !== 'true';
+          } catch {
+            return false;
+          }
+        };
+        
+        if (await shouldMigrateToV1_2()) {
+          const migratedSpots: Spot[] = [];
+          const migrationErrors: { spotId: string; error: string }[] = [];
+          
+          for (const spot of loadedSpots) {
+            try {
+              // Verificar si el spot necesita migración
+              const needsMigration = 
+                !isValidSpotV1_2(spot) ||
+                ('latitude' in spot.location && 'longitude' in spot.location) ||
+                (spot.photos && spot.photos.length > 0 && !spot.image?.url) ||
+                (!spot.shortDescription && (spot.description || spot.whyItMatters)) ||
+                (spot.hasGeneratedContent === undefined && spot.aiGenerated !== undefined);
+              
+              if (needsMigration && canMigrateSpot(spot)) {
+                const migrated = migrateSpotToV1_2(spot);
+                
+                if (isValidSpotV1_2(migrated)) {
+                  const migratedSpot: Spot = {
+                    ...migrated,
+                    photos: spot.photos,
+                    description: spot.description,
+                    whyItMatters: spot.whyItMatters,
+                    culturalContext: spot.culturalContext,
+                    planInfo: spot.planInfo,
+                    hours: spot.hours,
+                    cost: spot.cost,
+                    restrictions: spot.restrictions,
+                    accessibility: spot.accessibility,
+                    aiGenerated: spot.aiGenerated,
+                    isLegacySpot: spot.isLegacySpot,
+                    createdBy: spot.createdBy,
+                    locationRegion: spot.locationRegion,
+                    locationLatitude: spot.locationLatitude,
+                    locationLongitude: spot.locationLongitude,
+                    createdAt: spot.createdAt,
+                    updatedAt: new Date(),
+                  };
+                  migratedSpots.push(migratedSpot);
+                } else {
+                  migrationErrors.push({
+                    spotId: spot.id,
+                    error: 'Spot migrado no es válido según modelo V1.2',
+                  });
+                  migratedSpots.push(spot);
+                }
+              } else {
+                migratedSpots.push(spot);
+              }
+            } catch (error: any) {
+              migrationErrors.push({
+                spotId: spot.id,
+                error: `Error al migrar: ${error.message || String(error)}`,
+              });
+              migratedSpots.push(spot);
+            }
+          }
+          
+          loadedSpots = migratedSpots;
+          await saveSpots(loadedSpots);
+          await AsyncStorage.setItem(V1_2_MIGRATION_KEY, 'true');
+          
+          if (__DEV__) {
+            const migratedCount = loadedSpots.length - migrationErrors.length;
+            console.log(`[FASE 6A] Migrated ${migratedCount} spots to V1.2 model`);
+            if (migrationErrors.length > 0) {
+              console.warn(`[FASE 6A] ${migrationErrors.length} spots had migration errors:`, migrationErrors);
+            }
+          }
+        }
+        
         // SCOPE 6.3: Marcar spots existentes como legacy (una sola vez)
         const shouldMarkLegacy = async (): Promise<boolean> => {
           try {
@@ -257,13 +435,23 @@ export function SpotProvider({ children }: { children: ReactNode }) {
           await AsyncStorage.setItem(LEGACY_MARKED_KEY, 'true');
         }
         
-        // Guardar los spots iniciales con owners, regiones, normalización y legacy flag asignados
+        // Guardar los spots iniciales con owners, regiones, normalización, migración V1.2 y legacy flag asignados
         await saveSpots(loadedSpots);
       }
       
       // Inicializar cache marcando todos los Spots como 'available'
       initializeSpotCache(loadedSpots);
       setSpots(loadedSpots);
+      
+      // Ejecutar auditoría de spots en desarrollo (solo reportar, no corregir automáticamente)
+      if (__DEV__) {
+        try {
+          const auditReport = await auditAllSpots();
+          logAuditReport(auditReport);
+        } catch (auditError) {
+          console.error('[SpotAudit] Error durante auditoría:', auditError);
+        }
+      }
     } catch (error) {
       console.error('Error loading spots:', error);
       // Fallback a mock data con migraciones aplicadas
@@ -275,6 +463,73 @@ export function SpotProvider({ children }: { children: ReactNode }) {
       
       // SCOPE 6.2: Normalizar spots legacy al cargar
       fallbackSpots = normalizeAllSpots(fallbackSpots);
+      
+      // FASE 6A: Migración V1.2 - Migrar spots legacy al modelo V1.2 (UNA SOLA VEZ)
+      const shouldMigrateToV1_2 = async (): Promise<boolean> => {
+        try {
+          const done = await AsyncStorage.getItem(V1_2_MIGRATION_KEY);
+          return done !== 'true';
+        } catch {
+          return false;
+        }
+      };
+      
+      if (await shouldMigrateToV1_2()) {
+        const migratedSpots: Spot[] = [];
+        
+        for (const spot of fallbackSpots) {
+          try {
+            const needsMigration = 
+              !isValidSpotV1_2(spot) ||
+              ('latitude' in spot.location && 'longitude' in spot.location) ||
+              (spot.photos && spot.photos.length > 0 && !spot.image?.url) ||
+              (!spot.shortDescription && (spot.description || spot.whyItMatters)) ||
+              (spot.hasGeneratedContent === undefined && spot.aiGenerated !== undefined);
+            
+            if (needsMigration && canMigrateSpot(spot)) {
+              const migrated = migrateSpotToV1_2(spot);
+              
+              if (isValidSpotV1_2(migrated)) {
+                const migratedSpot: Spot = {
+                  ...migrated,
+                  photos: spot.photos,
+                  description: spot.description,
+                  whyItMatters: spot.whyItMatters,
+                  culturalContext: spot.culturalContext,
+                  planInfo: spot.planInfo,
+                  hours: spot.hours,
+                  cost: spot.cost,
+                  restrictions: spot.restrictions,
+                  accessibility: spot.accessibility,
+                  aiGenerated: spot.aiGenerated,
+                  isLegacySpot: spot.isLegacySpot,
+                  createdBy: spot.createdBy,
+                  locationRegion: spot.locationRegion,
+                  locationLatitude: spot.locationLatitude,
+                  locationLongitude: spot.locationLongitude,
+                  createdAt: spot.createdAt,
+                  updatedAt: new Date(),
+                };
+                migratedSpots.push(migratedSpot);
+              } else {
+                migratedSpots.push(spot);
+              }
+            } else {
+              migratedSpots.push(spot);
+            }
+          } catch {
+            migratedSpots.push(spot);
+          }
+        }
+        
+        fallbackSpots = migratedSpots;
+        await saveSpots(fallbackSpots);
+        await AsyncStorage.setItem(V1_2_MIGRATION_KEY, 'true');
+        
+        if (__DEV__) {
+          console.log(`[FASE 6A] Migrated ${fallbackSpots.length} fallback spots to V1.2 model`);
+        }
+      }
       
       initializeSpotCache(fallbackSpots);
       setSpots(fallbackSpots);
@@ -377,27 +632,64 @@ export function SpotProvider({ children }: { children: ReactNode }) {
     setSpots((prev) => prev.filter((spot) => spot.id !== id));
   };
 
+  /**
+   * Generar contenido para un spot - FLOWYA V1.2 (Bajo demanda)
+   * 
+   * FASE 2: Solo se ejecuta cuando:
+   * - hasGeneratedContent === false (o aiGenerated === undefined en modelo actual)
+   * - Usuario explícitamente lo solicita (en Spot Detail)
+   * 
+   * NO se ejecuta automáticamente al crear o editar un Spot.
+   * Solo genera shortDescription (texto evocativo de 1-2 líneas).
+   */
   const generateSpotContent = async (spotId: string, options?: GenerateContentOptions): Promise<void> => {
     const spot = getSpotById(spotId);
     if (!spot) {
       throw new Error(`Spot with id ${spotId} not found`);
     }
 
+    // FASE 2: Verificar que el spot no tenga contenido generado previamente
+    // Usar aiGenerated como indicador en modelo actual (se migrará a hasGeneratedContent en fase 6)
+    const hasGeneratedContent = spot.aiGenerated !== undefined && spot.aiGenerated !== null;
+    
+    if (hasGeneratedContent && !options?.forceRegenerate) {
+      console.log('[AI V1.2] Spot already has generated content, skipping generation. Use forceRegenerate to override.');
+      throw new Error('Spot already has generated content. Use forceRegenerate option to override.');
+    }
+
+    // FASE 2: Verificar si ya tiene shortDescription (o description/whyItMatters) sin forceRegenerate
+    const hasDescription = spot.shortDescription || spot.description || spot.whyItMatters;
+    if (hasDescription && hasDescription.trim().length > 0 && !options?.forceRegenerate) {
+      console.log('[AI V1.2] Spot already has description, skipping generation. Use forceRegenerate to override.');
+      throw new Error('Spot already has description. Use forceRegenerate option to override.');
+    }
+
     try {
+      console.log('[AI V1.2] Generating content on demand for spot:', { spotId, spotName: spot.name });
       const generatedContent = await generateAIContent(spot, options);
       
-      // SCOPE 2: Actualizar spot con contenido generado (todos los campos del contrato)
+      // FASE 2: Actualizar spot SOLO con shortDescription generado
+      // Mantener campos legacy para compatibilidad temporal durante migración
       updateSpot(spotId, {
-        description: generatedContent.spotDescription || spot.description,
-        whyItMatters: generatedContent.whyItMatters || generatedContent.spotDescription || spot.whyItMatters,
-        culturalContext: generatedContent.culturalContext || spot.culturalContext,
-        planInfo: generatedContent.planInfo || spot.planInfo, // SCOPE 2: Persistir planInfo
-        howToVisit: generatedContent.howToVisit || spot.howToVisit,
-        narration: generatedContent.narration || spot.narration,
-        aiGenerated: generatedContent.aiGenerated || spot.aiGenerated,
+        // Nuevo campo (para spots que ya migraron)
+        shortDescription: generatedContent.shortDescription || spot.shortDescription,
+        // Campos legacy para compatibilidad temporal (se eliminarán en fase 4)
+        description: generatedContent.spotDescription || generatedContent.shortDescription || spot.description,
+        whyItMatters: generatedContent.whyItMatters || generatedContent.shortDescription || spot.whyItMatters,
+        // Metadatos de generación (marcar que tiene contenido generado)
+        aiGenerated: generatedContent.aiGenerated || {
+          generatedAt: new Date(),
+          model: 'gpt-4',
+          source: 'ai',
+        },
+      });
+      
+      console.log('[AI V1.2] Content generated and saved successfully:', {
+        spotId,
+        shortDescriptionLength: generatedContent.shortDescription?.length || 0,
       });
     } catch (error) {
-      console.error('Error generating spot content:', error);
+      console.error('[AI V1.2] Error generating spot content:', error);
       throw error;
     }
   };

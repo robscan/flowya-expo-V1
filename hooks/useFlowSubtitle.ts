@@ -5,7 +5,8 @@
  * Obtiene el subtítulo actual basado en:
  * - Evento activo del flowEventEmitter (mediante estado interno)
  * - Estado del Flow (currentSpotIndex, totalSpots, currentSpot, currentNarrationBlock)
- * - Spot.narration (anticipation, presence, transition)
+ * - generateNarrationText() con fallbacks (culturalContext, description, generic)
+ * FASE 3: spot.narration eliminado - Flow narrative eliminado del modelo Spot
  * - Condiciones (transition vs end)
  * - Regla de prioridad de eventos
  * - Fallback UX (último texto válido)
@@ -15,6 +16,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFlow } from '@/contexts/FlowContext';
 import { usePath } from '@/contexts/PathContext';
 import { useSpot } from '@/contexts/SpotContext';
+import { generateNarrationText } from '@/utils/narrationGenerator';
+import { NarrationType } from '@/contexts/NarrationContext';
 import { flowEventEmitter, FlowEventData } from '@/utils/flowEventEmitter';
 import { FlowSubtitle, FlowMoment, FlowEvent } from '@/types/flowSubtitle';
 
@@ -166,24 +169,19 @@ export function useFlowSubtitle(): FlowSubtitle | null {
         break;
 
       case 'SPOT_PROXIMITY_ENTER': {
-        // Obtener texto de Spot.narration (anticipation o presence)
-        if (!currentSpot || !currentSpot.narration) {
+        // FASE 3: spot.narration eliminado - usar generateNarrationText() con fallbacks
+        if (!currentSpot) {
           break;
         }
 
-        const narration = currentSpot.narration;
         const currentBlock = flowState.currentNarrationBlock;
         
-        // Determinar qué texto mostrar basado en currentNarrationBlock
-        let text: string | undefined;
-        if (currentBlock === 'anticipation' && narration.anticipation) {
-          text = narration.anticipation;
-        } else if (currentBlock === 'presence' && narration.presence) {
-          text = narration.presence;
-        } else {
-          // Fallback: usar anticipation si está disponible, sino presence
-          text = narration.anticipation || narration.presence;
-        }
+        // Determinar qué tipo de narration mostrar basado en currentNarrationBlock
+        const narrationType: NarrationType = currentBlock === 'anticipation' ? 'anticipation' : 'presence';
+        
+        // FASE 3: Usar generateNarrationText() que tiene fallbacks (culturalContext, description, generic)
+        // spot.narration eliminado - usar fallbacks automáticos
+        const text = generateNarrationText(currentSpot, narrationType);
 
         if (text && text.trim().length > 0) {
           subtitle = {
@@ -199,18 +197,25 @@ export function useFlowSubtitle(): FlowSubtitle | null {
       }
 
       case 'SPOT_COMPLETED': {
-        // Obtener texto de Spot.narration.transition
+        // FASE 3: spot.narration eliminado - usar generateNarrationText() con fallbacks
         const spotId = currentEventData?.spotId || currentSpotId;
         const spotIndex = currentEventData?.spotIndex ?? flowState.currentSpotIndex;
         const spot = spotId ? getSpotById(spotId) : currentSpot;
         
-        if (!spot || !spot.narration?.transition) {
+        if (!spot) {
+          break;
+        }
+
+        // FASE 3: Usar generateNarrationText() que tiene fallbacks (culturalContext, description, generic)
+        // spot.narration eliminado - usar fallbacks automáticos
+        const text = generateNarrationText(spot, 'transition');
+
+        if (!text || text.trim().length === 0) {
           break;
         }
 
         const isLastSpot = spotIndex >= totalSpots - 1;
         const moment: FlowMoment = isLastSpot ? 'end' : 'transition';
-        const text = spot.narration.transition;
 
         if (text && text.trim().length > 0) {
           subtitle = {

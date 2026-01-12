@@ -42,31 +42,41 @@ function toRadians(degrees: number): number {
 }
 
 /**
- * Calcular distancia desde ubicación del usuario a un spot
+ * FASE 4: Calcular distancia desde ubicación del usuario a un spot
+ * Compatible con ambos formatos: lat/lng y latitude/longitude
  */
 export function calculateDistanceToSpot(
-  userLocation: { latitude: number; longitude: number } | null,
-  spotLocation: { latitude: number; longitude: number }
+  userLocation: { lat: number; lng: number } | { latitude: number; longitude: number } | null,
+  spotLocation: { lat: number; lng: number } | { latitude: number; longitude: number }
 ): number | null {
   if (!userLocation) {
     return null;
   }
   
+  // FASE 4: Normalizar location del usuario
+  const userLat = 'lat' in userLocation ? userLocation.lat : userLocation.latitude;
+  const userLng = 'lng' in userLocation ? userLocation.lng : userLocation.longitude;
+  
+  // FASE 4: Normalizar location del spot
+  const spotLat = 'lat' in spotLocation ? spotLocation.lat : spotLocation.latitude;
+  const spotLng = 'lng' in spotLocation ? spotLocation.lng : spotLocation.longitude;
+  
   return calculateDistance(
-    userLocation.latitude,
-    userLocation.longitude,
-    spotLocation.latitude,
-    spotLocation.longitude
+    userLat,
+    userLng,
+    spotLat,
+    spotLng
   );
 }
 
 /**
- * Calcular distancia total de un path sumando distancias entre spots consecutivos
- * @param path Path con array de spot IDs en orden
- * @param spots Array completo de spots para obtener ubicaciones
- * @returns Distancia total en metros, o 0 si no hay suficientes spots
+ * FASE 4: Calcular distancia total de un path sumando distancias entre spots consecutivos
+ * Compatible con ambos formatos: lat/lng y latitude/longitude
  */
-export function calculatePathDistance(path: { spots: string[] }, spots: Array<{ id: string; location: { latitude: number; longitude: number } }>): number {
+export function calculatePathDistance(
+  path: { spots: string[] }, 
+  spots: Array<{ id: string; location: { lat: number; lng: number } | { latitude: number; longitude: number } }>
+): number {
   if (path.spots.length < 2) {
     return 0;
   }
@@ -81,11 +91,17 @@ export function calculatePathDistance(path: { spots: string[] }, spots: Array<{ 
     const nextSpot = spots.find(s => s.id === nextSpotId);
 
     if (currentSpot && nextSpot) {
+      // FASE 4: Normalizar locations
+      const currentLat = 'lat' in currentSpot.location ? currentSpot.location.lat : currentSpot.location.latitude;
+      const currentLng = 'lng' in currentSpot.location ? currentSpot.location.lng : currentSpot.location.longitude;
+      const nextLat = 'lat' in nextSpot.location ? nextSpot.location.lat : nextSpot.location.latitude;
+      const nextLng = 'lng' in nextSpot.location ? nextSpot.location.lng : nextSpot.location.longitude;
+      
       const segmentDistance = calculateDistance(
-        currentSpot.location.latitude,
-        currentSpot.location.longitude,
-        nextSpot.location.latitude,
-        nextSpot.location.longitude
+        currentLat,
+        currentLng,
+        nextLat,
+        nextLng
       );
       totalDistance += segmentDistance;
     }

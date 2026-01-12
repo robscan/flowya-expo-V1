@@ -63,15 +63,20 @@ export interface FlowyaMapViewRef {
   resize: () => void;
 }
 
-// Calcular región inicial basada en ubicación del usuario o spots
+// FASE 4-5: Calcular región inicial basada en ubicación del usuario o spots (compatible con ambos formatos)
 function calculateInitialRegion(
   spots: Spot[],
   userLocation?: { latitude: number; longitude: number } | null
 ): Region {
   // Prioridad 1: Si hay spots, calcular región basada en ellos
   if (spots.length > 0) {
-  const latitudes = spots.map((spot) => spot.location.latitude);
-  const longitudes = spots.map((spot) => spot.location.longitude);
+  // FASE 4-5: Normalizar locations a formato latitude/longitude
+  const latitudes = spots.map((spot) => {
+    return 'lat' in spot.location ? spot.location.lat : spot.location.latitude;
+  });
+  const longitudes = spots.map((spot) => {
+    return 'lng' in spot.location ? spot.location.lng : spot.location.longitude;
+  });
 
   const minLat = Math.min(...latitudes);
   const maxLat = Math.max(...latitudes);

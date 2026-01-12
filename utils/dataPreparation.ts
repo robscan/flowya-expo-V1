@@ -20,6 +20,7 @@ import { BaseLocation } from '@/contexts/LocationContext';
 import { Flow } from '@/data/flows';
 import { Spot } from '@/data/spots';
 import { LocationRegion } from '@/types/locationRegion';
+import { UnifiedSpot } from '@/utils/worldSpotHelpers';
 import { getAvailableRegionsFromSpots, getSpotsByRegion, RegionOption } from '@/core/region';
 import { getSpotDistance } from '@/hooks/useSpotDistance';
 import { isFlowComplete } from '@/utils/flowValidation';
@@ -77,7 +78,7 @@ export type { RegionOption } from '@/core/region';
  * @returns Datos preparados para Home Screen
  */
 export function prepareHomeData(
-  spots: Spot[],
+  spots: UnifiedSpot[], // FASE 7: UserSpots + WorldSpots
   flows: Flow[],
   baseLocation: BaseLocation | null,
   likedSpots: string[],
@@ -86,6 +87,7 @@ export function prepareHomeData(
 ): HomeData {
   // Filtrar spots por región usando regionId (canónico)
   // CANONICAL: Usa función desde core - Home NO calcula regiones en runtime
+  // OPTIMIZACIÓN: prepareHomeData está memoizada en Home Screen, así que el filtrado solo se ejecuta cuando cambian los datos
   const filteredSpots = getSpotsByRegion(spots, selectedRegionId);
   
   // Obtener regiones disponibles (desde todos los spots, no filtrados)

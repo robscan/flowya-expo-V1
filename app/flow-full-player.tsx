@@ -38,7 +38,7 @@ export default function FlowFullPlayerScreen() {
   const { flowState, currentSpotId, progress } = useFlow();
   const { getFlowById } = usePath();
   const { spots, getSpotById } = useSpot();
-  const { isSpotLikedFromPlayer, toggleLikeSpotFromPlayer, toggleNotMyVibeSpot, notMyVibeSpots } = useSaved();
+  const { toggleNotMyVibeSpot, notMyVibeSpots } = useSaved();
   const narration = useNarration();
   const { isTabBarVisible, tabBarHeight } = useOverlay();
   
@@ -67,12 +67,6 @@ export default function FlowFullPlayerScreen() {
   }
 
   // handleToggleMute ahora está en FlowPlayerControls
-
-  const handleLike = () => {
-    if (currentSpotId) {
-      toggleLikeSpotFromPlayer(currentSpotId);
-    }
-  };
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -134,16 +128,6 @@ export default function FlowFullPlayerScreen() {
               <Text style={[textStyles.bodyMedium, { color: colors.icon }]}>
                 Current spot
               </Text>
-              <TouchableOpacity
-                onPress={handleLike}
-                style={[iconTouchableContainer.base, styles.likeButton]}
-                activeOpacity={0.7}>
-                <Icon
-                  name="like"
-                  size={24}
-                  color={isSpotLikedFromPlayer(currentSpot.id) ? colors.tint : colors.icon}
-                />
-              </TouchableOpacity>
             </View>
             <SpotInlineCard spot={currentSpot} state="active" />
           </View>
@@ -176,12 +160,8 @@ export default function FlowFullPlayerScreen() {
           variant="full"
           showPrevious={true}
           showNext={true}
-          showMute={true}
           showAffinity={true}
-          currentSpotId={currentSpotId}
-          onLike={(spotId) => {
-            toggleLikeSpotFromPlayer(spotId);
-          }}
+          currentSpotId={currentSpotId || undefined}
           onNotMyVibe={(spotId) => {
             toggleNotMyVibeSpot(spotId);
           }}

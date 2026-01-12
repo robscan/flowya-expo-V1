@@ -21,20 +21,7 @@ export function validateSpotTextFields(spot: Spot): SpotValidationResult {
   const missing: string[] = [];
   const warnings: string[] = [];
 
-  // Verificar narration
-  if (!spot.narration) {
-    missing.push('narration');
-  } else {
-    if (!spot.narration.anticipation || spot.narration.anticipation.trim().length === 0) {
-      missing.push('narration.anticipation');
-    }
-    if (!spot.narration.presence || spot.narration.presence.trim().length === 0) {
-      missing.push('narration.presence');
-    }
-    if (!spot.narration.transition || spot.narration.transition.trim().length === 0) {
-      missing.push('narration.transition');
-    }
-  }
+  // FASE 3: narration eliminado - Flow narrative eliminado del modelo Spot
 
   // Verificar planInfo
   if (!spot.planInfo || spot.planInfo.trim().length === 0) {

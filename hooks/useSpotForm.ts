@@ -10,15 +10,17 @@
  * - Guardado/cancelación
  */
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Spot, SpotType, SpotHours, SpotCost, SpotHowToVisit, SpotNarration } from '@/data/spots';
-import { LocationRegion } from '@/types/locationRegion';
-import { useImageUpload } from './useImageUpload';
-import { generateSpotContent, GeneratedContent } from '@/utils/aiContentGenerator';
-import { isAIConfigured } from '@/utils/aiConfig';
-import { resolveRegion } from '@/core/region';
-import { findExistingSpot } from '@/utils/spotDetection';
+import { Spot, SpotImage, SpotType } from '@/data/spots';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// FASE 3: SpotNarration eliminado - Flow narrative eliminado del modelo Spot
+// FASE 4: SpotHours, SpotCost, SpotHowToVisit eliminados - campos avanzados eliminados
 import { useSpot } from '@/contexts/SpotContext';
+import { resolveRegion } from '@/core/region';
+import { LocationRegion } from '@/types/locationRegion';
+import { isAIConfigured } from '@/utils/aiConfig';
+import { GeneratedContent, generateSpotContent } from '@/utils/aiContentGenerator';
+import { findExistingSpot } from '@/utils/spotDetection';
+import { useImageUpload } from './useImageUpload';
 
 export interface UseSpotFormOptions {
   /** Spot inicial (para edición) */
@@ -32,42 +34,40 @@ export interface UseSpotFormOptions {
 }
 
 export interface UseSpotFormResult {
-  // Estados de campos
+  // FASE 4-5: Estados de campos simplificados
   name: string;
   setName: (name: string) => void;
-  description: string;
-  setDescription: (description: string) => void;
-  whyItMatters: string;
-  setWhyItMatters: (whyItMatters: string) => void;
-  spotDescription: string; // SCOPE 2: Campo spotDescription del contrato
-  setSpotDescription: (spotDescription: string) => void;
-  planInfo: string; // SCOPE 2: Campo planInfo del contrato
-  setPlanInfo: (planInfo: string) => void;
-  culturalContext: string;
-  setCulturalContext: (culturalContext: string) => void;
+  shortDescription: string; // FASE 4: Nuevo - reemplaza description/whyItMatters
+  setShortDescription: (shortDescription: string) => void;
   type: SpotType;
   setType: (type: SpotType) => void;
-  location: { latitude: number; longitude: number } | null;
-  setLocation: (location: { latitude: number; longitude: number } | null) => void;
-  hours: SpotHours | undefined;
-  setHours: (hours: SpotHours | undefined) => void;
-  cost: SpotCost | undefined;
-  setCost: (cost: SpotCost | undefined) => void;
-  restrictions: string;
-  setRestrictions: (restrictions: string) => void;
-  accessibility: string;
-  setAccessibility: (accessibility: string) => void;
-  howToVisit: SpotHowToVisit | undefined;
-  setHowToVisit: (howToVisit: SpotHowToVisit | undefined) => void;
-  narration: SpotNarration | undefined;
-  setNarration: (narration: SpotNarration | undefined) => void;
+  location: { lat: number; lng: number; city?: string; country?: string } | null; // FASE 4: Cambio lat/lng
+  setLocation: (location: { lat: number; lng: number; city?: string; country?: string } | null) => void;
+  image: SpotImage; // FASE 5: Cambio de photos[] → image{}
+  setImage: (image: SpotImage) => void;
+  hasGeneratedContent: boolean; // FASE 4: Nuevo - reemplaza aiGenerated
+  setHasGeneratedContent: (hasGeneratedContent: boolean) => void;
 
-  // Imágenes (múltiples)
-  photos: string[];
+  // Campos legacy para compatibilidad temporal (se eliminarán en FASE 6)
+  description: string; // Legacy - mantener temporalmente
+  setDescription: (description: string) => void;
+  whyItMatters: string; // Legacy - mantener temporalmente
+  setWhyItMatters: (whyItMatters: string) => void;
+  culturalContext: string; // Legacy - mantener temporalmente
+  setCulturalContext: (culturalContext: string) => void;
+  planInfo: string; // Legacy - mantener temporalmente
+  setPlanInfo: (planInfo: string) => void;
+  photos: string[]; // Legacy - mantener temporalmente
+  setPhotos: (photos: string[]) => void;
+  
+  // FASE 4: Campos eliminados - hours, cost, restrictions, accessibility, howToVisit
+  // FASE 3: narration eliminado - Flow narrative eliminado del modelo Spot
+
+  // Imágenes (FASE 5: simplificado a imagen única)
   isOptimizingImage: boolean;
   pickImage: () => Promise<void>;
-  removeImage: (index: number) => void;
-  addImage: () => Promise<void>;
+  removeImage: () => void; // FASE 5: Eliminar imagen única (no index)
+  // FASE 5: addImage eliminado - solo una imagen
 
   // Validación
   isValid: boolean;
@@ -107,100 +107,153 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
   const [existingSpot, setExistingSpot] = useState<Spot | null>(null);
   const [isLoadingExisting, setIsLoadingExisting] = useState(false);
 
-  // Estados de campos básicos
+  // FASE 4-5: Estados de campos simplificados
   const [name, setName] = useState(initialSpot?.name || '');
-  const [description, setDescription] = useState(initialSpot?.description || '');
-  const [whyItMatters, setWhyItMatters] = useState(initialSpot?.whyItMatters || initialSpot?.description || '');
-  const [spotDescription, setSpotDescription] = useState(initialSpot?.description || initialSpot?.whyItMatters || ''); // SCOPE 2: Campo spotDescription
-  const [planInfo, setPlanInfo] = useState(initialSpot?.planInfo || ''); // SCOPE 2: Campo planInfo
-  const [culturalContext, setCulturalContext] = useState(initialSpot?.culturalContext || '');
-  const [type, setType] = useState<SpotType>(initialSpot?.type || 'other');
-  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(
-    initialSpot?.location ? { latitude: initialSpot.location.latitude, longitude: initialSpot.location.longitude } : null
+  const [shortDescription, setShortDescription] = useState(
+    initialSpot?.shortDescription || 
+    initialSpot?.whyItMatters || 
+    initialSpot?.description || 
+    ''
   );
-  const [hours, setHours] = useState<SpotHours | undefined>(initialSpot?.hours);
-  const [cost, setCost] = useState<SpotCost | undefined>(initialSpot?.cost);
-  const [restrictions, setRestrictions] = useState(initialSpot?.restrictions || '');
-  const [accessibility, setAccessibility] = useState(initialSpot?.accessibility || '');
-  const [howToVisit, setHowToVisit] = useState<SpotHowToVisit | undefined>(initialSpot?.howToVisit);
-  const [narration, setNarration] = useState<SpotNarration | undefined>(initialSpot?.narration);
+  const [type, setType] = useState<SpotType>(initialSpot?.type || 'other');
+  
+  // FASE 4: Location con lat/lng (compatible con ambos formatos)
+  const getLocationFromSpot = useCallback((spot: Spot | null | undefined): { lat: number; lng: number; city?: string; country?: string } | null => {
+    if (!spot?.location) return null;
+    
+    let lat: number;
+    let lng: number;
+    let city: string | undefined;
+    let country: string | undefined;
+    
+    if ('lat' in spot.location && 'lng' in spot.location) {
+      // Formato nuevo
+      lat = spot.location.lat;
+      lng = spot.location.lng;
+      city = spot.location.city;
+      country = spot.location.country;
+    } else if ('latitude' in spot.location && 'longitude' in spot.location) {
+      // Formato antiguo
+      lat = spot.location.latitude;
+      lng = spot.location.longitude;
+      // city y country no existen en formato antiguo
+    } else {
+      return null;
+    }
+    
+    return {
+      lat,
+      lng,
+      ...(city && { city }),
+      ...(country && { country }),
+    };
+  }, []);
+  
+  const [location, setLocation] = useState<{ lat: number; lng: number; city?: string; country?: string } | null>(
+    getLocationFromSpot(initialSpot)
+  );
+  
+  // FASE 5: Image (imagen única)
+  const getImageFromSpot = useCallback((spot: Spot | null | undefined): SpotImage => {
+    if (!spot) {
+      return { url: '' };
+    }
+    
+    if (spot.image && spot.image.url) {
+      // Formato nuevo
+      return spot.image;
+    } else if (spot.photos && spot.photos.length > 0) {
+      // Formato antiguo (photos[]), tomar primera foto
+      return { url: spot.photos[0] };
+    }
+    return { url: '' };
+  }, []);
+  
+  const [image, setImage] = useState<SpotImage>(getImageFromSpot(initialSpot));
+  
+  // FASE 4: hasGeneratedContent
+  const [hasGeneratedContent, setHasGeneratedContent] = useState(
+    initialSpot?.hasGeneratedContent !== undefined 
+      ? initialSpot.hasGeneratedContent 
+      : (initialSpot?.aiGenerated !== undefined && initialSpot.aiGenerated !== null)
+  );
+  
+  // Campos legacy para compatibilidad temporal (se eliminarán en FASE 6)
+  const [description, setDescription] = useState(initialSpot?.description || '');
+  const [whyItMatters, setWhyItMatters] = useState(initialSpot?.whyItMatters || '');
+  const [culturalContext, setCulturalContext] = useState(initialSpot?.culturalContext || '');
+  const [planInfo, setPlanInfo] = useState(initialSpot?.planInfo || '');
+  const [photos, setPhotos] = useState<string[]>(initialSpot?.photos || []); // Legacy - mantener temporalmente
+  // FASE 4: Campos eliminados - hours, cost, restrictions, accessibility, howToVisit
+  // FASE 3: narration eliminado - Flow narrative eliminado del modelo Spot
 
-  // SCOPE 2: Función para cargar contenido de spot existente
+  // FASE 4-5: Función para cargar contenido de spot existente (simplificada)
+  // FASE 4-5: Función para cargar contenido de spot existente (simplificada)
   const loadExistingSpotContent = useCallback((spot: Spot) => {
-    // Cargar todos los campos automáticamente
-    if (spot.description) {
-      setDescription(spot.description);
-      setSpotDescription(spot.description);
+    // FASE 4-5: Cargar campos nuevos primero
+    if (spot.name) {
+      setName(spot.name);
     }
-    if (spot.whyItMatters) {
-      setWhyItMatters(spot.whyItMatters);
-      if (!spot.description) {
-        setSpotDescription(spot.whyItMatters);
-      }
-    }
-    if (spot.planInfo) {
-      setPlanInfo(spot.planInfo);
-    }
-    if (spot.howToVisit) {
-      setHowToVisit(spot.howToVisit);
-    }
-    if (spot.narration) {
-      setNarration(spot.narration);
-    }
-    if (spot.culturalContext) {
-      setCulturalContext(spot.culturalContext);
-    }
-    if (spot.hours) {
-      setHours(spot.hours);
-    }
-    if (spot.cost) {
-      setCost(spot.cost);
-    }
-    if (spot.restrictions) {
-      setRestrictions(spot.restrictions);
-    }
-    if (spot.accessibility) {
-      setAccessibility(spot.accessibility);
+    if (spot.shortDescription || spot.whyItMatters || spot.description) {
+      setShortDescription(spot.shortDescription || spot.whyItMatters || spot.description || '');
     }
     if (spot.type) {
       setType(spot.type);
     }
-    if (spot.photos && spot.photos.length > 0) {
-      setPhotos(spot.photos);
+    const spotLocation = getLocationFromSpot(spot);
+    if (spotLocation) {
+      setLocation(spotLocation);
     }
+    const spotImage = getImageFromSpot(spot);
+    setImage(spotImage);
+    
+    // FASE 4: hasGeneratedContent
+    const hasGenerated = spot.hasGeneratedContent !== undefined 
+      ? spot.hasGeneratedContent 
+      : (spot.aiGenerated !== undefined && spot.aiGenerated !== null);
+    setHasGeneratedContent(hasGenerated);
+    
+    // Campos legacy para compatibilidad temporal
+    if (spot.description) setDescription(spot.description);
+    if (spot.whyItMatters) setWhyItMatters(spot.whyItMatters);
+    if (spot.culturalContext) setCulturalContext(spot.culturalContext);
+    if (spot.planInfo) setPlanInfo(spot.planInfo);
+    if (spot.photos) setPhotos(spot.photos);
+    
     // Actualizar initialState para que hasChanges funcione correctamente
     setInitialState(prev => ({
       ...prev,
+      name: spot.name || prev.name,
+      shortDescription: spot.shortDescription || spot.whyItMatters || spot.description || prev.shortDescription,
+      type: spot.type || prev.type,
+      location: getLocationFromSpot(spot) || prev.location,
+      image: getImageFromSpot(spot),
+      hasGeneratedContent: hasGenerated,
+      // Legacy
       description: spot.description || prev.description,
-      spotDescription: spot.description || spot.whyItMatters || prev.spotDescription,
-      planInfo: spot.planInfo || prev.planInfo,
       whyItMatters: spot.whyItMatters || prev.whyItMatters,
       culturalContext: spot.culturalContext || prev.culturalContext,
-      howToVisit: spot.howToVisit || prev.howToVisit,
-      narration: spot.narration || prev.narration,
-      hours: spot.hours || prev.hours,
-      cost: spot.cost || prev.cost,
-      restrictions: spot.restrictions || prev.restrictions,
-      accessibility: spot.accessibility || prev.accessibility,
-      type: spot.type || prev.type,
+      planInfo: spot.planInfo || prev.planInfo,
       photos: spot.photos || prev.photos,
     }));
-  }, []);
+  }, [getLocationFromSpot, getImageFromSpot]);
 
-  // Estados de imágenes (múltiples)
-  const [photos, setPhotos] = useState<string[]>(initialSpot?.photos || []);
+  // FASE 5: Estados de imagen (imagen única)
   const [isOptimizingImage, setIsOptimizingImage] = useState(false);
   
-  // Hook para manejar subida de imágenes
+  // Hook para manejar subida de imagen única
   const imageUploadHook = useImageUpload({
-    initialUri: null, // No usamos initialUri, manejamos el array directamente
+    initialUri: image.url || null, // FASE 5: Usar image.url
     allowsEditing: true,
     aspect: [4, 3],
     quality: 75,
     onOptimizing: () => setIsOptimizingImage(true),
     onOptimized: (uri) => {
       setIsOptimizingImage(false);
-      setPhotos(prev => [...prev, uri]);
+      // FASE 5: Actualizar image.url directamente
+      setImage(prev => ({ ...prev, url: uri }));
+      // Legacy: también actualizar photos para compatibilidad temporal
+      setPhotos([uri]);
     },
     onError: () => setIsOptimizingImage(false),
   });
@@ -213,63 +266,72 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
   // Ref para prevenir múltiples ejecuciones simultáneas
   const isGeneratingRef = useRef(false);
 
-  // Estado inicial para detectar cambios
-  const [initialState, setInitialState] = useState(() => ({
-    name: initialSpot?.name || '',
-    description: initialSpot?.description || '',
-    whyItMatters: initialSpot?.whyItMatters || initialSpot?.description || '',
-    spotDescription: initialSpot?.description || initialSpot?.whyItMatters || '', // SCOPE 2: Incluir spotDescription
-    planInfo: initialSpot?.planInfo || '', // SCOPE 2: Incluir planInfo
-    culturalContext: initialSpot?.culturalContext || '',
-    type: initialSpot?.type || 'other',
-    location: initialSpot?.location ? { latitude: initialSpot.location.latitude, longitude: initialSpot.location.longitude } : null,
+  // FASE 4-5: Estado inicial para detectar cambios (simplificado)
+  const [initialState, setInitialState] = useState(() => {
+    const spotLocation = getLocationFromSpot(initialSpot);
+    const spotImage = getImageFromSpot(initialSpot);
+    const hasGenerated = initialSpot?.hasGeneratedContent !== undefined 
+      ? initialSpot.hasGeneratedContent 
+      : (initialSpot?.aiGenerated !== undefined && initialSpot.aiGenerated !== null);
+    
+    return {
+      name: initialSpot?.name || '',
+      shortDescription: initialSpot?.shortDescription || initialSpot?.whyItMatters || initialSpot?.description || '',
+      type: initialSpot?.type || 'other',
+      location: spotLocation,
+      image: spotImage,
+      hasGeneratedContent: hasGenerated,
+      // Legacy para compatibilidad temporal
+      description: initialSpot?.description || '',
+      whyItMatters: initialSpot?.whyItMatters || '',
+      culturalContext: initialSpot?.culturalContext || '',
+      planInfo: initialSpot?.planInfo || '',
       photos: initialSpot?.photos || [],
-    hours: initialSpot?.hours,
-    cost: initialSpot?.cost,
-    restrictions: initialSpot?.restrictions || '',
-    accessibility: initialSpot?.accessibility || '',
-    howToVisit: initialSpot?.howToVisit,
-    narration: initialSpot?.narration,
-  }));
+      // FASE 4: Campos eliminados - hours, cost, restrictions, accessibility, howToVisit
+      // FASE 3: narration eliminado
+    };
+  });
 
-  // Actualizar estados cuando cambia initialSpot
+  // FASE 4-5: Actualizar estados cuando cambia initialSpot (simplificado)
   useEffect(() => {
     if (initialSpot) {
+      const spotLocation = getLocationFromSpot(initialSpot);
+      const spotImage = getImageFromSpot(initialSpot);
+      const hasGenerated = initialSpot.hasGeneratedContent !== undefined 
+        ? initialSpot.hasGeneratedContent 
+        : (initialSpot.aiGenerated !== undefined && initialSpot.aiGenerated !== null);
+      
       setName(initialSpot.name || '');
-      setDescription(initialSpot.description || '');
-      setWhyItMatters(initialSpot.whyItMatters || initialSpot.description || '');
-      setSpotDescription(initialSpot.description || initialSpot.whyItMatters || ''); // SCOPE 2: Actualizar spotDescription
-      setPlanInfo(initialSpot.planInfo || ''); // SCOPE 2: Actualizar planInfo
-      setCulturalContext(initialSpot.culturalContext || '');
+      setShortDescription(initialSpot.shortDescription || initialSpot.whyItMatters || initialSpot.description || '');
       setType(initialSpot.type);
-      setLocation(initialSpot.location ? { latitude: initialSpot.location.latitude, longitude: initialSpot.location.longitude } : null);
-      setHours(initialSpot.hours);
-      setCost(initialSpot.cost);
-      setRestrictions(initialSpot.restrictions || '');
-      setAccessibility(initialSpot.accessibility || '');
-      setHowToVisit(initialSpot.howToVisit);
-      setNarration(initialSpot.narration);
+      setLocation(spotLocation);
+      setImage(spotImage);
+      setHasGeneratedContent(hasGenerated);
+      
+      // Legacy para compatibilidad temporal
+      setDescription(initialSpot.description || '');
+      setWhyItMatters(initialSpot.whyItMatters || '');
+      setCulturalContext(initialSpot.culturalContext || '');
+      setPlanInfo(initialSpot.planInfo || '');
       setPhotos(initialSpot.photos || []);
+      
       setExistingSpot(null); // Reset existingSpot cuando cambia initialSpot
       setInitialState({
         name: initialSpot.name || '',
-        description: initialSpot.description || '',
-        whyItMatters: initialSpot.whyItMatters || initialSpot.description || '',
-        spotDescription: initialSpot.description || initialSpot.whyItMatters || '', // SCOPE 2: Incluir spotDescription
-        planInfo: initialSpot.planInfo || '', // SCOPE 2: Incluir planInfo
-        culturalContext: initialSpot.culturalContext || '',
+        shortDescription: initialSpot.shortDescription || initialSpot.whyItMatters || initialSpot.description || '',
         type: initialSpot.type,
-        location: initialSpot.location ? { latitude: initialSpot.location.latitude, longitude: initialSpot.location.longitude } : null,
+        location: spotLocation,
+        image: spotImage,
+        hasGeneratedContent: hasGenerated,
+        // Legacy
+        description: initialSpot.description || '',
+        whyItMatters: initialSpot.whyItMatters || '',
+        culturalContext: initialSpot.culturalContext || '',
+        planInfo: initialSpot.planInfo || '',
         photos: initialSpot.photos || [],
-        hours: initialSpot.hours,
-        cost: initialSpot.cost,
-        restrictions: initialSpot.restrictions || '',
-        accessibility: initialSpot.accessibility || '',
-        howToVisit: initialSpot.howToVisit,
-        narration: initialSpot.narration,
       });
     }
-  }, [initialSpot]);
+  }, [initialSpot, getLocationFromSpot, getImageFromSpot]);
 
   // SCOPE 2: Detectar spot existente cuando cambia nombre o ubicación (modo creación)
   // Optimizado: usar useMemo para lazy evaluation y evitar recálculos innecesarios
@@ -278,6 +340,7 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     if (!name || name.trim().length === 0 || !location) {
       return null;
     }
+    // FASE 4: findExistingSpot ahora acepta lat/lng directamente
     return findExistingSpot(spots, name, location);
   }, [name, location, spots]);
 
@@ -315,25 +378,19 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     }
   }, [isEditMode, initialSpot, detectedExistingSpot, loadExistingSpotContent]);
 
-  // Detectar cambios
+  // FASE 4-5: Detectar cambios (simplificado)
   const hasChanges = 
     name !== initialState.name ||
-    description !== initialState.description ||
-    whyItMatters !== initialState.whyItMatters ||
-    spotDescription !== initialState.spotDescription || // SCOPE 2: Incluir spotDescription en comparación
-    planInfo !== initialState.planInfo || // SCOPE 2: Incluir planInfo en comparación
-    culturalContext !== initialState.culturalContext ||
+    shortDescription !== initialState.shortDescription ||
     type !== initialState.type ||
-    (location && initialState.location && (location.latitude !== initialState.location.latitude || location.longitude !== initialState.location.longitude)) ||
+    (location && initialState.location && (location.lat !== initialState.location.lat || location.lng !== initialState.location.lng)) ||
     (!location && initialState.location) ||
     (location && !initialState.location) ||
-    JSON.stringify(photos) !== JSON.stringify(initialState.photos) ||
-    JSON.stringify(hours) !== JSON.stringify(initialState.hours) ||
-    JSON.stringify(cost) !== JSON.stringify(initialState.cost) ||
-    restrictions !== initialState.restrictions ||
-    accessibility !== initialState.accessibility ||
-    JSON.stringify(howToVisit) !== JSON.stringify(initialState.howToVisit) ||
-    JSON.stringify(narration) !== JSON.stringify(initialState.narration);
+    image.url !== initialState.image.url ||
+    hasGeneratedContent !== initialState.hasGeneratedContent;
+  // Legacy: description, whyItMatters, culturalContext, planInfo, photos (no se usan en detección de cambios)
+  // FASE 4: Campos eliminados - hours, cost, restrictions, accessibility, howToVisit
+  // FASE 3: narration eliminado
 
   // Validaciones (imágenes son opcionales según el plan)
   const errors: { photo?: string; location?: string } = {};
@@ -343,17 +400,16 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
   }
   const isValid = !errors.location;
 
-  // Seleccionar imagen (agrega nueva imagen al array)
+  // FASE 5: Seleccionar imagen (imagen única)
   const pickImage = useCallback(async () => {
     await imageUploadHook.pickFromGallery();
+    // imageUploadHook.onOptimized ya actualiza image.url automáticamente
   }, [imageUploadHook]);
 
-  const addImage = useCallback(async () => {
-    await imageUploadHook.pickFromGallery();
-  }, [imageUploadHook]);
-
-  const removeImage = useCallback((index: number) => {
-    setPhotos(prev => prev.filter((_, i) => i !== index));
+  // FASE 5: Eliminar imagen (imagen única, no index)
+  const removeImage = useCallback(() => {
+    setImage({ url: '' });
+    setPhotos([]); // Legacy: también limpiar photos para compatibilidad
   }, []);
 
   // Generar contenido con IA - Control absoluto: solo se ejecuta por acción explícita del usuario
@@ -378,7 +434,7 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     // SCOPE: Log claro para spot nuevo
     console.log('[AI] Spot nuevo — generando contenido con OpenAI', {
       spotName: name,
-      location: location ? { lat: location.latitude, lng: location.longitude } : null,
+      location: location ? { lat: location.lat, lng: location.lng } : null,
     });
     
     if (!location) {
@@ -399,25 +455,24 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     setAiError(null);
 
     try {
-      // Crear spot temporal con datos actuales
+      // FASE 4-5: Crear spot temporal con datos actuales (formato nuevo)
       const tempSpot: Spot = {
         id: 'temp',
-        name: name || undefined,
+        name: name || '',
         location: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          adjustable: true,
+          lat: location.lat,
+          lng: location.lng,
+          ...(location.city && { city: location.city }),
+          ...(location.country && { country: location.country }),
         },
-        photos: photos || [],
-        description: description || undefined,
-        whyItMatters: whyItMatters || undefined,
-        culturalContext: culturalContext || undefined,
+        image: image.url ? image : { url: '' },
+        shortDescription: shortDescription || undefined,
+        hasGeneratedContent: hasGeneratedContent,
         type,
-        hours,
-        cost,
-        restrictions: restrictions || undefined,
-        accessibility: accessibility || undefined,
-        howToVisit,
+        // Legacy para compatibilidad temporal
+        photos: image.url ? [image.url] : [],
+        description: shortDescription || undefined,
+        whyItMatters: shortDescription || undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -429,30 +484,20 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
       setPreviewContent(generatedContent);
       setAiState('success');
       
-      // CANONICAL: Actualizar campos del formulario con contenido generado
-      if (generatedContent.spotDescription) {
-        setSpotDescription(generatedContent.spotDescription);
-        setDescription(generatedContent.spotDescription); // Mantener sincronizado
-        setWhyItMatters(generatedContent.whyItMatters || generatedContent.spotDescription);
+      // FASE 4: Actualizar campos del formulario con contenido generado (solo shortDescription)
+      if (generatedContent.shortDescription) {
+        setShortDescription(generatedContent.shortDescription);
+        // Legacy: también actualizar campos legacy para compatibilidad temporal
+        setDescription(generatedContent.shortDescription);
+        setWhyItMatters(generatedContent.shortDescription);
       }
       
-      if (generatedContent.planInfo) {
-        setPlanInfo(generatedContent.planInfo);
-      }
+      // FASE 4: Marcar que tiene contenido generado
+      setHasGeneratedContent(true);
       
-      if (generatedContent.howToVisit) {
-        setHowToVisit(generatedContent.howToVisit);
-      }
-      
-      // CANONICAL: Mapear culturalContext desde respuesta de IA
-      if (generatedContent.culturalContext !== undefined) {
-        setCulturalContext(generatedContent.culturalContext);
-      }
-      
-      // Si se genera narration, guardarla automáticamente (no visible para el usuario)
-      if (generatedContent.narration) {
-        setNarration(generatedContent.narration);
-      }
+      // Legacy: actualizar campos legacy si existen (para compatibilidad temporal)
+      if (generatedContent.planInfo) setPlanInfo(generatedContent.planInfo);
+      if (generatedContent.culturalContext) setCulturalContext(generatedContent.culturalContext);
       
       // SCOPE: Log al completar generación
       console.log('[AI] Content generated and saved successfully');
@@ -468,9 +513,9 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     } finally {
       isGeneratingRef.current = false;
     }
-  }, [location, name, photos, description, whyItMatters, culturalContext, type, hours, cost, restrictions, accessibility, howToVisit, existingSpot, aiState]);
+  }, [location, name, image, shortDescription, hasGeneratedContent, type, existingSpot, aiState]);
 
-  // Guardar
+  // FASE 4-5: Guardar (actualizado para nuevo modelo)
   const handleSave = useCallback(async () => {
     if (!isValid) {
       return;
@@ -486,9 +531,27 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     let locationRegion: LocationRegion | undefined = undefined;
     try {
       locationRegion = await resolveRegion(
-        location.latitude,
-        location.longitude
+        location.lat,
+        location.lng
       );
+      
+      // FASE 4: Extraer city/country de locationRegion si no existen
+      if (locationRegion && !location.city) {
+        if (locationRegion.type === 'city' || locationRegion.type === 'locality') {
+          location.city = locationRegion.label;
+        }
+      }
+      if (locationRegion && !location.country) {
+        const countryCodeMap: Record<string, string> = {
+          'MX': 'Mexico',
+          'US': 'United States',
+          'ES': 'Spain',
+          'FR': 'France',
+          'IT': 'Italy',
+          'PT': 'Portugal',
+        };
+        location.country = countryCodeMap[locationRegion.countryCode] || locationRegion.countryCode;
+      }
     } catch (error) {
       if (__DEV__) {
         console.error('Error resolving locationRegion:', error);
@@ -503,49 +566,51 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
       throw new Error('Location region is required. Please select a valid location.');
     }
 
+    // FASE 4-5: Construir spotData con formato nuevo
     const spotData: Omit<Spot, 'id' | 'createdAt' | 'updatedAt'> = {
-      name: name || undefined,
+      name: name || '',
       location: {
-        latitude: location.latitude,
-        longitude: location.longitude,
-        adjustable: true,
+        lat: location.lat,
+        lng: location.lng,
+        ...(location.city && { city: location.city }),
+        ...(location.country && { country: location.country }),
       },
-      photos: photos || [],
-      description: description || spotDescription || undefined, // SCOPE 2: Usar spotDescription si description está vacío
-      whyItMatters: whyItMatters || spotDescription || undefined,
-      planInfo: planInfo || undefined, // SCOPE 2: Persistir planInfo en DB
-      culturalContext: culturalContext || undefined,
+      image: image.url ? image : { url: '' },
+      shortDescription: shortDescription || undefined,
+      hasGeneratedContent: hasGeneratedContent,
       type,
-      hours,
-      cost,
-      restrictions: restrictions || undefined,
-      accessibility: accessibility || undefined,
-      howToVisit,
-      narration, // Narration se persiste cuando se genera con AI (no visible en UI)
       locationRegion, // Región generada desde coordenadas
+      
+      // Legacy para compatibilidad temporal (se eliminarán en FASE 6)
+      photos: image.url ? [image.url] : [],
+      description: shortDescription || undefined,
+      whyItMatters: shortDescription || undefined,
+      culturalContext: culturalContext || undefined,
+      planInfo: planInfo || undefined,
+      // FASE 4: Campos eliminados - hours, cost, restrictions, accessibility, howToVisit
+      // FASE 3: narration eliminado
     };
 
     onSave?.(spotData);
-  }, [isValid, location, name, photos, description, spotDescription, whyItMatters, planInfo, culturalContext, type, hours, cost, restrictions, accessibility, howToVisit, narration, onSave]); // SCOPE 2: Incluir spotDescription y planInfo
+  }, [isValid, location, name, image, shortDescription, hasGeneratedContent, type, culturalContext, planInfo, onSave]);
 
-  // Cancelar
+  // FASE 4-5: Cancelar (simplificado)
   const handleCancel = useCallback(() => {
     // Resetear a estado inicial
     setName(initialState.name);
-    setDescription(initialState.description);
-    setWhyItMatters(initialState.whyItMatters);
-    setSpotDescription(initialState.spotDescription); // SCOPE 2: Reset spotDescription
-    setPlanInfo(initialState.planInfo); // SCOPE 2: Reset planInfo
-    setCulturalContext(initialState.culturalContext);
+    setShortDescription(initialState.shortDescription);
     setType(initialState.type);
     setLocation(initialState.location);
-    setHours(initialState.hours);
-    setCost(initialState.cost);
-    setRestrictions(initialState.restrictions);
-    setAccessibility(initialState.accessibility);
-    setHowToVisit(initialState.howToVisit);
-    setNarration(initialState.narration);
-      setPhotos(initialState.photos);
+    setImage(initialState.image);
+    setHasGeneratedContent(initialState.hasGeneratedContent);
+    
+    // Legacy para compatibilidad temporal
+    setDescription(initialState.description || '');
+    setWhyItMatters(initialState.whyItMatters || '');
+    setCulturalContext(initialState.culturalContext || '');
+    setPlanInfo(initialState.planInfo || '');
+    setPhotos(initialState.photos || []);
+    
     setPreviewContent(null);
     setAiError(null);
     setAiState('idle');
@@ -553,23 +618,22 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
     onCancel?.();
   }, [initialState, onCancel]);
 
-  // Reset completo
+  // FASE 4-5: Reset completo (simplificado)
   const reset = useCallback(() => {
     setName('');
-    setDescription('');
-    setWhyItMatters('');
-    setSpotDescription(''); // SCOPE 2: Reset spotDescription
-    setPlanInfo(''); // SCOPE 2: Reset planInfo
-    setCulturalContext('');
+    setShortDescription('');
     setType('other');
     setLocation(null);
-    setHours(undefined);
-    setCost(undefined);
-    setRestrictions('');
-    setAccessibility('');
-    setHowToVisit(undefined);
-    setNarration(undefined);
+    setImage({ url: '' });
+    setHasGeneratedContent(false);
+    
+    // Legacy para compatibilidad temporal
+    setDescription('');
+    setWhyItMatters('');
+    setCulturalContext('');
+    setPlanInfo('');
     setPhotos([]);
+    
     setPreviewContent(null);
     setAiError(null);
     setAiState('idle');
@@ -577,42 +641,40 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
   }, []);
 
   return {
-    // Estados de campos
+    // FASE 4-5: Estados de campos nuevos
     name,
     setName,
-    description,
-    setDescription,
-    whyItMatters,
-    setWhyItMatters,
-    spotDescription, // SCOPE 2: Exponer spotDescription
-    setSpotDescription, // SCOPE 2: Exponer setter
-    planInfo, // SCOPE 2: Exponer planInfo
-    setPlanInfo, // SCOPE 2: Exponer setter
-    culturalContext,
-    setCulturalContext,
+    shortDescription,
+    setShortDescription,
     type,
     setType,
     location,
     setLocation,
-    hours,
-    setHours,
-    cost,
-    setCost,
-    restrictions,
-    setRestrictions,
-    accessibility,
-    setAccessibility,
-    howToVisit,
-    setHowToVisit,
-    narration,
-    setNarration,
-
-    // Imágenes
+    image,
+    setImage,
+    hasGeneratedContent,
+    setHasGeneratedContent,
+    
+    // Legacy para compatibilidad temporal (se eliminarán en FASE 6)
+    description,
+    setDescription,
+    whyItMatters,
+    setWhyItMatters,
+    culturalContext,
+    setCulturalContext,
+    planInfo,
+    setPlanInfo,
     photos,
+    setPhotos,
+    
+    // FASE 4: Campos eliminados - hours, cost, restrictions, accessibility, howToVisit
+    // FASE 3: narration eliminado - Flow narrative eliminado del modelo Spot
+
+    // FASE 5: Imágenes (imagen única)
     isOptimizingImage,
     pickImage,
     removeImage,
-    addImage,
+    // FASE 5: addImage eliminado - solo una imagen
 
     // Validación
     isValid,

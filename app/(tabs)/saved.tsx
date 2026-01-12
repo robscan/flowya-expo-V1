@@ -10,11 +10,13 @@
 
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, FlatList, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
+import { Alert, Dimensions, FlatList, Platform, RefreshControl, ScrollView, Share, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
 
 import { FlowCard } from '@/components/FlowCard';
+import { SpotGrid } from '@/components/SpotGrid';
 import { SpotMediaCard } from '@/components/SpotMediaCard';
 import { Icon } from '@/components/ui/Icon';
+import { PinStateFilter, PinStateFilterType } from '@/components/ui/PinStateFilter';
 import { SavedFilterHeader, SavedFilterType } from '@/components/ui/SavedFilterHeader';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { SkeletonCard } from '@/components/ui/SkeletonCard';
@@ -25,7 +27,7 @@ import { textStyles } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
 import { useOverlay } from '@/contexts/OverlayContext';
 import { usePath } from '@/contexts/PathContext';
-import { useSaved } from '@/contexts/SavedContext';
+import { PinState, useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Flow } from '@/data/flows';
 import { Spot } from '@/data/spots';
@@ -54,15 +56,29 @@ export default function SavedScreen() {
   const { isHeaderVisible, isBottomNavVisible, handleScroll } = useScrollVisibility({ threshold: 24 });
 
   const { spots, isLoading: isLoadingSpots, refreshSpots } = useSpot();
-  const { paths, isLoading: isLoadingPaths, refreshFlows } = usePath();
-  const { savedSpots, savedPaths, getFlowCustomName, isLoading: isLoadingSaved } = useSaved();
+  const { paths, isLoading: isLoadingPaths, refreshFlows, getFlowById } = usePath();
+  const { savedPaths, getPinnedSpots, getFlowCustomName, isLoading: isLoadingSaved } = useSaved();
   const { startFlow } = useFlow();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentFilter, setCurrentFilter] = useState<SavedFilterType>('all');
+  const [pinStateFilter, setPinStateFilter] = useState<PinStateFilterType>('all');
 
   // Combinar estados de carga (cualquiera cargando)
   const isLoading = anyLoading(isLoadingSpots, isLoadingPaths, isLoadingSaved);
-  const savedSpotsData = spots.filter((spot) => savedSpots.includes(spot.id));
+  
+  // V1.2: Obtener Pins según filtro de estado
+  const pinnedSpots = useMemo(() => {
+    const state: PinState | undefined = pinStateFilter === 'all' ? undefined : pinStateFilter;
+    return getPinnedSpots(state);
+  }, [getPinnedSpots, pinStateFilter]);
+  
+  // Filtrar spots por Pins y por tipo
+  const savedSpotsData = useMemo(() => {
+    const showSpots = currentFilter === 'all' || currentFilter === 'spots';
+    if (!showSpots) return [];
+    return spots.filter((spot) => pinnedSpots.includes(spot.id));
+  }, [spots, pinnedSpots, currentFilter]);
+  
   const savedPathsData = paths.filter((path) => savedPaths.includes(path.id));
   
   // Preparar datos con distancia (memoizado)
@@ -97,6 +113,41 @@ export default function SavedScreen() {
   const handleProfilePress = useCallback(() => {
     router.push('/(tabs)/profile');
   }, [router]);
+
+  // V1.2: Compartir flows guardados
+  const handleShareFlows = useCallback(async () => {
+    try {
+      if (savedPathsData.length === 0) {
+        Alert.alert(
+          'No hay flows para compartir',
+          'No tienes flows guardados para compartir.'
+        );
+        return;
+      }
+
+      const flowNames = savedPathsData
+        .map((flow) => {
+          const customName = getFlowCustomName(flow.id);
+          return customName || flow.title;
+        })
+        .join(', ');
+      
+      const flowUrls = savedPathsData
+        .map((flow) => `flowya.app/flow-detail?id=${flow.id}`)
+        .join('\n');
+      
+      const shareUrl = `flowya.app/saved?filter=flows`;
+      const shareMessage = `Mis flows guardados en FLOWYA:\n\n${flowNames}\n\n${flowUrls}\n\n${shareUrl}`;
+      
+      await Share.share({
+        message: shareMessage,
+        title: 'Mis flows guardados',
+      });
+    } catch (error) {
+      console.error('Error sharing flows:', error);
+      Alert.alert('Error', 'No se pudo compartir. Intenta nuevamente.');
+    }
+  }, [savedPathsData, getFlowCustomName]);
 
   // Render skeleton para grid de spots
   const renderSpotSliderSkeleton = () => {
@@ -134,41 +185,17 @@ export default function SavedScreen() {
     // Durante refresh con datos existentes, mostrar contenido (no skeleton)
     const showSkeleton = shouldShowSkeleton(isLoading && !isRefreshing, spotsWithDistance.length > 0);
     
-    const keyExtractor = (item: SpotWithDistance) => item.spot.id;
-    
-    const renderItem = ({ item }: { item: SpotWithDistance }) => {
-      return (
-        <View style={styles.gridItem}>
-          <SpotMediaCard
-            spot={item.spot}
-            size="small"
-            distance={item.distance}
-            onPress={() => handleSpotPress(item.spot)}
-          />
-        </View>
-      );
-    };
-    
     return (
       <View style={styles.section}>
         {showTitle && title && <SectionHeader title={title} variant="large" />}
         {showSkeleton ? (
           renderSpotSliderSkeleton()
-        ) : spotsWithDistance.length > 0 ? (
-          <FlatList
-            data={spotsWithDistance}
-            numColumns={2}
-            keyExtractor={keyExtractor}
-            columnWrapperStyle={styles.gridRow}
-            contentContainerStyle={styles.gridContent}
-            scrollEnabled={false}
-            windowSize={21}
-            initialNumToRender={10}
-            maxToRenderPerBatch={10}
-            removeClippedSubviews={false}
-            renderItem={renderItem}
+        ) : (
+          <SpotGrid
+            spots={spotsWithDistance}
+            onSpotPress={handleSpotPress}
           />
-        ) : null}
+        )}
       </View>
     );
   }, [isLoading, isRefreshing, handleSpotPress]);
@@ -293,10 +320,18 @@ export default function SavedScreen() {
       <SavedFilterHeader
         currentFilter={currentFilter}
         onFilterSelect={setCurrentFilter}
-        rightAction={{
-          icon: 'profile',
-          onPress: handleProfilePress,
-        }}
+        rightAction={
+          // V1.2: Mostrar botón de compartir flows cuando hay flows guardados y el filtro muestra flows
+          (currentFilter === 'flows' || currentFilter === 'all') && savedPathsData.length > 0
+            ? {
+                icon: 'share',
+                onPress: handleShareFlows,
+              }
+            : {
+                icon: 'profile',
+                onPress: handleProfilePress,
+              }
+        }
         visible={isHeaderVisible}
         absolute
       />
@@ -307,6 +342,10 @@ export default function SavedScreen() {
           showsVerticalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={16}
+          // @ts-ignore - Web-specific CSS properties
+          {...(Platform.OS === 'web' && {
+            WebkitOverflowScrolling: 'touch',
+          })}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
@@ -320,6 +359,14 @@ export default function SavedScreen() {
           }>
           {/* Spacer for absolute header (prevents content from going under header) */}
           <View style={styles.headerSpacer} />
+
+          {/* Pin State Filter (solo para spots) */}
+          {currentFilter === 'all' || currentFilter === 'spots' ? (
+            <PinStateFilter
+              currentFilter={pinStateFilter}
+              onFilterChange={setPinStateFilter}
+            />
+          ) : null}
 
           {/* Content */}
           {renderContent()}

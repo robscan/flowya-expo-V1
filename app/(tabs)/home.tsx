@@ -32,6 +32,8 @@ import { usePath } from '@/contexts/PathContext';
 import { useRegion } from '@/contexts/RegionContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
+import { useWorldSpots } from '@/contexts/WorldSpotContext';
+import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
 import { Flow } from '@/data/flows';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -299,9 +301,13 @@ export default function HomeScreen() {
   
   // Hooks de datos
   const { spots, isLoading: isLoadingSpots, refreshSpots } = useSpot();
+  const { worldSpots, isLoading: isLoadingWorldSpots } = useWorldSpots();
   const { paths, isLoading: isLoadingPaths, refreshFlows } = usePath();
   const { likedSpots, savedSpots } = useSaved();
   const { selectedRegionId, currentRegionLabel: contextRegionLabel, setSelectedRegionId, setCurrentLocation, isCurrentLocation } = useRegion();
+  
+  // FASE 7: Combinar UserSpots y WorldSpots
+  const allSpots: UnifiedSpot[] = combineSpots(spots, worldSpots);
   
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
@@ -319,7 +325,8 @@ export default function HomeScreen() {
   }, []);
 
   // Combinar estados de carga (ubicación es opcional, no bloquea)
-  const isLoading = anyLoading(isLoadingSpots, isLoadingPaths);
+  // FASE 7: Incluir isLoadingWorldSpots en el estado de carga
+  const isLoading = anyLoading(isLoadingSpots, isLoadingWorldSpots, isLoadingPaths);
 
   // Marcar hasLoadedOnce cuando los datos estén listos (no cargando)
   // Nota: No esperamos a ubicación porque es opcional (puede ser null)
@@ -332,8 +339,9 @@ export default function HomeScreen() {
   // Preparación de datos memoizada (usando regionId canónico)
   const homeData = useMemo(() => {
     if (!hasLoadedOnce) return emptyHomeData;
-    return prepareHomeData(spots, paths, baseLocation, likedSpots, savedSpots, selectedRegionId);
-  }, [hasLoadedOnce, spots, paths, baseLocation, likedSpots, savedSpots, selectedRegionId]);
+    // FASE 7: Usar allSpots (UserSpots + WorldSpots)
+    return prepareHomeData(allSpots, paths, baseLocation, likedSpots, savedSpots, selectedRegionId);
+  }, [hasLoadedOnce, allSpots, paths, baseLocation, likedSpots, savedSpots, selectedRegionId]);
 
   // Handlers memoizados
   const handleSpotPress = useCallback((spot: Spot) => {

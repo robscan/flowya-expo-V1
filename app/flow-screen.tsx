@@ -248,10 +248,11 @@ export default function FlowScreenPage() {
         geofencingSimulator.startMonitoring(baseLocation, flowSpots);
       } else if (flowSpots.length > 0) {
         // Fallback: usar primer spot del flow si no hay ubicación del usuario
-        const initialLocation = {
-          latitude: flowSpots[0].location.latitude,
-          longitude: flowSpots[0].location.longitude,
-        };
+        // FASE 4-5: Convertir location a formato latitude/longitude
+        const firstSpotLocation = flowSpots[0].location;
+        const initialLocation = 'lat' in firstSpotLocation
+          ? { latitude: firstSpotLocation.lat, longitude: firstSpotLocation.lng }
+          : firstSpotLocation;
         geofencingSimulator.startMonitoring(initialLocation, flowSpots);
       }
 
@@ -310,9 +311,14 @@ export default function FlowScreenPage() {
 
     try {
       const navigationMode = mapMovementModeToNavigationMode(flow.movementMode);
+      // FASE 4-5: Convertir targetSpot.location a formato latitude/longitude para openNavigationApp
+      const destination = 'lat' in targetSpot.location
+        ? { latitude: targetSpot.location.lat, longitude: targetSpot.location.lng }
+        : targetSpot.location;
+      
       const success = await openNavigationApp(
         baseLocation,
-        targetSpot.location,
+        destination,
         navigationMode
       );
 
@@ -493,7 +499,7 @@ export default function FlowScreenPage() {
     return (
       <View style={styles.timelineContainer}>
         {/* Spot actual en estado ACTIVO */}
-        {currentSpot && (
+        {currentSpot ? (
           <View style={styles.currentSpotContainer}>
             <SpotInlineCard
               spot={currentSpot}
@@ -504,9 +510,9 @@ export default function FlowScreenPage() {
               }}
             />
           </View>
-        )}
+        ) : null}
         {/* Listado de spots futuros con drag and drop */}
-        {futureSpots.length > 0 && (
+        {futureSpots.length > 0 ? (
           <View style={styles.spotsListContainer}>
             <View style={styles.upNextHeader}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
@@ -557,7 +563,7 @@ export default function FlowScreenPage() {
               );
             })}
             {/* More Suggestions dentro de UP NEXT (solo si flow viene de spot) */}
-            {isFromSpot && suggestedSpots.length > 0 && (
+            {isFromSpot && suggestedSpots.length > 0 ? (
               <View 
                 style={[
                   styles.suggestedSection, 
@@ -594,11 +600,11 @@ export default function FlowScreenPage() {
                   );
                 })}
               </View>
-            )}
+            ) : null}
           </View>
-        )}
+        ) : null}
         {/* Sección Suggestions separada (solo si no hay UP NEXT pero hay sugerencias) */}
-        {futureSpots.length === 0 && isFromSpot && suggestedSpots.length > 0 && (
+        {futureSpots.length === 0 && isFromSpot && suggestedSpots.length > 0 ? (
           <View style={styles.spotsListContainer}>
             <View style={styles.upNextHeader}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
@@ -632,7 +638,7 @@ export default function FlowScreenPage() {
               );
             })}
           </View>
-        )}
+        ) : null}
       </View>
     );
   };
@@ -643,7 +649,10 @@ export default function FlowScreenPage() {
     // Si hay un spot actual, usar ese; si no, usar el primer spot del flow
     const targetSpot = currentSpot || (flowSpots.length > 0 ? flowSpots[0] : null);
     const routeFrom = baseLocation;
-    const routeTo = targetSpot ? targetSpot.location : null;
+    // FASE 4-5: Convertir targetSpot.location a formato latitude/longitude para routeTo
+    const routeTo = targetSpot ? ('lat' in targetSpot.location
+      ? { latitude: targetSpot.location.lat, longitude: targetSpot.location.lng }
+      : targetSpot.location) : null;
 
     // Calcular región inicial que incluya tanto spots como ubicación del usuario
     const calculateMapRegion = () => {
@@ -654,9 +663,12 @@ export default function FlowScreenPage() {
         allPoints.push(baseLocation);
       }
       
-      // Incluir todos los spots del flow
+      // FASE 4-5: Incluir todos los spots del flow (convertir a formato latitude/longitude)
       flowSpots.forEach(spot => {
-        allPoints.push(spot.location);
+        const location = 'lat' in spot.location
+          ? { latitude: spot.location.lat, longitude: spot.location.lng }
+          : spot.location;
+        allPoints.push(location);
       });
       
       if (allPoints.length === 0) {
@@ -699,7 +711,7 @@ export default function FlowScreenPage() {
           showRoute={true}
           flowSpots={flowSpots}
           showUserLocation={!!baseLocation}
-          userLocation={baseLocation}
+          userLocation={baseLocation ? { latitude: baseLocation.latitude, longitude: baseLocation.longitude } : null}
           routeFrom={routeFrom}
           routeTo={routeTo}
           initialRegion={calculateMapRegion()}
@@ -811,7 +823,7 @@ export default function FlowScreenPage() {
               nextSpotData={nextSpotData}
               flowSpots={flowSpots}
               flow={flow}
-              userLocation={baseLocation}
+              userLocation={baseLocation ? { latitude: baseLocation.latitude, longitude: baseLocation.longitude } : null}
               getSpotById={getSpotById}
               isVisible={isBottomNavVisible} // SCOPE 2: Control de visibilidad con scroll
             />

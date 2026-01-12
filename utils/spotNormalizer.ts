@@ -30,16 +30,7 @@ export function normalizeSpot(spot: Spot): Spot {
     culturalContext: spot.culturalContext?.trim() || undefined,
     planInfo: spot.planInfo?.trim() || undefined,
     
-    // Normalizar narration (asegurar que existe aunque esté vacío)
-    narration: spot.narration ? {
-      anticipation: spot.narration.anticipation?.trim() || '',
-      presence: spot.narration.presence?.trim() || '',
-      transition: spot.narration.transition?.trim() || '',
-    } : {
-      anticipation: '',
-      presence: '',
-      transition: '',
-    },
+    // FASE 3: narration eliminado - Flow narrative eliminado del modelo Spot
     
     // Asegurar que howToVisit existe (puede estar vacío)
     howToVisit: spot.howToVisit || undefined,

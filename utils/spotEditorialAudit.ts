@@ -18,11 +18,7 @@ import { Spot } from '@/data/spots';
  */
 export interface SpotEditorialStatus {
   spotDescription: 'ok' | 'missing';
-  narration: {
-    anticipation: 'ok' | 'missing';
-    presence: 'ok' | 'missing';
-    transition: 'ok' | 'missing';
-  };
+  // FASE 3: narration eliminado - Flow narrative eliminado del modelo Spot
   howToVisit: 'ok' | 'missing';
   planInfo: 'ok' | 'missing';
 }
@@ -33,11 +29,7 @@ export interface SpotEditorialStatus {
 export function auditSpotEditorial(spot: Spot): SpotEditorialStatus {
   return {
     spotDescription: (spot.description || spot.whyItMatters)?.trim().length > 0 ? 'ok' : 'missing',
-    narration: {
-      anticipation: spot.narration?.anticipation?.trim().length > 0 ? 'ok' : 'missing',
-      presence: spot.narration?.presence?.trim().length > 0 ? 'ok' : 'missing',
-      transition: spot.narration?.transition?.trim().length > 0 ? 'ok' : 'missing',
-    },
+    // FASE 3: narration eliminado - Flow narrative eliminado del modelo Spot
     howToVisit: spot.howToVisit ? 'ok' : 'missing',
     planInfo: spot.planInfo?.trim().length > 0 ? 'ok' : 'missing',
   };
@@ -63,14 +55,12 @@ export function logEditorialAudit(spots: Spot[]): void {
     console.log(`[SpotEditorialAudit] Auditing ${spots.length} spots...`);
     
     const auditResults = auditAllSpots(spots);
-    const spotsWithMissingFields: Array<{ spotId: string; status: SpotEditorialStatus }> = [];
+    const spotsWithMissingFields: { spotId: string; status: SpotEditorialStatus }[] = [];
     
     auditResults.forEach((status, spotId) => {
       const hasMissing =
         status.spotDescription === 'missing' ||
-        status.narration.anticipation === 'missing' ||
-        status.narration.presence === 'missing' ||
-        status.narration.transition === 'missing' ||
+        // FASE 3: narration eliminado - Flow narrative eliminado del modelo Spot
         status.howToVisit === 'missing' ||
         status.planInfo === 'missing';
       
@@ -86,9 +76,7 @@ export function logEditorialAudit(spots: Spot[]): void {
       spotsWithMissingFields.forEach(({ spotId, status }) => {
         const missing: string[] = [];
         if (status.spotDescription === 'missing') missing.push('spotDescription');
-        if (status.narration.anticipation === 'missing') missing.push('narration.anticipation');
-        if (status.narration.presence === 'missing') missing.push('narration.presence');
-        if (status.narration.transition === 'missing') missing.push('narration.transition');
+        // FASE 3: narration eliminado - Flow narrative eliminado del modelo Spot
         if (status.howToVisit === 'missing') missing.push('howToVisit');
         if (status.planInfo === 'missing') missing.push('planInfo');
         

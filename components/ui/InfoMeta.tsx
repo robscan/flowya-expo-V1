@@ -14,7 +14,7 @@
  * - small: Distancia (con icono), sin Rating, sin Chip (salvo casos explícitos)
  * 
  * Iconografía:
- * - Distancia → siempre con icono "map"
+ * - Distancia → siempre con icono "distance"
  * - Rating → siempre con icono "star"
  * - Chip → sin icono obligatorio
  */
@@ -76,7 +76,7 @@ export function InfoMeta({
         onPress={handleDistanceToggle}
         style={styles.metricItem}
         activeOpacity={0.7}>
-        <Icon name="map" size={16} color={colors.icon} />
+        <Icon name="distance" size={16} color={colors.icon} />
         <Text style={[styles.metricText, { color: colors.icon }]}>
           {distanceText}
         </Text>

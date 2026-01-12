@@ -8,21 +8,26 @@
  */
 
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Dimensions, Platform, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Dimensions, Platform, Share, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
 
 import { FlowyaMapView, FlowyaMapViewRef } from '@/components/MapView';
 import { SpotInlineCard } from '@/components/SpotInlineCard';
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
 import { MapControls } from '@/components/ui/MapControls';
+import { PinStateFilter, PinStateFilterType } from '@/components/ui/PinStateFilter';
 import { borderRadius } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
+import { useAuth } from '@/contexts/AuthContext';
 import { useOverlay } from '@/contexts/OverlayContext';
+import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
+import { useWorldSpots } from '@/contexts/WorldSpotContext';
 import { Spot } from '@/data/spots';
+import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
@@ -38,13 +43,85 @@ export default function MapScreen() {
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
 
-  const { spots, isLoading: spotsLoading } = useSpot();
+  const { spots, isLoading: spotsLoading, getSpotById } = useSpot();
+  const { worldSpots, isLoading: isLoadingWorldSpots, getWorldSpotById } = useWorldSpots();
   const { setIsTabBarVisible } = useOverlay();
-  const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
+  const { isSpotPinned, getPinState, getPinnedSpots } = useSaved();
+  const { user } = useAuth();
+  const [selectedSpot, setSelectedSpot] = useState<UnifiedSpot | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pinStateFilter, setPinStateFilter] = useState<PinStateFilterType>('all');
   
+  // FASE 7: Combinar UserSpots y WorldSpots
+  const allSpots: UnifiedSpot[] = useMemo(() => {
+    return combineSpots(spots, worldSpots);
+  }, [spots, worldSpots]);
+
   // Calcular distancia del spot seleccionado (siempre, no condicionalmente)
   const selectedSpotDistance = useSpotDistance(selectedSpot?.id || null, baseLocation);
+  
+  // V1.2: Filtrar spots según estado de Pin
+  // Nota: El filtro de pinState solo aplica a UserSpots (WorldSpots no tienen estado de pin)
+  // OPTIMIZACIÓN: Limitar spots cuando filtro es 'all' para mejorar rendimiento del mapa
+  const filteredSpots = useMemo(() => {
+    if (pinStateFilter === 'all') {
+      // OPTIMIZACIÓN: Limitar a 200 spots más cercanos cuando se muestran todos
+      // Esto mejora el rendimiento del mapa sin afectar la experiencia del usuario
+      const MAX_SPOTS_ON_MAP = 200;
+      
+      if (allSpots.length <= MAX_SPOTS_ON_MAP) {
+        return allSpots;
+      }
+      
+      // Si hay baseLocation, ordenar por distancia y tomar los más cercanos
+      if (baseLocation) {
+        const spotsWithDistance = allSpots.map((spot) => {
+          const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+          const lat = 'lat' in loc && loc.lat !== undefined ? loc.lat : (loc.latitude ?? 0);
+          const lng = 'lng' in loc && loc.lng !== undefined ? loc.lng : (loc.longitude ?? 0);
+          
+          // Calcular distancia usando fórmula de Haversine
+          const R = 6371; // Radio de la Tierra en km
+          const dLat = ((lat - baseLocation.latitude) * Math.PI) / 180;
+          const dLon = ((lng - baseLocation.longitude) * Math.PI) / 180;
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((baseLocation.latitude * Math.PI) / 180) *
+              Math.cos((lat * Math.PI) / 180) *
+              Math.sin(dLon / 2) *
+              Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const distance = R * c;
+          
+          return { spot, distance };
+        });
+        
+        return spotsWithDistance
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, MAX_SPOTS_ON_MAP)
+          .map((item) => item.spot);
+      }
+      
+      // Sin ubicación, tomar los primeros MAX_SPOTS_ON_MAP
+      return allSpots.slice(0, MAX_SPOTS_ON_MAP);
+    }
+    
+    // Cuando se filtra por pinState, solo mostrar UserSpots filtrados (sin límite)
+    return spots.filter((spot) => {
+      const isPinned = isSpotPinned(spot.id);
+      const pinState = getPinState(spot.id);
+      
+      if (pinStateFilter === 'to_visit') {
+        return isPinned && pinState === 'to_visit';
+      }
+      
+      if (pinStateFilter === 'visited') {
+        return isPinned && pinState === 'visited';
+      }
+      
+      return false;
+    });
+  }, [allSpots, spots, pinStateFilter, isSpotPinned, getPinState, baseLocation]);
 
   // CANONICAL: TabBar visible when Map is active, hidden when fullscreen
   useFocusEffect(
@@ -86,7 +163,7 @@ export default function MapScreen() {
   };
 
   // Handle SpotCard press (navegar a SpotDetail)
-  const handleSpotCardPress = (spot: Spot) => {
+  const handleSpotCardPress = (spot: UnifiedSpot) => {
     router.push(`/spot-detail?id=${spot.id}`);
     setSelectedSpot(null); // Limpiar selección
   };
@@ -136,13 +213,49 @@ export default function MapScreen() {
     setHighlightedSpotId(undefined);
   };
 
+  // V1.2: Compartir mapa de pines
+  const handleSharePinsMap = useCallback(async (state: 'to_visit' | 'visited') => {
+    try {
+      const pinnedSpotIds = getPinnedSpots(state);
+      if (pinnedSpotIds.length === 0) {
+        Alert.alert(
+          'No hay pines para compartir',
+          state === 'to_visit' 
+            ? 'No tienes lugares marcados como "Por visitar" para compartir.'
+            : 'No tienes lugares marcados como "Visitados" para compartir.'
+        );
+        return;
+      }
+
+      const stateLabel = state === 'to_visit' ? 'Por visitar' : 'Visitados';
+      const userId = user?.id || 'user';
+      const shareUrl = `flowya.app/shared-map?pinState=${state}&userId=${userId}`;
+      const shareMessage = `Mi mapa de lugares ${stateLabel.toLowerCase()} en FLOWYA\n\n${shareUrl}`;
+      
+      await Share.share({
+        message: shareMessage,
+        title: `Mi mapa de lugares ${stateLabel}`,
+      });
+    } catch (error) {
+      console.error('Error sharing pins map:', error);
+      Alert.alert('Error', 'No se pudo compartir. Intenta nuevamente.');
+    }
+  }, [getPinnedSpots, user?.id]);
+
   // Centrar y destacar spot cuando hay spotId en params
   useEffect(() => {
-    if (!params.spotId || spotsLoading) {
+    if (!params.spotId || spotsLoading || isLoadingWorldSpots) {
       return;
     }
 
-    const spot = spots.find(s => s.id === params.spotId);
+    // Buscar en UserSpots primero
+    let spot: UnifiedSpot | undefined = getSpotById(params.spotId);
+    
+    // Si no se encuentra, buscar en WorldSpots
+    if (!spot) {
+      spot = getWorldSpotById(params.spotId);
+    }
+    
     if (!spot) {
       console.warn(`MapScreen: Spot with id ${params.spotId} not found`);
       return;
@@ -156,7 +269,7 @@ export default function MapScreen() {
       mapViewRef.current.centerOnSpot(params.spotId!);
     }
     // El card solo aparecerá si el usuario toca explícitamente el marker
-  }, [params.spotId, spots, spotsLoading]);
+  }, [params.spotId, spotsLoading, isLoadingWorldSpots, getSpotById, getWorldSpotById]);
 
   // Limpiar selección cuando cambia highlightedSpotId desde params
   useEffect(() => {
@@ -165,7 +278,7 @@ export default function MapScreen() {
     }
   }, [params.spotId]);
 
-  if (spotsLoading) {
+  if (spotsLoading || isLoadingWorldSpots) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.emptyState}>
@@ -210,7 +323,7 @@ export default function MapScreen() {
         }}>
         <FlowyaMapView
           ref={mapViewRef}
-          spots={spots}
+          spots={filteredSpots as Spot[]}
           onSpotPress={handleSpotPress}
           onLongPress={handleMapLongPress}
           showUserLocation={!!baseLocation}
@@ -218,6 +331,32 @@ export default function MapScreen() {
           highlightedSpotId={highlightedSpotId}
           disableNativeControls={true}
         />
+      </View>
+
+      {/* V1.2: Pin State Filter - Parte superior del mapa */}
+      <View style={styles.topControls}>
+        <View style={styles.topControlsRow}>
+          <PinStateFilter
+            currentFilter={pinStateFilter}
+            onFilterChange={setPinStateFilter}
+          />
+          {/* V1.2: Botón de compartir - Solo visible cuando filtro no es 'all' */}
+          {pinStateFilter !== 'all' && (
+            <TouchableOpacity
+              style={[controlButtonStyle, styles.shareButton]}
+              onPress={() => handleSharePinsMap(pinStateFilter as 'to_visit' | 'visited')}
+              activeOpacity={0.7}>
+              <GlassView
+                style={styles.buttonContent}
+                intensity="light"
+                opacity="medium"
+                shadowLevel="subtle"
+                enableGlow={false}>
+                <Icon name="share" size={20} color={colors.text} />
+              </GlassView>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Controles lado izquierdo (stack vertical) */}
@@ -285,7 +424,7 @@ export default function MapScreen() {
               },
             ]}>
             <SpotInlineCard
-              spot={selectedSpot}
+              spot={selectedSpot as Spot}
               state="default"
               distance={selectedSpotDistance}
               onPress={() => handleSpotCardPress(selectedSpot)}
@@ -315,6 +454,21 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+  },
+  topControls: {
+    position: 'absolute',
+    top: spacing.md,
+    left: spacing.md,
+    right: spacing.md,
+    zIndex: 20,
+  },
+  topControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  shareButton: {
+    marginLeft: 'auto',
   },
   leftControls: {
     position: 'absolute',

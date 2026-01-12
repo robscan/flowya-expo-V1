@@ -29,8 +29,8 @@ import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMapboxSearchBoxScript } from '@/hooks/useMapboxSearchBoxScript';
-import { MAPBOX_ACCESS_TOKEN } from '@/utils/mapsConfig';
 import { forwardGeocodeMapbox, reverseGeocodeMapbox } from '@/utils/mapboxGeocoding';
+import { MAPBOX_ACCESS_TOKEN } from '@/utils/mapsConfig';
 
 export interface FormLocationSelectorProps {
   /** Ubicación actual */
@@ -164,7 +164,7 @@ export function FormLocationSelector({
         setIsSearching(false);
       }
     }, 300);
-  }, [disabled]);
+  }, [disabled, initialLabel]);
 
   /**
    * Handler de selección de resultado de búsqueda
@@ -197,7 +197,7 @@ export function FormLocationSelector({
     setTimeout(() => {
       isInternalUpdateRef.current = false;
     }, 100);
-  }, [onLocationChange]);
+  }, [onLocationChange, initialLabel]);
 
   // ============================================================================
   // FLUJO 2: MAPA (Click → Coordenadas)
