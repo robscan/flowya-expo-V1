@@ -16,6 +16,7 @@ import { migrateSpotsRegions } from '@/core/region';
 import { mockSpots, Spot } from '@/data/spots';
 import { generateSpotContent as generateAIContent, GenerateContentOptions } from '@/utils/aiContentGenerator';
 import { removeImageState } from '@/utils/imageCache';
+import { migrateSpotImageToUnsplash, migrateSpotsImagesToUnsplash } from '@/utils/imageMigration';
 import { migrateOwnersLegacy } from '@/utils/ownerMigration';
 import { canMigrateSpot, isValidSpotV1_2, migrateSpotToV1_2 } from '@/utils/spotMigration';
 import { normalizeAllSpots } from '@/utils/spotNormalizer';
@@ -292,6 +293,26 @@ export function SpotProvider({ children }: { children: ReactNode }) {
           // Marcar migración como completada
           await AsyncStorage.setItem(V1_2_MIGRATION_KEY, 'true');
           
+          // V1.3: Migrar imágenes no-Unsplash a Unsplash
+          const spotsBeforeImageMigration = [...loadedSpots];
+          loadedSpots = migrateSpotsImagesToUnsplash(loadedSpots);
+          
+          // Solo guardar si hubo cambios
+          const hasImageChanges = spotsBeforeImageMigration.some((spot, index) => {
+            const migrated = loadedSpots[index];
+            return spot.image?.url !== migrated.image?.url;
+          });
+          
+          if (hasImageChanges) {
+            await saveSpots(loadedSpots);
+            if (__DEV__) {
+              const migratedCount = loadedSpots.filter((spot, index) => 
+                spotsBeforeImageMigration[index].image?.url !== spot.image?.url
+              ).length;
+              console.log(`[V1.3] Migradas ${migratedCount} imágenes a Unsplash`);
+            }
+          }
+          
           if (__DEV__) {
             const migratedCount = loadedSpots.length - migrationErrors.length;
             console.log(`[FASE 6A] Migrated ${migratedCount} spots to V1.2 model`);
@@ -299,6 +320,35 @@ export function SpotProvider({ children }: { children: ReactNode }) {
               console.warn(`[FASE 6A] ${migrationErrors.length} spots had migration errors:`, migrationErrors);
             }
           }
+        }
+        
+        // V1.3: Migrar imágenes no-Unsplash a Unsplash (siempre, no solo en migración V1.2)
+        // Esto asegura que cualquier spot con imagen no-Unsplash sea migrado
+        try {
+          const spotsBeforeImageMigration = [...loadedSpots];
+          loadedSpots = migrateSpotsImagesToUnsplash(loadedSpots);
+          
+          // Solo guardar si hubo cambios
+          const hasImageChanges = spotsBeforeImageMigration.some((spot, index) => {
+            const migrated = loadedSpots[index];
+            return spot.image?.url !== migrated.image?.url;
+          });
+          
+          if (hasImageChanges) {
+            await saveSpots(loadedSpots);
+            if (__DEV__) {
+              const migratedCount = loadedSpots.filter((spot, index) => 
+                spotsBeforeImageMigration[index].image?.url !== spot.image?.url
+              ).length;
+              console.log(`[V1.3] Migradas ${migratedCount} imágenes a Unsplash`);
+            }
+          }
+        } catch (migrationError) {
+          // Si la migración falla, continuar con los spots originales
+          if (__DEV__) {
+            console.warn('[SpotContext] Error migrando imágenes a Unsplash:', migrationError);
+          }
+          // Continuar con loadedSpots sin cambios
         }
         
         // SCOPE 6.3: Marcar spots existentes como legacy (una sola vez)
@@ -580,8 +630,19 @@ export function SpotProvider({ children }: { children: ReactNode }) {
     }
 
     const now = new Date();
+    const tempSpot: Spot = {
+      ...spotData,
+      id: `temp-${Date.now()}`, // Temporal para migración
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    // V1.3: Migrar imagen a Unsplash si no lo es
+    const spotWithMigratedImage = migrateSpotImageToUnsplash(tempSpot);
+    
     const newSpot: Spot = {
       ...spotData,
+      image: spotWithMigratedImage.image, // Usar imagen migrada
       id: `spot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       createdBy: user.id, // Guardar ID del usuario que crea el spot
       createdAt: now,
@@ -605,6 +666,16 @@ export function SpotProvider({ children }: { children: ReactNode }) {
     setSpots((prev) =>
       prev.map((spot) => {
         if (spot.id === id) {
+          // V1.3: Si se actualiza la imagen, migrar a Unsplash si no lo es
+          let finalUpdates = { ...updates };
+          if (updates.image?.url) {
+            const tempSpot = { ...spot, ...updates } as Spot;
+            const migrated = migrateSpotImageToUnsplash(tempSpot);
+            if (migrated.image.url !== updates.image.url) {
+              finalUpdates.image = migrated.image;
+            }
+          }
+          
           // P0-02: Invalidar caché de imágenes si se actualizan las fotos
           if (updates.photos) {
             // Invalidar URIs antiguas
@@ -619,7 +690,7 @@ export function SpotProvider({ children }: { children: ReactNode }) {
             });
           }
 
-          return { ...spot, ...updates, updatedAt: new Date() };
+          return { ...spot, ...finalUpdates, updatedAt: new Date() };
         }
         return spot;
       })

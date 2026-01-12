@@ -13,7 +13,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, View, ViewStyle } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View, ViewStyle } from 'react-native';
 
 export interface SkeletonBlockProps {
   /** Ancho del bloque (número o string con %) */
@@ -64,12 +64,12 @@ export function SkeletonBlock({
           toValue: 400,
           duration: 1500,
           easing: Easing.linear,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(shimmerTranslateX, {
           toValue: -200,
           duration: 0,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ])
     ).start();

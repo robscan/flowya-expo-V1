@@ -37,6 +37,7 @@ interface MapboxViewWebProps {
   currentSpotIndex?: number; // Índice del spot actual en el flow
   flowSpotsOrder?: Spot[]; // Orden de spots en el flow para pines numerados
   disableNativeControls?: boolean; // Deshabilitar controles nativos si se usan controles custom
+  onViewportChange?: (bounds: { north: number; south: number; east: number; west: number }) => void; // Callback cuando cambia el viewport
 }
 
 export interface MapboxViewWebRef {
@@ -198,6 +199,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
   currentSpotIndex,
   flowSpotsOrder = [],
   disableNativeControls = false,
+  onViewportChange,
 }, ref) => {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -387,7 +389,27 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
             setCurrentZoom(map.getZoom());
           });
 
+          // Track viewport changes for lazy loading
+          const updateViewport = () => {
+            if (!mounted || !onViewportChange) return;
+            try {
+              const bounds = map.getBounds();
+              onViewportChange({
+                north: bounds.getNorth(),
+                south: bounds.getSouth(),
+                east: bounds.getEast(),
+                west: bounds.getWest(),
+              });
+            } catch (error) {
+              // Ignore errors if map is not fully loaded
+            }
+          };
+
+          // Listen to viewport changes
+          map.on('moveend', updateViewport);
+          map.on('zoomend', updateViewport);
           map.on('load', () => {
+            updateViewport(); // Initial viewport
             if (!mounted) return;
             setIsLoaded(true);
             mapInstanceRef.current = map;

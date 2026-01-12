@@ -12,7 +12,7 @@ import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 
 interface ScreenHeaderProps {
   title: string;
@@ -46,12 +46,12 @@ export function ScreenHeader({
         Animated.timing(translateY, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(opacity, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     } else {
@@ -60,12 +60,12 @@ export function ScreenHeader({
         Animated.timing(translateY, {
           toValue: -100,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(opacity, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     }

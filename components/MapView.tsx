@@ -52,6 +52,7 @@ interface MapViewProps {
   currentSpotIndex?: number; // Índice del spot actual en el flow
   flowSpotsOrder?: Spot[]; // Orden de spots en el flow para pines numerados
   disableNativeControls?: boolean; // Deshabilitar controles nativos si se usan controles custom
+  onViewportChange?: (bounds: { north: number; south: number; east: number; west: number }) => void; // Callback cuando cambia el viewport
 }
 
 export interface FlowyaMapViewRef {
@@ -131,6 +132,7 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
   currentSpotIndex,
   flowSpotsOrder,
   disableNativeControls = false,
+  onViewportChange,
 }, ref) => {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -246,6 +248,7 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
           currentSpotIndex={currentSpotIndex}
           flowSpotsOrder={flowSpotsOrder}
           disableNativeControls={disableNativeControls}
+          onViewportChange={onViewportChange}
         />
       </View>
     );

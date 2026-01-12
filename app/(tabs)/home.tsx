@@ -39,6 +39,7 @@ import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useScrollVisibility } from '@/hooks/use-scroll-visibility';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
+import { useImagePreloader } from '@/hooks/useImagePreloader';
 import {
     emptyHomeData,
     prepareHomeData,
@@ -461,6 +462,33 @@ export default function HomeScreen() {
       homeData.nearbyFlows.length > 0
     );
   }, [homeData]);
+
+  // V1.3: Precargar imágenes críticas (primeras 6-10 spots visibles)
+  const criticalSpots = useMemo(() => {
+    // Obtener los primeros spots de las secciones más importantes
+    const spots: Spot[] = [];
+    
+    // Nearby spots (más importantes)
+    spots.push(...homeData.nearbySpots.slice(0, 3).map(s => s.spot));
+    
+    // For You spots
+    if (spots.length < 6) {
+      spots.push(...homeData.forYouSpots.slice(0, 3).map(s => s.spot));
+    }
+    
+    // Recommended spots (si aún no tenemos 6)
+    if (spots.length < 6) {
+      spots.push(...homeData.recommendedSpots.slice(0, 6 - spots.length).map(s => s.spot));
+    }
+    
+    return spots.slice(0, 6); // Máximo 6 imágenes
+  }, [homeData]);
+
+  // Precargar imágenes críticas
+  useImagePreloader({
+    spots: criticalSpots,
+    count: 6,
+  });
 
   // Render "tonto"
   // Si no ha cargado nunca: mostrar skeleton global

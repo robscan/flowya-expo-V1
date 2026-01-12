@@ -16,7 +16,7 @@ import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, ScrollView, Dimensions } from 'react-native';
+import { Animated, Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View, ScrollView, Dimensions } from 'react-native';
 
 export type SavedFilterType = 'spots' | 'flows' | 'all';
 
@@ -64,12 +64,12 @@ export function SavedFilterHeader({
         Animated.timing(translateY, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(opacity, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     } else {
@@ -77,12 +77,12 @@ export function SavedFilterHeader({
         Animated.timing(translateY, {
           toValue: -100,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(opacity, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     }
@@ -95,13 +95,13 @@ export function SavedFilterHeader({
         Animated.timing(dropdownOpacity, {
           toValue: 1,
           duration: 200,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.spring(dropdownScale, {
           toValue: 1,
           tension: 100,
           friction: 8,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     } else {
@@ -109,12 +109,12 @@ export function SavedFilterHeader({
         Animated.timing(dropdownOpacity, {
           toValue: 0,
           duration: 150,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(dropdownScale, {
           toValue: 0.95,
           duration: 150,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     }

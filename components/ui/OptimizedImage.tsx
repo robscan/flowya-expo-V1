@@ -19,13 +19,50 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useImageLoadState } from '@/hooks/useImageLoadState';
-import { useEffect, useMemo, useRef } from 'react';
-import { Animated, Image, ImageProps, ImageSourcePropType, StyleSheet, View, ViewStyle } from 'react-native';
+import { getOptimizedImageUrl } from '@/utils/imageHelpers';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Image, ImageProps, ImageSourcePropType, Platform, StyleSheet, View, ViewStyle } from 'react-native';
 import { Icon } from './Icon';
 import { SkeletonImage, SkeletonImageProps } from './SkeletonImage';
 
 // Crear componente Image animado para transiciones suaves
 const AnimatedImage = Animated.createAnimatedComponent(Image);
+
+// #region agent log
+// Contador global de imágenes cargándose simultáneamente
+let activeImageLoads = 0;
+// #endregion
+
+// Sistema de límite de concurrencia para carga de imágenes
+const MAX_CONCURRENT_LOADS = 6; // Máximo de imágenes cargándose simultáneamente
+const imageLoadQueue: Array<{ uri: string; resolve: () => void }> = [];
+let currentActiveLoads = 0;
+
+// Sistema de delay escalonado para lazy loading en web
+let imageMountCounter = 0; // Contador global de imágenes montadas
+const DELAY_PER_IMAGE = 50; // 50ms de delay por cada imagen (las primeras 6 se cargan inmediatamente)
+
+function requestImageLoad(uri: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (currentActiveLoads < MAX_CONCURRENT_LOADS) {
+      currentActiveLoads++;
+      resolve();
+    } else {
+      imageLoadQueue.push({ uri, resolve });
+    }
+  });
+}
+
+function releaseImageLoad() {
+  currentActiveLoads = Math.max(0, currentActiveLoads - 1);
+  if (imageLoadQueue.length > 0 && currentActiveLoads < MAX_CONCURRENT_LOADS) {
+    const next = imageLoadQueue.shift();
+    if (next) {
+      currentActiveLoads++;
+      next.resolve();
+    }
+  }
+}
 
 export interface OptimizedImageProps extends Omit<ImageProps, 'source' | 'style'> {
   /** URI de la imagen o ImageSourcePropType */
@@ -93,10 +130,13 @@ export function OptimizedImage({
 
   // Memoizar source para evitar recreaciones innecesarias y prevenir re-renders
   // Extraer URI para dependencia estable (comparar por valor, no por referencia)
+  // V1.3: Optimizar URLs de Unsplash automáticamente
   const sourceUri = useMemo(() => {
     if (!source) return null;
     if (typeof source === 'object' && source !== null && 'uri' in source) {
-      return String(source.uri);
+      const originalUri = String(source.uri);
+      // Optimizar URL si es necesario (Unsplash, etc.)
+      return getOptimizedImageUrl(originalUri) || originalUri;
     }
     // Si es ImageSourcePropType (require), retornar null (no hay URI)
     return null;
@@ -110,10 +150,11 @@ export function OptimizedImage({
   const memoizedSource = useMemo(() => {
     if (!source) return null;
     if (typeof source === 'object' && source !== null && 'uri' in source) {
-      return { uri: source.uri };
+      // Usar URI optimizado
+      return { uri: sourceUri || source.uri };
     }
     return source;
-  }, [sourceUri]);
+  }, [sourceUri, source]);
 
   // CANONICAL: Usar hook de estado de carga con cache en memoria
   const [loadState, setLoadState] = useImageLoadState(sourceUri);
@@ -132,6 +173,72 @@ export function OptimizedImage({
   
   // Ref para rastrear el estado actual sin depender de él en dependencias
   const loadStateRef = useRef(loadState);
+  
+  // #region agent log
+  // Ref para rastrear tiempo de carga
+  const loadStartTimeRef = useRef<number | null>(null);
+  // #endregion
+  
+  // Lazy loading con delay escalonado: Asignar índice de montaje y calcular delay
+  const mountIndexRef = useRef<number | null>(null);
+  
+  // Inicializar mountIndex en el primer render
+  if (mountIndexRef.current === null && Platform.OS === 'web') {
+    mountIndexRef.current = imageMountCounter++;
+  }
+  
+  const [shouldLoad, setShouldLoad] = useState(() => {
+    // En native, cargar inmediatamente (no hay problema de concurrencia)
+    if (Platform.OS !== 'web') {
+      return true;
+    }
+    // En web, calcular delay basado en mountIndex
+    const mountIndex = mountIndexRef.current ?? 0;
+    // Las primeras 6 imágenes se cargan inmediatamente (0ms)
+    // Las siguientes tienen delay escalonado: 50ms, 100ms, 150ms, etc.
+    const delay = mountIndex < MAX_CONCURRENT_LOADS 
+      ? 0 
+      : (mountIndex - MAX_CONCURRENT_LOADS + 1) * DELAY_PER_IMAGE;
+    
+    // #region agent log
+    const uriShort = sourceUri?.substring(0, 50) || 'no-uri';
+    fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OptimizedImage.tsx:177',message:'Lazy load: assigned mount index',data:{uri:uriShort,mountIndex,delay},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+    // #endregion
+    
+    if (delay === 0) {
+      return true; // Cargar inmediatamente las primeras 6
+    }
+    return false; // Las demás esperan su delay
+  });
+  
+  const containerRef = useRef<View>(null);
+  
+  // En web, aplicar delay escalonado basado en índice de montaje
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !sourceUri || shouldLoad) return;
+    
+    const mountIndex = mountIndexRef.current;
+    if (mountIndex === null) return;
+    
+    // Calcular delay basado en índice
+    const delay = mountIndex < MAX_CONCURRENT_LOADS 
+      ? 0 
+      : (mountIndex - MAX_CONCURRENT_LOADS + 1) * DELAY_PER_IMAGE;
+    
+    // #region agent log
+    const uriShort = sourceUri.substring(0, 50);
+    fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OptimizedImage.tsx:200',message:'Lazy load: scheduling load',data:{uri:uriShort,mountIndex,delay},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+    // #endregion
+    
+    const timer = setTimeout(() => {
+      setShouldLoad(true);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OptimizedImage.tsx:205',message:'Lazy load: delay completed',data:{uri:uriShort,mountIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+      // #endregion
+    }, delay);
+    
+    return () => clearTimeout(timer);
+  }, [sourceUri, shouldLoad]);
   
   // Actualizar ref cuando cambia el estado
   useEffect(() => {
@@ -158,6 +265,12 @@ export function OptimizedImage({
   // CANONICAL: Sincronizar animaciones con estado de carga
   // loadState controla solo UI auxiliar (skeleton, opacity), nunca la existencia del Image
   useEffect(() => {
+    // #region agent log
+    if (loadState === 'loading' && sourceUriRef.current) {
+      const uriShort = sourceUriRef.current.substring(0, 50);
+      fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OptimizedImage.tsx:161',message:'Load state changed to loading',data:{uri:uriShort},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+    }
+    // #endregion
     if (loadState === 'loading' || loadState === 'not_requested') {
       // Mostrar skeleton mientras carga o está en estado inicial
       // Imagen con opacity 0 hasta que cargue
@@ -165,12 +278,12 @@ export function OptimizedImage({
         Animated.timing(skeletonOpacity, {
           toValue: 1,
           duration: 0, // Cambio inmediato
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(imageOpacity, {
           toValue: 0,
           duration: 0, // Cambio inmediato
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     } else if (loadState === 'available') {
@@ -179,12 +292,12 @@ export function OptimizedImage({
         Animated.timing(skeletonOpacity, {
           toValue: 0,
           duration: 200, // Fade-out suave
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(imageOpacity, {
           toValue: 1,
           duration: 200, // Fade-in suave
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     } else if (loadState === 'error') {
@@ -193,12 +306,12 @@ export function OptimizedImage({
         Animated.timing(skeletonOpacity, {
           toValue: 0,
           duration: 0,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(imageOpacity, {
           toValue: 0,
           duration: 0,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     }
@@ -220,13 +333,24 @@ export function OptimizedImage({
     }
   }, [sourceUri]);
 
-  const handleLoadStart = () => {
+  const handleLoadStart = async () => {
     // onLoadStart se ejecuta cuando la imagen inicia carga
     // Actualizar a 'loading' si el estado actual es 'not_requested' o 'error'
     // Esto inicia la carga automáticamente cuando el Image se renderiza
     if (sourceUriRef.current && sourceUriRef.current === currentLoadingUriRef.current) {
       const currentState = loadStateRef.current;
       if (currentState === 'not_requested' || currentState === 'error') {
+        // Sistema de queue: esperar si hay demasiadas imágenes cargándose
+        if (sourceUriRef.current) {
+          await requestImageLoad(sourceUriRef.current);
+        }
+        
+        // #region agent log
+        loadStartTimeRef.current = Date.now();
+        activeImageLoads++;
+        const uriShort = sourceUriRef.current.substring(0, 50);
+        fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OptimizedImage.tsx:230',message:'Image load start',data:{uri:uriShort,state:currentState,activeLoads:activeImageLoads,queueLength:imageLoadQueue.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
         setLoadState('loading');
       }
     }
@@ -241,6 +365,17 @@ export function OptimizedImage({
         sourceUriRef.current === currentLoadingUriRef.current &&
         hasLoadedRef.current !== sourceUriRef.current) {
       hasLoadedRef.current = sourceUriRef.current;
+      // #region agent log
+      const loadTime = loadStartTimeRef.current ? Date.now() - loadStartTimeRef.current : null;
+      activeImageLoads = Math.max(0, activeImageLoads - 1);
+      releaseImageLoad(); // Liberar slot en queue
+      const uriShort = sourceUriRef.current.substring(0, 50);
+      const imageSize = e?.nativeEvent?.source?.width && e?.nativeEvent?.source?.height 
+        ? `${e.nativeEvent.source.width}x${e.nativeEvent.source.height}` 
+        : 'unknown';
+      fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OptimizedImage.tsx:246',message:'Image load complete',data:{uri:uriShort,loadTimeMs:loadTime,imageSize,wasCached:loadTime === null || loadTime < 50,activeLoads:activeImageLoads,queueLength:imageLoadQueue.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+      loadStartTimeRef.current = null;
+      // #endregion
       // Actualizar a 'available' independientemente del estado actual
       // (puede ser 'not_requested' si está en cache o 'loading' si es carga normal)
       setLoadState('available');
@@ -252,6 +387,13 @@ export function OptimizedImage({
     // onError se ejecuta cuando la imagen falla
     // Solo actualizar si la URI actual coincide (evita estados de error obsoletos de URIs anteriores)
     if (sourceUriRef.current && sourceUriRef.current === currentLoadingUriRef.current) {
+      // #region agent log
+      activeImageLoads = Math.max(0, activeImageLoads - 1);
+      releaseImageLoad(); // Liberar slot en queue
+      const uriShort = sourceUriRef.current.substring(0, 50);
+      fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OptimizedImage.tsx:255',message:'Image load error',data:{uri:uriShort,activeLoads:activeImageLoads,queueLength:imageLoadQueue.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
+      loadStartTimeRef.current = null;
+      // #endregion
       setLoadState('error');
       onError?.(e);
     }
@@ -286,6 +428,7 @@ export function OptimizedImage({
   // Renderizar imagen con estados de carga
   return (
     <View
+      ref={containerRef}
       style={[
         styles.container,
         {
@@ -326,7 +469,8 @@ export function OptimizedImage({
       )}
 
       {/* CANONICAL: Imagen SIEMPRE renderizada si hay source (loadState controla solo UI auxiliar) */}
-      {hasValidSource && (
+      {/* Lazy loading: Solo renderizar Image cuando shouldLoad es true */}
+      {hasValidSource && shouldLoad && (
         <AnimatedImage
           key={sourceUri || 'static'}
           source={memoizedSource as ImageSourcePropType}

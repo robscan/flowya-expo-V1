@@ -31,6 +31,7 @@ import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
+import { useVisibleSpots, ViewportBounds } from '@/hooks/useVisibleSpots';
 
 export default function MapScreen() {
   const colorScheme = useColorScheme();
@@ -51,6 +52,7 @@ export default function MapScreen() {
   const [selectedSpot, setSelectedSpot] = useState<UnifiedSpot | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pinStateFilter, setPinStateFilter] = useState<PinStateFilterType>('all');
+  const [viewportBounds, setViewportBounds] = useState<ViewportBounds | null>(null);
   
   // FASE 7: Combinar UserSpots y WorldSpots
   const allSpots: UnifiedSpot[] = useMemo(() => {
@@ -62,8 +64,7 @@ export default function MapScreen() {
   
   // V1.2: Filtrar spots según estado de Pin
   // Nota: El filtro de pinState solo aplica a UserSpots (WorldSpots no tienen estado de pin)
-  // OPTIMIZACIÓN: Limitar spots cuando filtro es 'all' para mejorar rendimiento del mapa
-  const filteredSpots = useMemo(() => {
+  const preFilteredSpots = useMemo(() => {
     if (pinStateFilter === 'all') {
       // OPTIMIZACIÓN: Limitar a 200 spots más cercanos cuando se muestran todos
       // Esto mejora el rendimiento del mapa sin afectar la experiencia del usuario
@@ -121,7 +122,14 @@ export default function MapScreen() {
       
       return false;
     });
-  }, [allSpots, spots, pinStateFilter, isSpotPinned, getPinState, baseLocation]);
+  }, [allSpots, spots, pinStateFilter, isSpotPinned, getPinState]);
+
+  // V1.3: Lazy loading - Filtrar spots visibles en viewport
+  const filteredSpots = useVisibleSpots(
+    preFilteredSpots,
+    viewportBounds,
+    { buffer: 0.2, minSpots: 50 }
+  );
 
   // CANONICAL: TabBar visible when Map is active, hidden when fullscreen
   useFocusEffect(
@@ -330,6 +338,7 @@ export default function MapScreen() {
           userLocation={baseLocation}
           highlightedSpotId={highlightedSpotId}
           disableNativeControls={true}
+          onViewportChange={(bounds) => setViewportBounds(bounds)}
         />
       </View>
 

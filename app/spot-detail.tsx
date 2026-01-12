@@ -376,12 +376,12 @@ export default function SpotDetailScreen() {
       Animated.timing(pinButtonScale, {
         toValue: 0.9,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(pinButtonScale, {
         toValue: 1,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
   };
@@ -408,12 +408,12 @@ export default function SpotDetailScreen() {
       Animated.timing(pinButtonScale, {
         toValue: 0.9,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(pinButtonScale, {
         toValue: 1,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
     
