@@ -72,8 +72,7 @@ export type { RegionOption } from '@/core/region';
  * @param spots - Array de spots
  * @param flows - Array de flows
  * @param baseLocation - Ubicación base del usuario (opcional)
- * @param likedSpots - IDs de spots que el usuario ha liked
- * @param savedSpots - IDs de spots que el usuario ha guardado
+ * @param isSpotPinned - Función para verificar si un spot tiene Pin (V1.2)
  * @param selectedRegionId - regionId seleccionado (opcional, null = todas)
  * @returns Datos preparados para Home Screen
  */
@@ -81,8 +80,7 @@ export function prepareHomeData(
   spots: UnifiedSpot[], // FASE 7: UserSpots + WorldSpots
   flows: Flow[],
   baseLocation: BaseLocation | null,
-  likedSpots: string[],
-  savedSpots: string[],
+  isSpotPinned: (spotId: string) => boolean, // V1.2: Sistema de Pins
   selectedRegionId: string | null = null
 ): HomeData {
   // Filtrar spots por región usando regionId (canónico)
@@ -122,16 +120,12 @@ export function prepareHomeData(
   })();
 
   // 2. For You spots (based on user interactions)
+  // V1.2: Simplificado - no usa likedSpots/savedSpots legacy
   const forYouSpots: SpotWithDistance[] = (() => {
-    const userLikedTypes = new Set(
-      filteredSpots
-        .filter((spot) => likedSpots.includes(spot.id) || savedSpots.includes(spot.id))
-        .map((spot) => spot.type)
-    );
-
+    // V1.2: Excluir spots con Pin de esta sección (ya están en Pinned)
     const forYou = filteredSpots
       .filter((spot) => !usedSpotIds.has(spot.id))
-      .filter((spot) => userLikedTypes.has(spot.type) || likedSpots.includes(spot.id) || savedSpots.includes(spot.id))
+      .filter((spot) => !isSpotPinned(spot.id)) // V1.2: Excluir spots con Pin
       .slice(0, 10)
       .map((spot) => {
         usedSpotIds.add(spot.id);
@@ -145,13 +139,13 @@ export function prepareHomeData(
   })();
 
   // 3. Recommended spots (popular spots not in previous sections)
+  // V1.2: Simplificado - no usa likedSpots/savedSpots legacy
   const recommendedSpots: SpotWithDistance[] = (() => {
     const scored = filteredSpots
       .filter((spot) => !usedSpotIds.has(spot.id))
+      .filter((spot) => !isSpotPinned(spot.id)) // V1.2: Excluir spots con Pin
       .map((spot) => {
         let score = 0;
-        if (likedSpots.includes(spot.id)) score += 3;
-        if (savedSpots.includes(spot.id)) score += 2;
         if (spot.name) score += 1;
         if (spot.photos && spot.photos.length > 0) score += 1;
         return { spot, score };
@@ -174,13 +168,13 @@ export function prepareHomeData(
   // IMPORTANTE: Esta sección es GLOBAL, NO depende del filtro de región
   // Usa TODOS los spots, no solo filteredSpots
   // Siempre visible, incluso si no hay spots cercanos
+  // V1.2: Usa sistema de Pins para excluir spots pinned
   const maybeYouLikeSpots: SpotWithDistance[] = (() => {
     // Usar TODOS los spots (no filteredSpots) para secciones globales
     const availableSpots = spots.filter((spot) => !usedSpotIds.has(spot.id));
     const featuredGems = getFeaturedSpots(
       availableSpots,
-      likedSpots,
-      savedSpots,
+      isSpotPinned, // V1.2: Sistema de Pins
       10
     );
     const maybeYouLike = featuredGems.map((gem) => {

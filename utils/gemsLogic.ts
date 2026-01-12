@@ -1,12 +1,16 @@
 /**
- * Gems Logic - Algoritmo de recomendación para Gems
- * Scope 9: Gems Screen - Lógica de recomendación
+ * Gems Logic - Algoritmo de recomendaci?n para Gems
+ * Scope 9: Gems Screen - L?gica de recomendaci?n
  * 
  * Funcionalidades:
- * - Algoritmo simple de recomendación
+ * - Algoritmo simple de recomendaci?n
  * - Basado en interacciones (views, saves, likes)
  * - Spots recientes
  * - Paths sugeridos basados en Spots guardados
+ * 
+ * V1.2: Actualizado para usar sistema de Pins
+ * - Excluye spots con Pin (cualquier estado) de recomendaciones
+ * - Usa isSpotPinned como filtro binario
  */
 
 import { Spot } from '@/data/spots';
@@ -26,7 +30,7 @@ export interface GemPath {
 }
 
 /**
- * SCOPE 5: Aplicar penalización de Dislike (reducir score ligeramente, nunca eliminarlo)
+ * SCOPE 5: Aplicar penalizaci?n de Dislike (reducir score ligeramente, nunca eliminarlo)
  */
 function applyDislikePenalty(spot: Spot, notMyVibeSpots: string[]): number {
   if (notMyVibeSpots.includes(spot.id)) {
@@ -38,25 +42,14 @@ function applyDislikePenalty(spot: Spot, notMyVibeSpots: string[]): number {
 
 /**
  * Calcular score de popularidad basado en interacciones (SCOPE 5: mejorado con afinidad)
+ * V1.2: No considera likedSpots/savedSpots (legacy), solo afinidad y caracter?sticas del spot
  */
 function calculatePopularityScore(
   spot: Spot,
-  likedSpots: string[],
-  savedSpots: string[],
   notMyVibeSpots: string[] = [], // SCOPE 5: Considerar dislikes
   spotTypeAffinity?: Record<string, SpotTypeAffinity> // SCOPE 5: Afinidad por tipo
 ): number {
   let score = 0;
-  
-  // Likes dan más peso
-  if (likedSpots.includes(spot.id)) {
-    score += 3;
-  }
-  
-  // Saves dan peso medio
-  if (savedSpots.includes(spot.id)) {
-    score += 2;
-  }
   
   // SCOPE 5: Afinidad por tipo de spot (aumentar score si tipo tiene afinidad positiva)
   if (spotTypeAffinity && spotTypeAffinity[spot.type]) {
@@ -65,15 +58,15 @@ function calculatePopularityScore(
     score += Math.round((affinity.score / 10) * 3);
   }
   
-  // SCOPE 5: Aplicar penalización de dislike (ligera, no elimina)
+  // SCOPE 5: Aplicar penalizaci?n de dislike (ligera, no elimina)
   score += applyDislikePenalty(spot, notMyVibeSpots);
   
-  // Spots con nombre tienen más peso
+  // Spots con nombre tienen m?s peso
   if (spot.name) {
     score += 1;
   }
   
-  // Spots con fotos tienen más peso
+  // Spots con fotos tienen m?s peso
   if (spot.photos && spot.photos.length > 0) {
     score += 1;
   }
@@ -83,19 +76,20 @@ function calculatePopularityScore(
 
 /**
  * Obtener Spots destacados (populares) - SCOPE 5: mejorado con afinidad y dislike
+ * V1.2: Excluye spots con Pin (cualquier estado) - filtro binario
  */
 export function getFeaturedSpots(
   spots: Spot[],
-  likedSpots: string[],
-  savedSpots: string[],
+  isSpotPinned: (spotId: string) => boolean, // V1.2: Funci?n para verificar si spot tiene Pin
   limit: number = 5,
   notMyVibeSpots: string[] = [], // SCOPE 5: Considerar dislikes
   spotTypeAffinity?: Record<string, SpotTypeAffinity> // SCOPE 5: Afinidad por tipo
 ): GemSpot[] {
   const scored = spots
+    .filter((spot) => !isSpotPinned(spot.id)) // V1.2: Excluir spots con Pin (cualquier estado)
     .map((spot) => ({
       spot,
-      score: calculatePopularityScore(spot, likedSpots, savedSpots, notMyVibeSpots, spotTypeAffinity),
+      score: calculatePopularityScore(spot, notMyVibeSpots, spotTypeAffinity),
       reason: 'popular' as const,
     }))
     .filter((item) => item.score > 0) // SCOPE 5: No eliminar spots con dislike, solo reducir score
@@ -124,26 +118,23 @@ export function getRecentSpots(
 
 /**
  * Obtener Spots sugeridos (basados en interacciones pero no guardados) - SCOPE 5: mejorado con afinidad
+ * V1.2: Excluye spots con Pin (cualquier estado) - filtro binario
  */
 export function getSuggestedSpots(
   spots: Spot[],
-  likedSpots: string[],
-  savedSpots: string[],
+  isSpotPinned: (spotId: string) => boolean, // V1.2: Funci?n para verificar si spot tiene Pin
   limit: number = 5,
   notMyVibeSpots: string[] = [], // SCOPE 5: Considerar dislikes
   spotTypeAffinity?: Record<string, SpotTypeAffinity> // SCOPE 5: Afinidad por tipo
 ): GemSpot[] {
-  // Spots que no están guardados pero podrían interesar
+  // V1.2: Excluir spots con Pin (cualquier estado)
   // SCOPE 5: Basado en afinidad por tipo de spot (refuerza recomendaciones similares)
-  const userLikedTypes = new Set(
-    spots
-      .filter((spot) => likedSpots.includes(spot.id))
-      .map((spot) => spot.type)
-  );
+  // Nota: Sin likedSpots/savedSpots, la l?gica de tipos se simplifica
+  // Se mantiene la estructura para compatibilidad pero sin filtrar por tipos de spots liked
   
   return spots
-    .filter((spot) => !savedSpots.includes(spot.id) && !likedSpots.includes(spot.id))
-    .filter((spot) => userLikedTypes.has(spot.type))
+    .filter((spot) => !isSpotPinned(spot.id)) // V1.2: Excluir spots con Pin
+    .filter((spot) => !notMyVibeSpots.includes(spot.id)) // SCOPE 5: Excluir dislikes
     .slice(0, limit)
     .map((spot) => ({
       spot,
@@ -153,23 +144,26 @@ export function getSuggestedSpots(
 }
 
 /**
- * Obtener Paths sugeridos basados en Spots guardados
+ * Obtener Paths sugeridos basados en Spots con Pin
+ * V1.2: Usa sistema de Pins en lugar de savedSpots legacy
  */
 export function getSuggestedPaths(
   paths: Path[],
-  savedSpots: string[],
+  getPinnedSpots: () => string[], // V1.2: Funci?n para obtener IDs de spots con Pin
   allSpots: Spot[],
   limit: number = 3
 ): GemPath[] {
-  if (savedSpots.length === 0) {
+  const pinnedSpots = getPinnedSpots();
+  
+  if (pinnedSpots.length === 0) {
     return [];
   }
   
-  // Score paths basado en cuántos spots guardados contiene
+  // Score paths basado en cu?ntos spots con Pin contiene
   const scored = paths
     .map((path) => {
       const pathSpots = path.spots;
-      const matchingSpots = pathSpots.filter((spotId) => savedSpots.includes(spotId));
+      const matchingSpots = pathSpots.filter((spotId) => pinnedSpots.includes(spotId));
       const score = matchingSpots.length;
       
       return {
@@ -187,16 +181,18 @@ export function getSuggestedPaths(
 
 /**
  * Obtener todos los Gems (Spots destacados, recientes, sugeridos)
+ * V1.2: Actualizado para usar sistema de Pins
  */
 export function getAllGems(
   spots: Spot[],
-  likedSpots: string[],
-  savedSpots: string[],
+  isSpotPinned: (spotId: string) => boolean, // V1.2: Función para verificar si spot tiene Pin
   options: {
     featuredLimit?: number;
     recentLimit?: number;
     suggestedLimit?: number;
-  } = {}
+  } = {},
+  notMyVibeSpots: string[] = [],
+  spotTypeAffinity?: Record<string, SpotTypeAffinity>
 ): {
   featured: GemSpot[];
   recent: GemSpot[];
@@ -205,9 +201,9 @@ export function getAllGems(
   const { featuredLimit = 5, recentLimit = 5, suggestedLimit = 5 } = options;
   
   return {
-    featured: getFeaturedSpots(spots, likedSpots, savedSpots, featuredLimit),
-    recent: getRecentSpots(spots, recentLimit),
-    suggested: getSuggestedSpots(spots, likedSpots, savedSpots, suggestedLimit),
+    featured: getFeaturedSpots(spots, isSpotPinned, featuredLimit, notMyVibeSpots, spotTypeAffinity),
+    recent: getRecentSpots(spots.filter((spot) => !isSpotPinned(spot.id)), recentLimit), // V1.2: Excluir spots con Pin de recientes
+    suggested: getSuggestedSpots(spots, isSpotPinned, suggestedLimit, notMyVibeSpots, spotTypeAffinity),
   };
 }
 

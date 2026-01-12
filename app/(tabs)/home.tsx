@@ -303,7 +303,7 @@ export default function HomeScreen() {
   const { spots, isLoading: isLoadingSpots, refreshSpots } = useSpot();
   const { worldSpots, isLoading: isLoadingWorldSpots } = useWorldSpots();
   const { paths, isLoading: isLoadingPaths, refreshFlows } = usePath();
-  const { likedSpots, savedSpots } = useSaved();
+  const { isSpotPinned } = useSaved(); // V1.2: Sistema de Pins
   const { selectedRegionId, currentRegionLabel: contextRegionLabel, setSelectedRegionId, setCurrentLocation, isCurrentLocation } = useRegion();
   
   // FASE 7: Combinar UserSpots y WorldSpots
@@ -340,8 +340,9 @@ export default function HomeScreen() {
   const homeData = useMemo(() => {
     if (!hasLoadedOnce) return emptyHomeData;
     // FASE 7: Usar allSpots (UserSpots + WorldSpots)
-    return prepareHomeData(allSpots, paths, baseLocation, likedSpots, savedSpots, selectedRegionId);
-  }, [hasLoadedOnce, allSpots, paths, baseLocation, likedSpots, savedSpots, selectedRegionId]);
+    // V1.2: Usar sistema de Pins en lugar de likedSpots/savedSpots legacy
+    return prepareHomeData(allSpots, paths, baseLocation, isSpotPinned, selectedRegionId);
+  }, [hasLoadedOnce, allSpots, paths, baseLocation, isSpotPinned, selectedRegionId]);
 
   // Handlers memoizados
   const handleSpotPress = useCallback((spot: Spot) => {
