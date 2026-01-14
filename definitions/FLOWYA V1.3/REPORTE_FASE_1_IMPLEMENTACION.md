@@ -390,10 +390,12 @@ Sincronizar con Supabase (background, no bloqueante)
 
 ### Para Fase 2 (Futuro)
 
-- Rediseño de Home
-- Sistema de compartir
-- Internacionalización
-- Seguridad avanzada
+- Comportamiento del Diario (siempre visible, activación automática de `visited`)
+- Sistema de compartir (Fase 3)
+- Internacionalización (Fase 4)
+- Seguridad avanzada (Fase 5)
+
+**Nota:** El rediseño de Home está fuera del alcance de Fase 2. Home permanece con su estructura actual.
 
 ---
 

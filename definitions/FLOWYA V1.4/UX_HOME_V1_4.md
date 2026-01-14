@@ -1,4 +1,8 @@
-# UX HOME — FLOWYA V1.3
+**Pendiente de revisión en V1.4**
+
+---
+
+# UX HOME — FLOWYA V1.4
 
 **Versión:** FLOWYA V1.3  
 **Fecha:** 2026-01-11  

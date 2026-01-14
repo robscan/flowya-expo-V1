@@ -2,7 +2,7 @@
 
 **Versión:** FLOWYA V1.3  
 **Fecha:** 2026-01-11  
-**Estado:** En progreso
+**Estado:** ✅ Cerrada (Fase 1 y 2 completadas)
 
 ---
 
@@ -39,7 +39,7 @@ Convertir FLOWYA de producto local (V1.2) a producto:
 
 ## FASE 1: ARQUITECTURA DE PERSISTENCIA
 
-**Estado:** Pendiente  
+**Estado:** ✅ Completada  
 **Duración estimada:** 2-3 semanas  
 **Bloqueante:** ✅ SÍ (Fases 2, 3, 5 dependen de esta)
 
@@ -53,34 +53,34 @@ Convertir FLOWYA de producto local (V1.2) a producto:
 ### Tareas
 
 #### 1.1 Esquema de Base de Datos
-- [ ] Crear tablas: `spots`, `pins`, `shared_maps`
-- [ ] Definir índices y constraints
-- [ ] Implementar Row Level Security (RLS)
-- [ ] Crear triggers y funciones necesarias
+- [x] Crear tablas: `spots`, `pins`, `shared_maps`
+- [x] Definir índices y constraints
+- [x] Implementar Row Level Security (RLS)
+- [x] Crear triggers y funciones necesarias
 - **Dependencias:** Ninguna
 - **Referencia:** `MODELO_DATOS_V1_3.md` - Parte 2
 
 #### 1.2 Migración desde AsyncStorage
-- [ ] Script de migración de pins locales → Supabase
-- [ ] Validación de integridad de datos
-- [ ] Manejo de errores y rollback
-- [ ] Testing con datos reales
+- [x] Script de migración de pins locales → Supabase
+- [x] Validación de integridad de datos
+- [x] Manejo de errores y rollback
+- [x] Testing con datos reales
 - **Dependencias:** 1.1 (esquema debe existir)
 - **Referencia:** `MODELO_DATOS_V1_3.md` - Parte 3
 
 #### 1.3 Estrategia Offline-First
-- [ ] Cache local en AsyncStorage
-- [ ] Queue de operaciones pendientes
-- [ ] Sincronización en background
-- [ ] Resolución de conflictos (Last-Write-Wins)
+- [x] Cache local en AsyncStorage
+- [x] Queue de operaciones pendientes
+- [x] Sincronización en background
+- [x] Resolución de conflictos (Last-Write-Wins)
 - **Dependencias:** 1.1, 1.2
 - **Referencia:** `ARQUITECTURA_V1_3.md`, `DECISIONES_CANONICAS_V1_3.md` - D-V1.3-02
 
 #### 1.4 Integración con Contextos
-- [ ] Actualizar `SavedContext` para usar Supabase
-- [ ] Mantener compatibilidad con código existente
-- [ ] Implementar cache local
-- [ ] Testing de sincronización
+- [x] Actualizar `SavedContext` para usar Supabase
+- [x] Mantener compatibilidad con código existente
+- [x] Implementar cache local
+- [x] Testing de sincronización
 - **Dependencias:** 1.1, 1.2, 1.3
 - **Referencia:** `ARQUITECTURA_V1_3.md`
 
@@ -100,51 +100,38 @@ Convertir FLOWYA de producto local (V1.2) a producto:
 
 ---
 
-## FASE 2: UX Y HOME REDISEÑADO
+## FASE 2: COMPORTAMIENTO DEL DIARIO
 
-**Estado:** Pendiente  
-**Duración estimada:** 1-2 semanas  
+**Estado:** ✅ Completada  
+**Duración estimada:** 3-5 días  
 **Bloqueante:** ❌ NO (puede desarrollarse en paralelo con Fase 3)
 
 ### Objetivos
 
-1. Rediseñar Home como "estado del viaje"
-2. Implementar secciones: Nearby, To Visit, Visited, Discover/Gems
-3. Completar comportamiento del Diario
-4. Ordenamiento temporal (más reciente → más antiguo)
+1. Completar comportamiento del Diario en Spot Detail
+2. Diario siempre visible en Spot Detail
+3. Activación automática de estado `visited` al escribir
+4. Metadata temporal (`visitedAt`) visible
+
+**Nota:** El rediseño de Home (D-V1.3-03) está fuera del alcance de Fase 2. Home permanece con su estructura actual.
 
 ### Tareas
 
-#### 2.1 Rediseño de Home
-- [ ] Estructura de secciones: Nearby, To Visit, Visited, Discover/Gems
-- [ ] Comportamiento de cada sección
-- [ ] Ordenamiento temporal
-- [ ] Transiciones y estados
-- **Dependencias:** Fase 1 (para datos de pins)
-- **Referencia:** `UX_HOME_V1_3.md`, `DECISIONES_CANONICAS_V1_3.md` - D-V1.3-03
-
-#### 2.2 Comportamiento del Diario
-- [ ] Diario siempre visible en Spot Detail
-- [ ] Activación automática de estado `visited` al escribir
-- [ ] Metadata temporal (`visitedAt`) visible
-- [ ] Flujos de usuario completos
+#### 2.1 Comportamiento del Diario
+- [x] Diario siempre visible en Spot Detail
+- [x] Activación automática de estado `visited` al escribir
+- [x] Metadata temporal (`visitedAt`) visible
+- [x] Flujos de usuario completos
 - **Dependencias:** Fase 1 (para persistencia)
-- **Referencia:** `UX_HOME_V1_3.md`, `DECISIONES_CANONICAS_V1_3.md` - D-V1.3-04
-
-#### 2.3 Integración con Datos
-- [ ] Conectar Home con Supabase (pins, spots)
-- [ ] Implementar cache local para performance
-- [ ] Manejo de estados de carga
-- [ ] Testing de UX completa
-- **Dependencias:** Fase 1
-- **Referencia:** `ARQUITECTURA_V1_3.md`
+- **Referencia:** `UX_HOME_V1_3.md` - Sección "Comportamiento del Diario", `DECISIONES_CANONICAS_V1_3.md` - D-V1.3-04
 
 ### Criterios de Completitud
 
-- ✅ Home rediseñado funcionando
-- ✅ Todas las secciones implementadas
-- ✅ Diario completo funcionando
-- ✅ Ordenamiento temporal correcto
+- ✅ Diario completo funcionando en Spot Detail
+- ✅ Comportamiento de activación automática de `visited` implementado
+- ✅ Metadata temporal visible correctamente
+- ✅ Indicador visual si Pin no está en estado `visited`
+- ✅ Fotos personales solo disponibles si Pin está `visited`
 - ✅ Testing manual de UX completado
 
 ### Dependencias de Otras Fases
@@ -155,9 +142,10 @@ Convertir FLOWYA de producto local (V1.2) a producto:
 
 ## FASE 3: SISTEMA DE COMPARTIR
 
-**Estado:** Pendiente  
+**Estado:** ⏸️ Diferida a V1.4  
 **Duración estimada:** 1-2 semanas  
-**Bloqueante:** ❌ NO
+**Bloqueante:** ❌ NO  
+**Nota:** Esta fase ha sido trasladada a V1.4. Ver `definitions/FLOWYA V1.4/ROADMAP_TECNICO_V1_4.md`
 
 ### Objetivos
 
@@ -208,9 +196,10 @@ Convertir FLOWYA de producto local (V1.2) a producto:
 
 ## FASE 4: INTERNACIONALIZACIÓN
 
-**Estado:** Pendiente  
+**Estado:** ⏸️ Diferida a V1.4  
 **Duración estimada:** 1 semana  
-**Bloqueante:** ❌ NO
+**Bloqueante:** ❌ NO  
+**Nota:** Esta fase ha sido trasladada a V1.4. Ver `definitions/FLOWYA V1.4/ROADMAP_TECNICO_V1_4.md`
 
 ### Objetivos
 
@@ -261,9 +250,10 @@ Convertir FLOWYA de producto local (V1.2) a producto:
 
 ## FASE 5: SEGURIDAD Y PERMISOS
 
-**Estado:** Pendiente  
+**Estado:** ⏸️ Diferida a V1.4  
 **Duración estimada:** 1 semana  
-**Bloqueante:** ❌ NO (pero recomendado antes de producción)
+**Bloqueante:** ❌ NO  
+**Nota:** Esta fase ha sido trasladada a V1.4. Ver `definitions/FLOWYA V1.4/ROADMAP_TECNICO_V1_4.md` (pero recomendado antes de producción)
 
 ### Objetivos
 
@@ -316,7 +306,7 @@ Convertir FLOWYA de producto local (V1.2) a producto:
 ```
 Fase 1: Arquitectura de Persistencia (BLOQUEANTE)
   │
-  ├──> Fase 2: UX y Home Rediseñado
+  ├──> Fase 2: Comportamiento del Diario
   │
   ├──> Fase 3: Sistema de Compartir
   │     │
@@ -330,7 +320,7 @@ Fase 4: Internacionalización (INDEPENDIENTE)
 ### Fases Bloqueantes
 
 - **Fase 1:** ✅ BLOQUEANTE (Fases 2, 3, 5 dependen de esta)
-- **Fase 2:** ❌ NO bloqueante
+- **Fase 2:** ❌ NO bloqueante (solo comportamiento del Diario)
 - **Fase 3:** ❌ NO bloqueante (pero Fase 5 recomienda validar seguridad)
 - **Fase 4:** ❌ NO bloqueante (independiente)
 - **Fase 5:** ❌ NO bloqueante (pero recomendado antes de producción)
@@ -351,7 +341,7 @@ Fase 4: Internacionalización (INDEPENDIENTE)
 | Fase | Duración | Dependencias |
 |------|----------|--------------|
 | Fase 1 | 2-3 semanas | Ninguna |
-| Fase 2 | 1-2 semanas | Fase 1 |
+| Fase 2 | 3-5 días | Fase 1 |
 | Fase 3 | 1-2 semanas | Fase 1 |
 | Fase 4 | 1 semana | Ninguna |
 | Fase 5 | 1 semana | Fase 1, Fase 3 |
@@ -376,4 +366,10 @@ Fase 4: Internacionalización (INDEPENDIENTE)
 ---
 
 **Última actualización:** 2026-01-11  
-**Estado:** Roadmap inicial definido
+**Estado:** ✅ Cerrada (Fase 1 y 2 completadas)
+
+---
+
+> **NOTA DE CIERRE:** V1.3 se considera COMPLETA con Fase 1 y Fase 2 implementadas. 
+> Cualquier evolución posterior (Fases 3, 4, 5) se realiza en V1.4.
+> Ver `definitions/FLOWYA V1.4/ROADMAP_TECNICO_V1_4.md` para continuidad.

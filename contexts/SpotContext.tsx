@@ -48,7 +48,7 @@ interface SpotContextType {
   isLoading: boolean;
   getSpotById: (id: string) => Spot | undefined;
   getSpotsByType: (type: Spot['type']) => Spot[];
-  createSpot: (spot: Omit<Spot, 'id' | 'createdAt' | 'updatedAt'>) => Spot;
+  createSpot: (spot: Omit<Spot, 'id' | 'createdAt' | 'updatedAt'>, options?: { id?: string }) => Spot;
   updateSpot: (id: string, updates: Partial<Spot>) => void;
   deleteSpot: (id: string) => void;
   generateSpotContent: (spotId: string, options?: GenerateContentOptions) => Promise<void>;
@@ -616,23 +616,27 @@ export function SpotProvider({ children }: { children: ReactNode }) {
   };
 
   const getSpotById = (id: string): Spot | undefined => {
-    return spots.find((spot) => spot.id === id);
+    const found = spots.find((spot) => spot.id === id);
+    return found;
   };
 
   const getSpotsByType = (type: Spot['type']): Spot[] => {
     return spots.filter((spot) => spot.type === type);
   };
 
-  const createSpot = (spotData: Omit<Spot, 'id' | 'createdAt' | 'updatedAt'>): Spot => {
+  const createSpot = (spotData: Omit<Spot, 'id' | 'createdAt' | 'updatedAt'>, options?: { id?: string }): Spot => {
     // Validar que el usuario esté autenticado antes de crear
     if (!user?.id) {
       throw new Error('User must be authenticated to create spots');
     }
 
     const now = new Date();
+    // V1.3: Usar ID proporcionado si existe, sino generar uno nuevo
+    const spotId = options?.id || `spot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
     const tempSpot: Spot = {
       ...spotData,
-      id: `temp-${Date.now()}`, // Temporal para migración
+      id: spotId,
       createdAt: now,
       updatedAt: now,
     };
@@ -643,7 +647,7 @@ export function SpotProvider({ children }: { children: ReactNode }) {
     const newSpot: Spot = {
       ...spotData,
       image: spotWithMigratedImage.image, // Usar imagen migrada
-      id: `spot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: spotId, // V1.3: Usar ID proporcionado o generado
       createdBy: user.id, // Guardar ID del usuario que crea el spot
       createdAt: now,
       updatedAt: now,
@@ -658,7 +662,10 @@ export function SpotProvider({ children }: { children: ReactNode }) {
 
     // Agregar al cache como 'available' (nuevo Spot, ya está en memoria)
     markSpotAsAvailable(newSpot.id);
-    setSpots((prev) => [...prev, newSpot]);
+    setSpots((prev) => {
+      const newSpots = [...prev, newSpot];
+      return newSpots;
+    });
     return newSpot;
   };
 

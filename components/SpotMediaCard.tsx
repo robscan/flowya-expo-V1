@@ -80,9 +80,6 @@ export const SpotMediaCard = memo(function SpotMediaCard({
   // Marcar Spot como 'seen' al montar (automáticamente)
   useEffect(() => {
     markSpotAsSeen(spot.id);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7807ebbf-84f7-465d-ad24-4eb47c053dcc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SpotMediaCard.tsx:82',message:'Card mounted',data:{spotId:spot.id,hasImage:!!imageSource},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion
   }, [spot.id, markSpotAsSeen]);
 
   // FASE 5: Memoizar source usando image.url (compatible con ambos formatos)

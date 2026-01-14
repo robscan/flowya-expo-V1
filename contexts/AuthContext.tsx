@@ -1,13 +1,13 @@
 /**
- * AuthContext - Gestión de autenticación de usuarios
- * Scope 8: Autenticación con Supabase
+ * AuthContext - Gesti?n de autenticaci?n de usuarios
+ * Scope 8: Autenticaci?n con Supabase
  * 
  * Funciones:
  * - signUp: Registrar nuevo usuario
- * - signIn: Iniciar sesión
- * - signOut: Cerrar sesión
- * - resetPassword: Enviar email de recuperación de contraseña
- * - Persistencia de sesión con AsyncStorage
+ * - signIn: Iniciar sesi?n
+ * - signOut: Cerrar sesi?n
+ * - resetPassword: Enviar email de recuperaci?n de contrase?a
+ * - Persistencia de sesi?n con AsyncStorage
  */
 
 import { supabase } from '@/utils/supabase';
@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Verificar si Supabase está configurado
+  // Verificar si Supabase est? configurado
   const isSupabaseConfigured = !!(
     process.env.EXPO_PUBLIC_SUPABASE_URL && 
     process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       
       if (!isSupabaseConfigured) {
-        // Si Supabase no está configurado, intentar cargar desde AsyncStorage
+        // Si Supabase no est? configurado, intentar cargar desde AsyncStorage
         const storedSession = await AsyncStorage.getItem(STORAGE_KEY);
         if (storedSession) {
           try {
@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       
-      // Primero intentar obtener sesión actual de Supabase
+      // Primero intentar obtener sesi?n actual de Supabase
       if (!supabase) {
         setIsLoading(false);
         return;
@@ -115,12 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [isSupabaseConfigured]);
 
-  // Cargar sesión guardada al iniciar
+  // Cargar sesi?n guardada al iniciar
   useEffect(() => {
     loadSession();
   }, [loadSession]);
 
-  // Suscribirse a cambios de autenticación (solo si Supabase está configurado)
+  // Suscribirse a cambios de autenticaci?n (solo si Supabase est? configurado)
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
       setIsLoading(false);
@@ -130,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const {
         data: { subscription },
-      } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      } = supabase.auth.onAuthStateChange(async (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         
@@ -174,16 +174,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error };
       }
 
-      // Nota: Supabase puede no retornar una sesión inmediatamente si requiere verificación de email
-      // Esto es normal y esperado
+      // Nota: Supabase puede no retornar una sesi?n inmediatamente si requiere verificaci?n de email
+      // Esto es normal y esperado. Cuando la verificaci?n de email est? habilitada:
+      // - signUp() retorna un usuario pero NO una sesi?n
+      // - El usuario debe verificar su email antes de poder hacer sign-in
+      // - Puede aparecer un error 400 en la consola de Supabase cuando intenta hacer sign-in
+      //   autom?ticamente internamente, pero esto es esperado y no afecta el flujo
       if (data.session) {
         setSession(data.session);
         setUser(data.user);
         await saveSession(data.session);
       } else if (data.user) {
-        // Usuario creado pero requiere verificación de email
-        // No establecer sesión hasta que el email sea verificado
-        console.log('User created, email verification required');
+        // Usuario creado pero requiere verificaci?n de email
+        // No establecer sesi?n hasta que el email sea verificado
+        if (__DEV__) {
+          console.log('User created, email verification required');
+        }
+        // Nota: Supabase puede mostrar un error 400 en la consola cuando intenta hacer
+        // sign-in autom?ticamente internamente despu?s de crear un usuario no verificado.
+        // Este error es esperado cuando la verificaci?n de email est? habilitada y no
+        // afecta el flujo ya que manejamos correctamente el caso de verificaci?n requerida.
       }
 
       return { error: null };

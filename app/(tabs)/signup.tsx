@@ -115,7 +115,12 @@ export default function SignupScreen() {
         const friendlyMessage = getErrorMessage(error);
         Alert.alert('Sign up error', friendlyMessage);
       } else {
-        // Éxito: redirigir a pantalla de verificación
+        // Éxito: usuario creado, requiere verificación de email
+        // Nota: Supabase puede mostrar un error 400 en la consola cuando intenta
+        // hacer sign-in automáticamente internamente después de crear un usuario no verificado.
+        // Este error es esperado cuando la verificación de email está habilitada y no
+        // afecta el flujo ya que manejamos correctamente el caso de verificación requerida.
+        // Redirigir a pantalla de verificación
         router.push({
           pathname: '/verify-email',
           params: { email: email.trim() },

@@ -2,7 +2,7 @@
 
 **Versión:** FLOWYA V1.3  
 **Fecha de inicio:** 2026-01-11  
-**Estado:** En progreso
+**Estado:** ✅ Cerrada
 
 ---
 
@@ -183,7 +183,7 @@ Cada decisión debe incluir:
 ### D-V1.3-03: Home como "Estado del Viaje"
 **Tipo:** Producto  
 **Fecha:** 2026-01-11  
-**Estado:** Propuesta
+**Estado:** Fuera de alcance Fase 2
 
 **Contexto:**
 - Home actual muestra secciones editoriales (New, For You, etc.)
@@ -216,16 +216,21 @@ Cada decisión debe incluir:
 - Respeta D-V1.2-02 (Nearby siempre visible)
 - Respeta D-V1.2-03 (cambio de Pin no mueve cards)
 
+**Nota sobre Alcance:**
+- **Esta decisión está fuera del alcance de Fase 2.**
+- Home permanece con su estructura actual (secciones editoriales).
+- Esta decisión puede implementarse en una fase posterior.
+
 **Impacto:**
-- `UX_HOME_V1_3.md`: Rediseño completo
-- `ROADMAP_TECNICO_V1_3.md`: Fase 2
+- `UX_HOME_V1_3.md`: Rediseño completo (referencia futura)
+- `ROADMAP_TECNICO_V1_3.md`: No incluido en Fase 2
 
 ---
 
 ### D-V1.3-04: Diario siempre visible en Spot Detail
 **Tipo:** Producto  
 **Fecha:** 2026-01-11  
-**Estado:** Propuesta
+**Estado:** ✅ Implementada
 
 **Contexto:**
 - Diario actual solo visible si Pin tiene estado `visited`
@@ -261,8 +266,9 @@ Cada decisión debe incluir:
 - Respeta comportamiento de `visitedAt` documentado en `BITACORA_V1_2.md` - Cierre 02
 
 **Impacto:**
-- `UX_HOME_V1_3.md`: Comportamiento del Diario
-- `ROADMAP_TECNICO_V1_3.md`: Fase 2
+- `UX_HOME_V1_3.md`: Comportamiento del Diario (Sección "Comportamiento del Diario")
+- `ROADMAP_TECNICO_V1_3.md`: Fase 2 (solo comportamiento del Diario)
+- `app/spot-detail.tsx`: Implementación del Diario siempre visible
 
 ---
 
@@ -398,4 +404,37 @@ Esta sección documenta decisiones conocidas pero **NO resueltas** en V1.3. Se i
 ---
 
 **Última actualización:** 2026-01-11  
-**Estado:** Decisiones iniciales documentadas, ajustes finos aplicados
+**Estado:** ✅ Cerrada - Decisiones congeladas al cierre de V1.3
+
+---
+
+## Decisiones Congeladas al Cierre de V1.3
+
+**Fecha de cierre:** 2026-01-11  
+**Versión:** FLOWYA V1.3
+
+### Confirmación de Congelamiento
+
+- ✅ **No se aceptan nuevas decisiones en esta versión:** Todas las decisiones documentadas están congeladas
+- ✅ **Decisiones documentadas:** Todas las decisiones de V1.3 (D-V1.3-01 a D-V1.3-04) están finalizadas
+- ✅ **Trazabilidad mantenida:** Todas las decisiones tienen referencias a V1.2 cuando aplica
+- ✅ **Referencia a V1.4:** Nuevas decisiones se documentarán en `definitions/FLOWYA V1.4/DECISIONES_CANONICAS_V1_4.md`
+
+### Decisiones Finales de V1.3
+
+**Decisiones implementadas:**
+- D-V1.3-01: Estrategia de Persistencia (offline-first con Supabase)
+- D-V1.3-02: Estrategia de Sincronización (Last-Write-Wins)
+- D-V1.3-03: Home como "Estado del Viaje" (fuera de alcance Fase 2, diferida a V1.4)
+- D-V1.3-04: Diario siempre visible en Spot Detail (implementada en Fase 2)
+
+**Decisiones diferidas a V1.4:**
+- D-V1.3-05: Sistema de Compartir (trasladada a V1.4)
+- D-V1.3-06: Internacionalización (trasladada a V1.4)
+
+### Notas Finales
+
+- Todas las decisiones de V1.3 están documentadas y congeladas
+- No se aceptarán modificaciones a decisiones existentes
+- Nuevas decisiones se registrarán en V1.4
+- Referencia a V1.4: `definitions/FLOWYA V1.4/DECISIONES_CANONICAS_V1_4.md`

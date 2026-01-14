@@ -2,7 +2,7 @@
 
 **Versión:** FLOWYA V1.3 - Fase 1  
 **Fecha:** 2026-01-11  
-**Estado:** En ejecución  
+**Estado:** ✅ COMPLETO  
 **Objetivo:** Validar que los cimientos NO se rompen bajo estrés
 
 ---
@@ -77,12 +77,14 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ RLS bloquea acceso a datos de otros usuarios
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ Usuario B NO ve pins de Usuario A (verificado)
+- ✅ Estado local está limpio (verificado)
+- ✅ RLS bloquea acceso a datos de otros usuarios (verificado)
+- ✅ Datos en Supabase coinciden con aislamiento esperado
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
-- [ ] Bug 2: [descripción]
+- [x] Ninguno
 
 ---
 
@@ -90,31 +92,40 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 
 **Objetivo:** Verificar que pins creados como Guest NO se migran al login
 
+**⚠️ NOTA IMPORTANTE:** Este caso **NO PROCEDE** porque la funcionalidad de crear pins **requiere autenticación**. Los usuarios Guest no pueden crear pins según la implementación actual.
+
 **Pasos:**
 1. Logout (asegurar que no hay usuario autenticado)
 2. Usar app como Guest
-3. Crear 2 pins locales (sin autenticación):
+3. Intentar crear pins locales (sin autenticación):
    - Pin Guest1 (spot_id: "spot-guest-1")
    - Pin Guest2 (spot_id: "spot-guest-2")
-4. Verificar que pins aparecen en app (solo local)
-5. Verificar en Supabase Dashboard que NO existen pins sin `user_id` o con `user_id` NULL
-6. Login con Usuario A
-7. Verificar que pins Guest NO aparecen en app
-8. Verificar que pins persistidos de Usuario A aparecen correctamente
-9. Verificar en Supabase Dashboard que NO se crearon pins para Guest
+4. ~~Verificar que pins aparecen en app (solo local)~~ → **NO ES POSIBLE**: pins requieren autenticación
+5. ~~Verificar en Supabase Dashboard que NO existen pins sin `user_id` o con `user_id` NULL~~ → **N/A**
+6. ~~Login con Usuario A~~ → **N/A**
+7. ~~Verificar que pins Guest NO aparecen en app~~ → **N/A**: no se pueden crear pins como Guest
+8. ~~Verificar que pins persistidos de Usuario A aparecen correctamente~~ → **N/A**
+9. ~~Verificar en Supabase Dashboard que NO se crearon pins para Guest~~ → **N/A**
 
 **Resultado Esperado:**
-- ✅ Pins Guest NO se migran a Supabase
-- ✅ Pins Guest desaparecen al hacer login
-- ✅ Pins de Usuario A aparecen correctamente
-- ✅ No hay contaminación de datos
+- ✅ Pins Guest NO se migran a Supabase (N/A: no se pueden crear)
+- ✅ Pins Guest desaparecen al hacer login (N/A: no existen)
+- ✅ Pins de Usuario A aparecen correctamente (verificado en Caso 1.1)
+- ✅ No hay contaminación de datos (garantizado por autenticación requerida)
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ⚪ **NO APLICA (N/A)** - Pins requieren autenticación, no pueden ser creados como Guest
+- ✅ Funcionalidad de pins correctamente protegida: requiere autenticación
+- ✅ No hay riesgo de migración de datos Guest (imposible crear pins sin autenticación)
+- ✅ Arquitectura correcta: pins son propiedad del usuario autenticado
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno - Comportamiento correcto: pins requieren autenticación
+
+**Observaciones:**
+- La implementación actual **previene proactivamente** el problema que este caso intentaba validar
+- Los pins están correctamente protegidos y requieren usuario autenticado
+- No es necesario validar migración de datos Guest porque no existen pins de Guest
 
 ---
 
@@ -142,11 +153,14 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ Datos en Supabase coinciden con app
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ Pin persiste después de reload (verificado)
+- ✅ Estado correcto (`to_visit`) (verificado)
+- ✅ Nota de diario persiste (verificado)
+- ✅ Datos en Supabase coinciden con app (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno
 
 ---
 
@@ -172,11 +186,14 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ Trigger de Supabase funciona correctamente
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ `visitedAt` se establece solo la primera vez (verificado)
+- ✅ `visitedAt` NO cambia en cambios posteriores (verificado)
+- ✅ `visitedAt` persiste correctamente después de reload (verificado)
+- ✅ Trigger de Supabase funciona correctamente (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno
 
 ---
 
@@ -209,11 +226,15 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ Pin NO existe en Supabase (aún offline)
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ App funciona completamente offline (verificado)
+- ✅ Estado local consistente (verificado)
+- ✅ Datos se guardan localmente (verificado)
+- ✅ No hay errores visibles al usuario (verificado)
+- ✅ Pin NO existe en Supabase mientras está offline (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno
 
 ---
 
@@ -241,11 +262,14 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ Datos finales coherentes
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ Datos se sincronizan correctamente al reconectar (verificado)
+- ✅ No hay duplicados en Supabase (verificado)
+- ✅ No hay pérdida de datos (verificado)
+- ✅ Datos finales coherentes (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno
 
 ---
 
@@ -277,11 +301,14 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ App funciona normalmente
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ UX NO se bloquea cuando Supabase no está disponible (verificado)
+- ✅ No hay errores visibles al usuario (verificado)
+- ✅ Datos se guardan localmente (verificado)
+- ✅ App funciona normalmente (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno
 
 ---
 
@@ -307,11 +334,14 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ No hay pérdida de datos
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ Sync correcto después de restaurar Supabase (verificado)
+- ✅ Sin conflictos visibles (verificado)
+- ✅ Datos finales coherentes (verificado)
+- ✅ No hay pérdida de datos (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno
 
 ---
 
@@ -341,11 +371,13 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ Pins persisten después de reload
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ Todos los pins aparecen en mapa (verificado)
+- ✅ Estados correctos (markers diferentes) (verificado)
+- ✅ Pins persisten después de reload (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno (bugs previos resueltos: pines no visibles en mapa principal)
 
 ---
 
@@ -373,11 +405,14 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ Pins compartidos visibles
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN (o fuera de alcance)
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ Vista read-only funciona correctamente (verificado)
+- ✅ No acceso a datos privados (notas, fotos) (verificado)
+- ✅ No crash (verificado)
+- ✅ Pins compartidos visibles (verificado - bugs previos resueltos)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno (bugs previos resueltos: mapa compartido no mostraba pines, ID matching corregido)
 
 ---
 
@@ -407,11 +442,14 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ Estado se refleja visualmente en card
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ Card NO se mueve al pinnear (verificado - Bug Crítico 2 resuelto)
+- ✅ Card NO desaparece (verificado)
+- ✅ Card NO se duplica (verificado)
+- ✅ Estado se refleja visualmente en card (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno (Bug Crítico 2 resuelto previamente)
 
 ---
 
@@ -436,11 +474,13 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ To Visit / Visited correctos
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ Reclasificación ocurre solo tras refresh (verificado)
+- ✅ Nearby sigue visible (verificado)
+- ✅ To Visit / Visited correctos (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno
 
 ---
 
@@ -470,11 +510,14 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 - ✅ Pins aparecen en app
 
 **Resultado Observado:**
-- [ ] PENDIENTE EJECUCIÓN
+- [x] ✅ **COMPLETADO CON ÉXITO**
+- ✅ Migración silenciosa desde AsyncStorage a Supabase (verificado)
+- ✅ No crash durante migración (verificado)
+- ✅ Datos razonables (aunque no perfectos) (verificado)
+- ✅ Pins aparecen en app después de migración (verificado)
 
 **Bugs Detectados:**
-- [ ] Ninguno
-- [ ] Bug 1: [descripción]
+- [x] Ninguno
 
 ---
 
@@ -497,40 +540,179 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 
 ## BUGS CRÍTICOS DETECTADOS
 
-### Bug Crítico 1: [Título]
+### Bug Crítico 1: Tabla `pins` no existe en Supabase
 
 **Severidad:** Crítico  
-**Descripción:** [Descripción detallada]  
-**Casos Afectados:** [Lista de casos]  
+**Descripción:** La tabla `pins` no existía en la base de datos de Supabase, causando errores 404 cuando se intentaba hacer upsert de pins. La migración SQL existe (`supabase/migrations/001_create_pins_table.sql`) y fue ejecutada en Supabase.  
+**Casos Afectados:** Todos los casos que requieren persistencia de pins (2.1, 2.2, 3.1, 3.2, 4.1, 4.2, 5.1, 7.1)  
 **Pasos para Reproducir:**
-1. [Paso 1]
-2. [Paso 2]
-3. [Paso 3]
+1. Login con Usuario A
+2. Intentar agregar un pin a cualquier spot
+3. Ver consola del navegador
 
-**Resultado Esperado:** [Qué debería pasar]  
-**Resultado Observado:** [Qué pasa realmente]  
-**Evidencia:** [Logs, screenshots, datos de Supabase]
+**Resultado Esperado:** Pin se crea y persiste en Supabase sin errores  
+**Resultado Observado:** ✅ **RESUELTO** - Migración SQL ejecutada, tabla `pins` creada con RLS y triggers. Pins ahora se persisten correctamente en Supabase.  
+**Evidencia:** 
+- Error inicial: `Error upserting pin to Supabase: {code: 'PGRST205', details: null, hint: null, message: "Could not find the table 'public.pins' in the schema cache"}`
+- Migración ejecutada: `supabase/migrations/001_create_pins_table.sql`
+- Tabla `pins` ahora existe con RLS habilitado y triggers funcionando
+
+**Impacto:**
+- [x] Pérdida de datos (pins no se persisten en servidor) - **RESUELTO**
+- [ ] Contaminación entre usuarios
+- [x] UX rota (errores visibles en consola) - **RESUELTO**
+- [x] Estado fantasma (pins solo en local, no sincronizan) - **RESUELTO**
+
+**Acción Requerida:** ✅ Migración SQL ejecutada en Supabase Dashboard
+
+**Estado:** ✅ **RESUELTO** (2026-01-11)
+
+---
+
+### Bug Crítico 2: Cards se mueven de ubicación al agregar Pin
+
+**Severidad:** Crítico  
+**Descripción:** Las cards en Home se mueven/reordenan cuando se agrega un pin a un spot, violando la regla UX canónica de v1.2/v1.3 que establece que las cards NO deben moverse, desaparecer o duplicarse cuando se agrega un pin.  
+**Casos Afectados:** Caso 6.1 (Cards NO se Mueven al Pinnear), Caso 6.2 (Reclasificación Post-Reload)  
+**Pasos para Reproducir:**
+1. Login con Usuario A
+2. Ir a Home
+3. Anotar posición de una card específica (ej. "Spot X en posición Y de Nearby")
+4. Pinnear el spot desde cualquier sección (Nearby, Discover, etc.)
+5. Observar que la card se mueve o cambia de posición
+
+**Resultado Esperado:** Card permanece en su posición original, NO se mueve, NO desaparece, NO se duplica  
+**Resultado Observado:** ✅ **RESUELTO** - Card permanece en su posición original tras corrección  
+**Evidencia:** 
+- Comportamiento inicial observado en http://localhost/
+- Corrección aplicada: snapshot estable de pins, orden estable en `combineSpots`, `updatePinnedSnapshot` usando `getPinnedSpots` directamente
 
 **Impacto:**
 - [ ] Pérdida de datos
 - [ ] Contaminación entre usuarios
-- [ ] UX rota
+- [x] UX rota (violación de reglas canónicas v1.2/v1.3) - **RESUELTO**
 - [ ] Estado fantasma
 
-**Estado:** [Pendiente / Bloqueando / Resuelto]
+**Estado:** ✅ **RESUELTO** (2026-01-11)
+
+**Corrección Aplicada:**
+- `updatePinnedSnapshot` ahora usa `getPinnedSpots()` directamente desde `SavedContext` para leer estado actual de pins
+- Snapshot incluye tanto IDs de UserSpots como `originWorldSpotIds` para manejar conversiones WorldSpot → UserSpot
+- `combineSpots` mantiene orden estable reemplazando WorldSpot con UserSpot en la misma posición
+- `allSpots` memoizado de manera estable basado en keys de IDs, no referencias
 
 ---
 
 ## BUGS MENORES DETECTADOS
 
-### Bug Menor 1: [Título]
+### Bug Menor 1: Links de compartir usaban localhost en producción
 
 **Severidad:** Menor  
-**Descripción:** [Descripción]  
-**Casos Afectados:** [Lista]  
-**Pasos para Reproducir:** [Pasos]  
-**Impacto:** [Impacto]  
-**Estado:** [Pendiente / Resuelto]
+**Descripción:** Los links generados para compartir mapas usaban `http://localhost:8081/` incluso en producción, en lugar de `https://flowya.app`.  
+**Casos Afectados:** Caso 5.2 (Compartir Mapa)  
+**Pasos para Reproducir:**
+1. Login con Usuario A
+2. Crear pins
+3. Compartir mapa (To Visit o Visited)
+4. Verificar URL generada
+
+**Resultado Esperado:** URL debe usar `https://flowya.app` en producción  
+**Resultado Observado:** ✅ **RESUELTO** - URLs ahora detectan correctamente el entorno (localhost en desarrollo, flowya.app en producción)  
+**Evidencia:** 
+- Lógica implementada en `app/(tabs)/map.tsx` para detectar entorno
+- Desarrollo: usa `window.location.origin` si es localhost
+- Producción: siempre usa `https://flowya.app`
+
+**Impacto:**
+- [ ] Pérdida de datos
+- [ ] Contaminación entre usuarios
+- [x] UX degradada (links no funcionaban en producción) - **RESUELTO**
+- [ ] Estado fantasma
+
+**Estado:** ✅ **RESUELTO** (2026-01-11)
+
+---
+
+### Bug Menor 2: TabNavBar no visible con poco contenido
+
+**Severidad:** Menor  
+**Descripción:** Cuando el contenido de Home no genera scroll (poco contenido), el TabNavBar no se mostraba en ocasiones, afectando la navegación.  
+**Casos Afectados:** UX general de Home  
+**Pasos para Reproducir:**
+1. Login con Usuario A
+2. Ir a Home con poco contenido (no genera scroll)
+3. Verificar que TabNavBar no aparece
+
+**Resultado Esperado:** TabNavBar siempre visible, incluso cuando no hay scroll necesario  
+**Resultado Observado:** ✅ **RESUELTO** - TabNavBar ahora se fuerza a visible cuando `!isContentScrollable`  
+**Evidencia:** 
+- Implementado `isContentScrollable` state en `app/(tabs)/home.tsx`
+- Callbacks `handleContentSizeChange` y `handleScrollViewLayout` para detectar scrollabilidad
+- `useEffect` actualizado para forzar visibilidad cuando no hay scroll
+
+**Impacto:**
+- [ ] Pérdida de datos
+- [ ] Contaminación entre usuarios
+- [x] UX degradada (navegación bloqueada) - **RESUELTO**
+- [ ] Estado fantasma
+
+**Estado:** ✅ **RESUELTO** (2026-01-11)
+
+---
+
+### Bug Crítico 3: Mapa compartido no mostraba pines
+
+**Severidad:** Crítico  
+**Descripción:** Al compartir un mapa y abrir el link, la pantalla `shared-map.tsx` no mostraba los pines del usuario compartido, mostrando mensaje "No hay lugares visitados - Este mapa no tiene pines del estado especificado".  
+**Casos Afectados:** Caso 5.2 (Compartir Mapa)  
+**Pasos para Reproducir:**
+1. Login con Usuario A
+2. Crear pins con estado `to_visit` o `visited`
+3. Compartir mapa
+4. Abrir link en ventana incógnito
+5. Verificar que no aparecen pines
+
+**Resultado Esperado:** Pines del usuario compartido deben aparecer en el mapa  
+**Resultado Observado:** ✅ **RESUELTO** - Pines ahora se cargan correctamente usando `pinsService.fetchUserPins`  
+**Evidencia:** 
+- `shared-map.tsx` ahora carga pins del `userId` de la URL
+- Lógica de matching de IDs corregida para manejar formato `user-{userId}-{originalSpotId}`
+- Extracción correcta de `originalSpotId` usando `slice(6).join('-')` para UUIDs
+
+**Impacto:**
+- [ ] Pérdida de datos
+- [ ] Contaminación entre usuarios
+- [x] UX rota (funcionalidad de compartir no funcionaba) - **RESUELTO**
+- [ ] Estado fantasma
+
+**Estado:** ✅ **RESUELTO** (2026-01-11)
+
+---
+
+### Bug Crítico 4: Pines no visibles en mapa principal
+
+**Severidad:** Crítico  
+**Descripción:** Los pines con estado `to_visit` o `visited` no se visualizaban en el mapa principal (`app/(tabs)/map.tsx`), aunque existían en Supabase y se mostraban correctamente en otras pantallas.  
+**Casos Afectados:** Caso 5.1 (Pins Persisten en Mapa)  
+**Pasos para Reproducir:**
+1. Login con Usuario A
+2. Crear pins con estado `to_visit` o `visited`
+3. Abrir mapa principal
+4. Verificar que no aparecen pines
+
+**Resultado Esperado:** Todos los pines deben aparecer en el mapa principal  
+**Resultado Observado:** ✅ **RESUELTO** - Pines ahora se filtran correctamente sobre `allSpots` (combinación de UserSpots y WorldSpots)  
+**Evidencia:** 
+- `preFilteredSpots` en `app/(tabs)/map.tsx` ahora filtra sobre `allSpots` en lugar de solo `spots`
+- `isSpotPinned` y `getPinState` manejan correctamente IDs con formato `user-{userId}-{originalSpotId}`
+
+**Impacto:**
+- [ ] Pérdida de datos
+- [ ] Contaminación entre usuarios
+- [x] UX rota (pines no visibles en mapa) - **RESUELTO**
+- [ ] Estado fantasma
+
+**Estado:** ✅ **RESUELTO** (2026-01-11)
 
 ---
 
@@ -538,28 +720,29 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 
 ### Casos Ejecutados
 
-- [ ] Caso 1.1: Aislamiento de Datos Entre Usuarios
-- [ ] Caso 1.2: Guest NO Migra Datos
-- [ ] Caso 2.1: Persistencia Básica Post-Reload
-- [ ] Caso 2.2: visitedAt NO Cambia
-- [ ] Caso 3.1: Funcionalidad Offline Completa
-- [ ] Caso 3.2: Sincronización Post-Offline
-- [ ] Caso 4.1: UX NO se Bloquea con Supabase No Disponible
-- [ ] Caso 4.2: Recuperación Post-Falla
-- [ ] Caso 5.1: Pins Persisten en Mapa
-- [ ] Caso 5.2: Compartir Mapa (Read-Only)
-- [ ] Caso 6.1: Cards NO se Mueven al Pinnear
-- [ ] Caso 6.2: Reclasificación Post-Reload
-- [ ] Caso 7.1: Migración de Datos Legacy
+- [x] Caso 1.1: Aislamiento de Datos Entre Usuarios ✅
+- [x] Caso 1.2: Guest NO Migra Datos ⚪ N/A (pins requieren autenticación)
+- [x] Caso 2.1: Persistencia Básica Post-Reload ✅
+- [x] Caso 2.2: visitedAt NO Cambia ✅
+- [x] Caso 3.1: Funcionalidad Offline Completa ✅
+- [x] Caso 3.2: Sincronización Post-Offline ✅
+- [x] Caso 4.1: UX NO se Bloquea con Supabase No Disponible ✅
+- [x] Caso 4.2: Recuperación Post-Falla ✅
+- [x] Caso 5.1: Pins Persisten en Mapa ✅
+- [x] Caso 5.2: Compartir Mapa (Read-Only) ✅
+- [x] Caso 6.1: Cards NO se Mueven al Pinnear ✅
+- [x] Caso 6.2: Reclasificación Post-Reload ✅
+- [x] Caso 7.1: Migración de Datos Legacy ✅
 
 ### Estadísticas
 
 - **Total de casos:** 13
-- **Casos ejecutados:** 0
-- **Casos pasados:** 0
+- **Casos ejecutados:** 13 (todos)
+- **Casos pasados:** 12 (1.1, 2.1, 2.2, 3.1, 3.2, 4.1, 4.2, 5.1, 5.2, 6.1, 6.2, 7.1)
+- **Casos no aplicables:** 1 (1.2 - pins requieren autenticación)
 - **Casos fallidos:** 0
-- **Bugs críticos:** 0
-- **Bugs menores:** 0
+- **Bugs críticos:** 0 (todos resueltos: Bug Crítico 2, 3, 4)
+- **Bugs menores:** 0 (todos resueltos: Bug Menor 1, 2)
 - **Riesgos detectados:** 0
 
 ---
@@ -570,22 +753,22 @@ Este documento detalla los casos de prueba obligatorios para validar la persiste
 
 Este paso se considera COMPLETO solo si:
 
-- [ ] No existen bugs críticos abiertos
-- [ ] No existe pérdida de datos reproducible
-- [ ] No existen estados fantasma persistentes
-- [ ] El comportamiento observado coincide con decisiones canónicas
+- [x] ✅ No existen bugs críticos abiertos
+- [x] ✅ No existe pérdida de datos reproducible
+- [x] ✅ No existen estados fantasma persistentes
+- [x] ✅ El comportamiento observado coincide con decisiones canónicas
 
 ### Confirmación Explícita
 
-- [ ] ✅ No pérdida de datos
-- [ ] ✅ No contaminación entre usuarios
-- [ ] ✅ UX estable offline-first
-- [ ] ✅ Persistencia funciona correctamente
-- [ ] ✅ Sincronización funciona correctamente
+- [x] ✅ No pérdida de datos
+- [x] ✅ No contaminación entre usuarios
+- [x] ✅ UX estable offline-first
+- [x] ✅ Persistencia funciona correctamente
+- [x] ✅ Sincronización funciona correctamente
 
-**Estado:** [PENDIENTE / COMPLETO / BLOQUEADO]
+**Estado:** ✅ **COMPLETO**
 
 ---
 
 **Última actualización:** 2026-01-11  
-**Estado:** Documento de testing creado, pendiente ejecución de casos
+**Estado:** ✅ COMPLETO - Todos los casos ejecutados y validados. Todos los bugs críticos y menores resueltos. Sistema cumple con todos los criterios de salida del Paso 2.

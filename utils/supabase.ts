@@ -62,6 +62,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
+        // Nota: Cuando la verificación de email está habilitada, Supabase puede intentar
+        // hacer sign-in automáticamente internamente después de signUp, lo cual genera
+        // un error 400 esperado en la consola. Este error no afecta el flujo ya que
+        // manejamos correctamente el caso de verificación de email requerida en AuthContext.
       },
     });
     if (__DEV__) {

@@ -73,9 +73,10 @@ Documentos completamente nuevos en V1.3:
    - **Relación:** Basado en estructura de `PLAN_IMPLEMENTACION_V1.2.md`
 
 5. **`definitions/FLOWYA V1.3/UX_HOME_V1_3.md`**
-   - **Estado:** Nuevo
-   - **Razón:** Rediseño de Home como "estado del viaje"
+   - **Estado:** Nuevo (referencia futura)
+   - **Razón:** Rediseño de Home como "estado del viaje" (fuera de alcance Fase 2)
    - **Relación:** Respeta reglas canónicas de `BITACORA_V1_2.md`
+   - **Nota:** Solo la sección "Comportamiento del Diario" está en alcance de Fase 2
 
 6. **`definitions/FLOWYA V1.3/SISTEMA_COMPARTIR_V1_3.md`**
    - **Estado:** Nuevo
@@ -172,7 +173,7 @@ definitions/FLOWYA V1.3/
 ├── ARQUITECTURA_V1_3.md              (Arquitectura general)
 ├── MODELO_DATOS_V1_3.md              (Modelo conceptual + Supabase)
 ├── ROADMAP_TECNICO_V1_3.md           (Plan por fases)
-├── UX_HOME_V1_3.md                   (Rediseño de Home)
+├── UX_HOME_V1_3.md                   (Rediseño de Home - referencia futura, Fase 2 solo Diario)
 ├── SISTEMA_COMPARTIR_V1_3.md         (Sistema de compartir)
 ├── INTERNACIONALIZACION_V1_3.md      (Arquitectura i18n)
 ├── SEGURIDAD_V1_3.md                 (Análisis de riesgos)

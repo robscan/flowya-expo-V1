@@ -16,6 +16,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, u
 import { useSpot } from './SpotContext';
 import { useWorldSpots } from './WorldSpotContext';
 import { useAuth } from './AuthContext';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import * as pinsService from '@/utils/pinsService';
 
 const STORAGE_KEY = '@flowya_saved';
@@ -77,6 +78,7 @@ interface SavedContextType {
   changePinState: (spotId: string, newState: PinState) => void;
   isSpotPinned: (spotId: string) => boolean;
   getPinState: (spotId: string) => PinState | null;
+  getPinData: (spotId: string) => PinData | null; // V1.3: Obtener PinData usando ID correcto (WorldSpot o UserSpot)
   getPinnedSpots: (state?: PinState) => string[];
   // V1.2: Funciones de Diario de Viaje
   updatePinNotes: (spotId: string, notes: string) => void;
@@ -139,11 +141,13 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, user } = useAuth();
   const { getWorldSpotById, convertWorldSpotToUserSpot } = useWorldSpots();
   const { createSpot, getSpotById, spots } = useSpot();
+  const isOnline = useNetworkStatus();
   
   // V1.3: Flags de control de sincronización
   const isSyncingRef = useRef(false);
   const migrationCompletedRef = useRef(false);
   const lastSyncRef = useRef<Date | null>(null);
+  const wasOfflineRef = useRef(false); // Rastrear si estábamos offline para detectar reconexión
 
   // V1.3: Cargar datos (local + Supabase si autenticado)
   useEffect(() => {
@@ -191,12 +195,15 @@ export function SavedProvider({ children }: { children: ReactNode }) {
         }));
         
         // V1.2: Convertir pins dates a Date objects
+        // V1.3: Asegurar que personalPhotos se carga correctamente desde AsyncStorage
         if (parsed.pins) {
           parsed.pins = Object.entries(parsed.pins).reduce((acc, [spotId, pin]: [string, any]) => {
             acc[spotId] = {
               ...pin,
               pinnedAt: new Date(pin.pinnedAt),
               visitedAt: pin.visitedAt ? new Date(pin.visitedAt) : undefined,
+              // V1.3: Incluir personalPhotos explícitamente para asegurar carga correcta
+              personalPhotos: pin.personalPhotos || undefined,
             };
             return acc;
           }, {} as Record<string, PinData>);
@@ -306,6 +313,41 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.id, isAuthenticated]);
 
+  // V1.3: Sincronizar pins pendientes cuando se restablece la conexión
+  useEffect(() => {
+    // Detectar cuando se restablece la conexión (pasa de offline a online)
+    if (isOnline && wasOfflineRef.current && isAuthenticated && user?.id && !isLoading && !isSyncingRef.current && Object.keys(data.pins).length > 0) {
+      // Se restableció la conexión, sincronizar todos los pins pendientes
+      const syncAllPins = async () => {
+        try {
+          isSyncingRef.current = true;
+          const pinsToSync = Object.values(data.pins);
+          
+          // Sincronizar todos los pins en secuencia para evitar sobrecarga
+          for (const pin of pinsToSync) {
+            try {
+              await syncPinToSupabase(pin);
+            } catch (error) {
+              console.error(`Error syncing pin for spot ${pin.spotId}:`, error);
+              // Continuar con el siguiente pin aunque este falle
+            }
+          }
+          
+          console.log(`[SavedContext] Synchronized ${pinsToSync.length} pins after connection restored`);
+        } catch (error) {
+          console.error('[SavedContext] Error syncing pins after connection restored:', error);
+        } finally {
+          isSyncingRef.current = false;
+        }
+      };
+      
+      syncAllPins();
+    }
+    
+    // Actualizar el ref del estado de conexión
+    wasOfflineRef.current = !isOnline;
+  }, [isOnline, isAuthenticated, user?.id, isLoading, data.pins, syncPinToSupabase]);
+
   // V1.3: Eliminar pin de Supabase
   const deletePinFromSupabase = useCallback(async (spotId: string) => {
     if (!user?.id || !isAuthenticated) {
@@ -323,6 +365,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   const saveDataToLocal = async (dataToSave: SavedData) => {
     try {
       // V1.2: Serializar fechas de pins a ISO strings
+      // V1.3: Asegurar que personalPhotos se incluye en la serialización
       const dataToSerialize = {
         ...dataToSave,
         pins: Object.entries(dataToSave.pins).reduce((acc, [spotId, pin]) => {
@@ -330,6 +373,8 @@ export function SavedProvider({ children }: { children: ReactNode }) {
             ...pin,
             pinnedAt: pin.pinnedAt.toISOString(),
             visitedAt: pin.visitedAt ? pin.visitedAt.toISOString() : undefined,
+            // V1.3: Incluir personalPhotos explícitamente para asegurar persistencia
+            personalPhotos: pin.personalPhotos || undefined,
           };
           return acc;
         }, {} as Record<string, any>),
@@ -650,10 +695,12 @@ export function SavedProvider({ children }: { children: ReactNode }) {
 
       // No existe, convertir WorldSpot a UserSpot
       const userSpot = convertWorldSpotToUserSpot(spotId, user.id);
-      // Crear el spot en SpotContext (se persiste automáticamente)
-      createSpot(userSpot);
-      // Retornar el nuevo ID del UserSpot
-      return userSpot.id;
+      // Crear el spot en SpotContext (se persiste automáticamente) con el ID del UserSpot
+      // V1.3: Pasar el ID del UserSpot para que createSpot lo use en lugar de generar uno nuevo
+      const { id: userSpotId, createdAt, updatedAt, ...userSpotData } = userSpot;
+      const createdSpot = createSpot(userSpotData, { id: userSpotId });
+      // Retornar el nuevo ID del UserSpot (usar el ID del spot creado para asegurar consistencia)
+      return createdSpot.id;
     }
     // Si no es WorldSpot, retornar el ID original
     return spotId;
@@ -663,9 +710,9 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     // FASE 7: Convertir WorldSpot a UserSpot si es necesario
     // Esto crea el User Spot y retorna su ID
     const actualSpotId = ensureUserSpot(spotId);
-    
+
     let newPinData: PinData | null = null;
-    
+
     setData((prev) => {
       const now = new Date();
       
@@ -699,12 +746,13 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       // Remover pin del World Spot si existe (migración)
       const { [spotId]: removedWorldSpotPin, ...remainingPins } = prev.pins;
 
+      const newPins = {
+        ...remainingPins,
+        [actualSpotId]: pinData,
+      };
       return {
         ...prev,
-        pins: {
-          ...remainingPins,
-          [actualSpotId]: pinData,
-        },
+        pins: newPins,
       };
     });
     
@@ -864,6 +912,22 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
+  const getPinData = (spotId: string): PinData | null => {
+    // FASE 7: Verificar tanto el ID original como el ID convertido (si es WorldSpot)
+    if (data.pins[spotId]) {
+      return data.pins[spotId];
+    }
+    const worldSpot = getWorldSpotById(spotId);
+    if (worldSpot && user?.id) {
+      // V1.2: Buscar UserSpot convertido usando ID estable
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      if (data.pins[expectedUserSpotId]) {
+        return data.pins[expectedUserSpotId];
+      }
+    }
+    return null;
+  };
+
   const getPinnedSpots = (state?: PinState): string[] => {
     const pins = Object.values(data.pins);
     if (state) {
@@ -1015,6 +1079,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     changePinState,
     isSpotPinned,
     getPinState,
+    getPinData,
     getPinnedSpots,
     // V1.2: Funciones de Diario de Viaje
     updatePinNotes,

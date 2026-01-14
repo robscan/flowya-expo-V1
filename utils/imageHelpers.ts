@@ -122,4 +122,3 @@ export function getOptimizedImageUrl(imageUrl: string | null | undefined): strin
   // Para otras URLs, retornar sin cambios (pueden agregarse más optimizaciones aquí)
   return imageUrl;
 }
-
