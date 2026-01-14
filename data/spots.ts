@@ -1,5 +1,6 @@
 /**
- * Spot Data Model
+ * Modelo de Datos - Spots
+ * Scope 1.1: Tipo Spot según definición de producto
  * 
  * Defines the Spot type and related interfaces for the application.
  * 

@@ -65,3 +65,60 @@ export function getValidImage(photos: string[] | undefined | null, imageUrl?: st
   return validImage || null;
 }
 
+/**
+ * V1.3: Optimiza URLs de Unsplash agregando parámetros de calidad y compresión
+ * Reduce el tamaño de las imágenes sin perder calidad visual significativa
+ */
+export function optimizeUnsplashUrl(url: string): string {
+  if (!url || !url.includes('unsplash.com')) {
+    return url; // No es Unsplash, retornar sin cambios
+  }
+  
+  try {
+    const urlObj = new URL(url);
+    
+    // Si ya tiene parámetros, agregar/actualizar calidad
+    if (urlObj.searchParams.has('q')) {
+      // Ya tiene calidad, solo asegurar que sea óptima
+      const currentQ = parseInt(urlObj.searchParams.get('q') || '80');
+      if (currentQ > 80) {
+        urlObj.searchParams.set('q', '80'); // Reducir si es muy alta
+      }
+    } else {
+      // Agregar calidad óptima (80 es buen balance calidad/tamaño)
+      urlObj.searchParams.set('q', '80');
+    }
+    
+    // Asegurar que tenga parámetros de tamaño si no los tiene
+    if (!urlObj.searchParams.has('w') && !urlObj.searchParams.has('h')) {
+      urlObj.searchParams.set('w', '800');
+      urlObj.searchParams.set('h', '600');
+      urlObj.searchParams.set('fit', 'crop');
+    }
+    
+    // Agregar formato WebP si el navegador lo soporta (Unsplash lo maneja automáticamente)
+    // No necesitamos hacer nada, Unsplash detecta automáticamente
+    
+    return urlObj.toString();
+  } catch (error) {
+    // Si hay error al parsear URL, retornar original
+    console.warn('Error optimizing Unsplash URL:', error);
+    return url;
+  }
+}
+
+/**
+ * V1.3: Obtiene la URL optimizada de una imagen
+ * Aplica optimizaciones según el origen de la imagen
+ */
+export function getOptimizedImageUrl(imageUrl: string | null | undefined): string | null {
+  if (!imageUrl) return null;
+  
+  // Optimizar URLs de Unsplash
+  if (imageUrl.includes('unsplash.com')) {
+    return optimizeUnsplashUrl(imageUrl);
+  }
+  
+  // Para otras URLs, retornar sin cambios (pueden agregarse más optimizaciones aquí)
+  return imageUrl;
+}

@@ -13,6 +13,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { Spot, SpotV1_2, SpotImage } from '@/data/spots';
+import { migrateSpotImageToUnsplash } from '@/utils/imageMigration';
 
 /**
  * WorldSpot: Spot de solo lectura desde seeds globales
@@ -59,6 +60,15 @@ function normalizeWorldSpot(seed: any): WorldSpot | null {
       return null;
     }
 
+    // Normalizar shortDescription (trim y validar)
+    const shortDescription = seed.shortDescription 
+      ? String(seed.shortDescription).trim() 
+      : undefined;
+
+    // Normalizar fechas
+    const createdAt = seed.createdAt ? new Date(seed.createdAt) : new Date();
+    const updatedAt = seed.updatedAt ? new Date(seed.updatedAt) : new Date();
+
     // Normalizar image
     let image: SpotImage;
     if (seed.image && seed.image.url && typeof seed.image.url === 'string') {
@@ -78,15 +88,40 @@ function normalizeWorldSpot(seed: any): WorldSpot | null {
         console.warn(`[WorldSpot] Spot ${seed.id} no tiene imagen válida`);
       }
     }
-
-    // Normalizar shortDescription (trim y validar)
-    const shortDescription = seed.shortDescription 
-      ? String(seed.shortDescription).trim() 
-      : undefined;
-
-    // Normalizar fechas
-    const createdAt = seed.createdAt ? new Date(seed.createdAt) : new Date();
-    const updatedAt = seed.updatedAt ? new Date(seed.updatedAt) : new Date();
+    
+    // V1.3: Migrar imagen a Unsplash si no lo es (después de normalizar todo)
+    // Solo migrar si la imagen no es de Unsplash
+    try {
+      if (image.url && !image.url.includes('unsplash.com')) {
+        // Crear un spot temporal para usar la función de migración
+        const tempSpot: Spot = {
+          id: seed.id.trim(),
+          name: seed.name.trim(),
+          type: (seed.type || 'other') as Spot['type'],
+          location: {
+            lat: location.lat,
+            lng: location.lng,
+            ...(location.city && { city: location.city }),
+            ...(location.country && { country: location.country }),
+          },
+          image,
+          hasGeneratedContent: Boolean(seed.hasGeneratedContent),
+          createdAt,
+          updatedAt,
+        };
+        
+        const migratedSpot = migrateSpotImageToUnsplash(tempSpot);
+        if (migratedSpot && migratedSpot.image) {
+          image = migratedSpot.image;
+        }
+      }
+    } catch (migrationError) {
+      // Si la migración falla, usar la imagen original
+      if (__DEV__) {
+        console.warn(`[WorldSpot] Error migrando imagen para spot ${seed.id}:`, migrationError);
+      }
+      // Continuar con la imagen original
+    }
 
     // Validar fechas
     if (isNaN(createdAt.getTime()) || isNaN(updatedAt.getTime())) {
@@ -158,16 +193,24 @@ async function loadWorldSpots(): Promise<WorldSpot[]> {
     const spotsWithoutShortDesc: string[] = [];
 
     for (const seed of seedSpotsData) {
-      const normalized = normalizeWorldSpot(seed);
-      
-      if (normalized) {
-        normalizedSpots.push(normalized);
+      try {
+        const normalized = normalizeWorldSpot(seed);
         
-        // Detectar spots sin shortDescription para logging
-        if (!normalized.shortDescription || normalized.shortDescription.trim().length === 0) {
-          spotsWithoutShortDesc.push(normalized.id);
+        if (normalized) {
+          normalizedSpots.push(normalized);
+          
+          // Detectar spots sin shortDescription para logging
+          if (!normalized.shortDescription || normalized.shortDescription.trim().length === 0) {
+            spotsWithoutShortDesc.push(normalized.id);
+          }
+        } else {
+          invalidSpots.push(seed.id || 'unknown');
         }
-      } else {
+      } catch (spotError) {
+        // Capturar errores individuales para no bloquear toda la carga
+        if (__DEV__) {
+          console.error(`[WorldSpot] Error normalizando spot ${seed.id}:`, spotError);
+        }
         invalidSpots.push(seed.id || 'unknown');
       }
     }

@@ -11,11 +11,13 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 import { useSpot } from './SpotContext';
 import { useWorldSpots } from './WorldSpotContext';
 import { useAuth } from './AuthContext';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import * as pinsService from '@/utils/pinsService';
 
 const STORAGE_KEY = '@flowya_saved';
 
@@ -76,6 +78,7 @@ interface SavedContextType {
   changePinState: (spotId: string, newState: PinState) => void;
   isSpotPinned: (spotId: string) => boolean;
   getPinState: (spotId: string) => PinState | null;
+  getPinData: (spotId: string) => PinData | null; // V1.3: Obtener PinData usando ID correcto (WorldSpot o UserSpot)
   getPinnedSpots: (state?: PinState) => string[];
   // V1.2: Funciones de Diario de Viaje
   updatePinNotes: (spotId: string, notes: string) => void;
@@ -138,16 +141,30 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, user } = useAuth();
   const { getWorldSpotById, convertWorldSpotToUserSpot } = useWorldSpots();
   const { createSpot, getSpotById, spots } = useSpot();
+  const isOnline = useNetworkStatus();
+  
+  // V1.3: Flags de control de sincronización
+  const isSyncingRef = useRef(false);
+  const migrationCompletedRef = useRef(false);
+  const lastSyncRef = useRef<Date | null>(null);
+  const wasOfflineRef = useRef(false); // Rastrear si estábamos offline para detectar reconexión
 
-  // Cargar datos desde AsyncStorage
+  // V1.3: Cargar datos (local + Supabase si autenticado)
   useEffect(() => {
     loadData();
   }, []);
 
-  // Guardar datos en AsyncStorage cuando cambien
+  // V1.3: Cargar pins desde Supabase cuando usuario se autentica
+  useEffect(() => {
+    if (isAuthenticated && user?.id && !isLoading) {
+      loadPinsFromSupabase();
+    }
+  }, [isAuthenticated, user?.id, isLoading]);
+
+  // V1.3: Guardar datos en AsyncStorage cuando cambien (cache local)
   useEffect(() => {
     if (!isLoading) {
-      saveData(data);
+      saveDataToLocal(data);
     }
   }, [data, isLoading]);
 
@@ -159,9 +176,13 @@ export function SavedProvider({ children }: { children: ReactNode }) {
         ...prev,
         pins: {},
       }));
+      // V1.3: Limpiar flags de migración
+      migrationCompletedRef.current = false;
+      lastSyncRef.current = null;
     }
   }, [isAuthenticated, isLoading]);
 
+  // V1.3: Cargar datos desde AsyncStorage (cache local)
   const loadData = async () => {
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
@@ -174,12 +195,15 @@ export function SavedProvider({ children }: { children: ReactNode }) {
         }));
         
         // V1.2: Convertir pins dates a Date objects
+        // V1.3: Asegurar que personalPhotos se carga correctamente desde AsyncStorage
         if (parsed.pins) {
           parsed.pins = Object.entries(parsed.pins).reduce((acc, [spotId, pin]: [string, any]) => {
             acc[spotId] = {
               ...pin,
               pinnedAt: new Date(pin.pinnedAt),
               visitedAt: pin.visitedAt ? new Date(pin.visitedAt) : undefined,
+              // V1.3: Incluir personalPhotos explícitamente para asegurar carga correcta
+              personalPhotos: pin.personalPhotos || undefined,
             };
             return acc;
           }, {} as Record<string, PinData>);
@@ -225,9 +249,123 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const saveData = async (dataToSave: SavedData) => {
+  // V1.3: Cargar pins desde Supabase
+  const loadPinsFromSupabase = useCallback(async () => {
+    if (!user?.id || isSyncingRef.current) {
+      return;
+    }
+
+    try {
+      isSyncingRef.current = true;
+      
+      // 1. Verificar si ya se migró a Supabase
+      const migrationFlag = await AsyncStorage.getItem('@flowya_migration_v1_3_completed');
+      const shouldMigrate = !migrationFlag && Object.keys(data.pins).length > 0;
+
+      if (shouldMigrate) {
+        // Migrar pins locales a Supabase
+        console.log('[V1.3 Migration] Migrating pins to Supabase...');
+        const result = await pinsService.migratePinsToSupabase(data.pins, user.id);
+        if (result.success) {
+          await AsyncStorage.setItem('@flowya_migration_v1_3_completed', 'true');
+          console.log(`[V1.3 Migration] Migrated ${result.migrated} pins successfully`);
+        } else {
+          console.error(`[V1.3 Migration] Migration failed: ${result.errors} errors`);
+        }
+      }
+
+      // 2. Cargar pins desde Supabase (source of truth)
+      const supabasePins = await pinsService.fetchUserPins(user.id);
+      
+      // 3. Actualizar estado local con pins de Supabase
+      setData((prev) => ({
+        ...prev,
+        pins: supabasePins,
+      }));
+
+      // 4. Actualizar cache local
+      await saveDataToLocal({
+        ...data,
+        pins: supabasePins,
+      });
+
+      lastSyncRef.current = new Date();
+      migrationCompletedRef.current = true;
+    } catch (error) {
+      console.error('Error loading pins from Supabase:', error);
+      // En caso de error, mantener pins locales (offline-first)
+    } finally {
+      isSyncingRef.current = false;
+    }
+  }, [user?.id, data.pins]);
+
+  // V1.3: Sincronizar pin individual con Supabase
+  const syncPinToSupabase = useCallback(async (pin: PinData) => {
+    if (!user?.id || !isAuthenticated) {
+      return; // No sincronizar si no hay usuario autenticado
+    }
+
+    try {
+      await pinsService.upsertPin(pin, user.id);
+    } catch (error) {
+      console.error('Error syncing pin to Supabase:', error);
+      // Error no crítico: cache local ya está actualizado
+    }
+  }, [user?.id, isAuthenticated]);
+
+  // V1.3: Sincronizar pins pendientes cuando se restablece la conexión
+  useEffect(() => {
+    // Detectar cuando se restablece la conexión (pasa de offline a online)
+    if (isOnline && wasOfflineRef.current && isAuthenticated && user?.id && !isLoading && !isSyncingRef.current && Object.keys(data.pins).length > 0) {
+      // Se restableció la conexión, sincronizar todos los pins pendientes
+      const syncAllPins = async () => {
+        try {
+          isSyncingRef.current = true;
+          const pinsToSync = Object.values(data.pins);
+          
+          // Sincronizar todos los pins en secuencia para evitar sobrecarga
+          for (const pin of pinsToSync) {
+            try {
+              await syncPinToSupabase(pin);
+            } catch (error) {
+              console.error(`Error syncing pin for spot ${pin.spotId}:`, error);
+              // Continuar con el siguiente pin aunque este falle
+            }
+          }
+          
+          console.log(`[SavedContext] Synchronized ${pinsToSync.length} pins after connection restored`);
+        } catch (error) {
+          console.error('[SavedContext] Error syncing pins after connection restored:', error);
+        } finally {
+          isSyncingRef.current = false;
+        }
+      };
+      
+      syncAllPins();
+    }
+    
+    // Actualizar el ref del estado de conexión
+    wasOfflineRef.current = !isOnline;
+  }, [isOnline, isAuthenticated, user?.id, isLoading, data.pins, syncPinToSupabase]);
+
+  // V1.3: Eliminar pin de Supabase
+  const deletePinFromSupabase = useCallback(async (spotId: string) => {
+    if (!user?.id || !isAuthenticated) {
+      return;
+    }
+
+    try {
+      await pinsService.deletePin(spotId, user.id);
+    } catch (error) {
+      console.error('Error deleting pin from Supabase:', error);
+    }
+  }, [user?.id, isAuthenticated]);
+
+  // V1.3: Guardar datos en AsyncStorage (cache local)
+  const saveDataToLocal = async (dataToSave: SavedData) => {
     try {
       // V1.2: Serializar fechas de pins a ISO strings
+      // V1.3: Asegurar que personalPhotos se incluye en la serialización
       const dataToSerialize = {
         ...dataToSave,
         pins: Object.entries(dataToSave.pins).reduce((acc, [spotId, pin]) => {
@@ -235,6 +373,8 @@ export function SavedProvider({ children }: { children: ReactNode }) {
             ...pin,
             pinnedAt: pin.pinnedAt.toISOString(),
             visitedAt: pin.visitedAt ? pin.visitedAt.toISOString() : undefined,
+            // V1.3: Incluir personalPhotos explícitamente para asegurar persistencia
+            personalPhotos: pin.personalPhotos || undefined,
           };
           return acc;
         }, {} as Record<string, any>),
@@ -245,7 +385,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSerialize));
     } catch (error) {
-      console.error('Error saving data:', error);
+      console.error('Error saving data to local storage:', error);
     }
   };
 
@@ -555,10 +695,12 @@ export function SavedProvider({ children }: { children: ReactNode }) {
 
       // No existe, convertir WorldSpot a UserSpot
       const userSpot = convertWorldSpotToUserSpot(spotId, user.id);
-      // Crear el spot en SpotContext (se persiste automáticamente)
-      createSpot(userSpot);
-      // Retornar el nuevo ID del UserSpot
-      return userSpot.id;
+      // Crear el spot en SpotContext (se persiste automáticamente) con el ID del UserSpot
+      // V1.3: Pasar el ID del UserSpot para que createSpot lo use en lugar de generar uno nuevo
+      const { id: userSpotId, createdAt, updatedAt, ...userSpotData } = userSpot;
+      const createdSpot = createSpot(userSpotData, { id: userSpotId });
+      // Retornar el nuevo ID del UserSpot (usar el ID del spot creado para asegurar consistencia)
+      return createdSpot.id;
     }
     // Si no es WorldSpot, retornar el ID original
     return spotId;
@@ -568,7 +710,9 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     // FASE 7: Convertir WorldSpot a UserSpot si es necesario
     // Esto crea el User Spot y retorna su ID
     const actualSpotId = ensureUserSpot(spotId);
-    
+
+    let newPinData: PinData | null = null;
+
     setData((prev) => {
       const now = new Date();
       
@@ -597,17 +741,27 @@ export function SavedProvider({ children }: { children: ReactNode }) {
         personalPhotos: undefined,
       };
 
+      newPinData = pinData;
+
       // Remover pin del World Spot si existe (migración)
       const { [spotId]: removedWorldSpotPin, ...remainingPins } = prev.pins;
 
+      const newPins = {
+        ...remainingPins,
+        [actualSpotId]: pinData,
+      };
       return {
         ...prev,
-        pins: {
-          ...remainingPins,
-          [actualSpotId]: pinData,
-        },
+        pins: newPins,
       };
     });
+    
+    // V1.3: Sincronizar con Supabase en background (no bloqueante)
+    if (newPinData && isAuthenticated) {
+      syncPinToSupabase(newPinData).catch((error) => {
+        console.error('Error syncing pin to Supabase:', error);
+      });
+    }
     
     // FASE 7: Retornar el ID del User Spot para redirección
     return actualSpotId;
@@ -636,6 +790,13 @@ export function SavedProvider({ children }: { children: ReactNode }) {
         pins: remainingPins,
       };
     });
+
+    // V1.3: Eliminar de Supabase en background (no bloqueante)
+    if (isAuthenticated) {
+      deletePinFromSupabase(actualSpotId).catch((error) => {
+        console.error('Error deleting pin from Supabase:', error);
+      });
+    }
   };
 
   const changePinState = (spotId: string, newState: PinState) => {
@@ -643,6 +804,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     // V1.2: REGLA PRINCIPAL - Convertir al primer cambio de estatus si es WorldSpot
     let actualSpotId = spotId;
     const worldSpot = getWorldSpotById(spotId);
+    let updatedPinData: PinData | null = null;
     
     // Si es WorldSpot, buscar o crear UserSpot convertido
     if (worldSpot && user?.id) {
@@ -663,6 +825,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
               state: newState,
               visitedAt: newState === 'visited' ? (existingPin.visitedAt || now) : undefined,
             };
+            updatedPinData = updatedPin;
             return {
               ...prev,
               pins: {
@@ -673,6 +836,13 @@ export function SavedProvider({ children }: { children: ReactNode }) {
           }
           return prev;
         });
+        
+        // V1.3: Sincronizar con Supabase
+        if (updatedPinData && isAuthenticated) {
+          syncPinToSupabase(updatedPinData).catch((error) => {
+            console.error('Error syncing pin to Supabase:', error);
+          });
+        }
         return;
       } else if (expectedUserSpotId in data.pins) {
         actualSpotId = expectedUserSpotId;
@@ -695,6 +865,8 @@ export function SavedProvider({ children }: { children: ReactNode }) {
         visitedAt: newState === 'visited' ? (existingPin.visitedAt || now) : undefined,
       };
 
+      updatedPinData = updatedPin;
+
       return {
         ...prev,
         pins: {
@@ -703,6 +875,13 @@ export function SavedProvider({ children }: { children: ReactNode }) {
         },
       };
     });
+
+    // V1.3: Sincronizar con Supabase en background (no bloqueante)
+    if (updatedPinData && isAuthenticated) {
+      syncPinToSupabase(updatedPinData).catch((error) => {
+        console.error('Error syncing pin to Supabase:', error);
+      });
+    }
   };
 
   const isSpotPinned = (spotId: string): boolean => {
@@ -733,6 +912,22 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
+  const getPinData = (spotId: string): PinData | null => {
+    // FASE 7: Verificar tanto el ID original como el ID convertido (si es WorldSpot)
+    if (data.pins[spotId]) {
+      return data.pins[spotId];
+    }
+    const worldSpot = getWorldSpotById(spotId);
+    if (worldSpot && user?.id) {
+      // V1.2: Buscar UserSpot convertido usando ID estable
+      const expectedUserSpotId = `user-${user.id}-${spotId}`;
+      if (data.pins[expectedUserSpotId]) {
+        return data.pins[expectedUserSpotId];
+      }
+    }
+    return null;
+  };
+
   const getPinnedSpots = (state?: PinState): string[] => {
     const pins = Object.values(data.pins);
     if (state) {
@@ -756,22 +951,33 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    let updatedPinData: PinData | null = null;
+
     setData((prev) => {
       const pin = prev.pins[actualSpotId];
       if (!pin) {
         return prev; // Solo permitir si Pin existe
       }
+      const updatedPin: PinData = {
+        ...pin,
+        notes,
+      };
+      updatedPinData = updatedPin;
       return {
         ...prev,
         pins: {
           ...prev.pins,
-          [actualSpotId]: {
-            ...pin,
-            notes,
-          },
+          [actualSpotId]: updatedPin,
         },
       };
     });
+
+    // V1.3: Sincronizar con Supabase en background (no bloqueante)
+    if (updatedPinData && isAuthenticated) {
+      syncPinToSupabase(updatedPinData).catch((error) => {
+        console.error('Error syncing pin notes to Supabase:', error);
+      });
+    }
   };
 
   const addPinPhoto = (spotId: string, photoUrl: string) => {
@@ -788,6 +994,8 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    let updatedPinData: PinData | null = null;
+
     setData((prev) => {
       const pin = prev.pins[actualSpotId];
       if (!pin) {
@@ -797,17 +1005,26 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       if (personalPhotos.includes(photoUrl)) {
         return prev; // Ya existe, no agregar duplicado
       }
+      const updatedPin: PinData = {
+        ...pin,
+        personalPhotos: [...personalPhotos, photoUrl],
+      };
+      updatedPinData = updatedPin;
       return {
         ...prev,
         pins: {
           ...prev.pins,
-          [actualSpotId]: {
-            ...pin,
-            personalPhotos: [...personalPhotos, photoUrl],
-          },
+          [actualSpotId]: updatedPin,
         },
       };
     });
+
+    // V1.3: Sincronizar con Supabase en background (no bloqueante)
+    if (updatedPinData && isAuthenticated) {
+      syncPinToSupabase(updatedPinData).catch((error) => {
+        console.error('Error syncing pin photo to Supabase:', error);
+      });
+    }
   };
 
   const removePinPhoto = (spotId: string, photoUrl: string) => {
@@ -824,23 +1041,34 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    let updatedPinData: PinData | null = null;
+
     setData((prev) => {
       const pin = prev.pins[actualSpotId];
       if (!pin) {
         return prev; // Solo permitir si Pin existe
       }
       const personalPhotos = pin.personalPhotos || [];
+      const updatedPin: PinData = {
+        ...pin,
+        personalPhotos: personalPhotos.filter((url) => url !== photoUrl),
+      };
+      updatedPinData = updatedPin;
       return {
         ...prev,
         pins: {
           ...prev.pins,
-          [actualSpotId]: {
-            ...pin,
-            personalPhotos: personalPhotos.filter((url) => url !== photoUrl),
-          },
+          [actualSpotId]: updatedPin,
         },
       };
     });
+
+    // V1.3: Sincronizar con Supabase en background (no bloqueante)
+    if (updatedPinData && isAuthenticated) {
+      syncPinToSupabase(updatedPinData).catch((error) => {
+        console.error('Error syncing pin photo removal to Supabase:', error);
+      });
+    }
   };
 
   const value: SavedContextType = {
@@ -851,6 +1079,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     changePinState,
     isSpotPinned,
     getPinState,
+    getPinData,
     getPinnedSpots,
     // V1.2: Funciones de Diario de Viaje
     updatePinNotes,

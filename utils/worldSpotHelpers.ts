@@ -33,22 +33,50 @@ export function isUserSpot(spot: UnifiedSpot): spot is Spot {
  * 
  * REGLA DE UNICIDAD: Si existe un User Spot derivado de un World Spot,
  * el World Spot NO se muestra (evita duplicados)
+ * 
+ * V1.2: ORDEN ESTABLE - Cuando un WorldSpot se convierte a UserSpot,
+ * el UserSpot reemplaza al WorldSpot en la misma posición para mantener
+ * el orden estable y evitar que las cards se muevan.
  */
 export function combineSpots(userSpots: Spot[], worldSpots: WorldSpot[]): UnifiedSpot[] {
+  // Crear Map de originWorldSpotId -> UserSpot para búsqueda rápida
+  const userSpotsByOrigin = new Map<string, Spot>();
+  userSpots.forEach((spot) => {
+    if (spot.originWorldSpotId) {
+      userSpotsByOrigin.set(spot.originWorldSpotId, spot);
+    }
+  });
+
   // Crear Set de IDs de World Spots que ya tienen User Spot derivado
-  const worldSpotIdsWithUserSpot = new Set(
-    userSpots
-      .map((spot) => spot.originWorldSpotId)
-      .filter((id): id is string => id !== undefined)
-  );
+  const worldSpotIdsWithUserSpot = new Set(userSpotsByOrigin.keys());
 
-  // Filtrar World Spots: excluir los que ya tienen User Spot derivado
-  const filteredWorldSpots = worldSpots.filter(
-    (worldSpot) => !worldSpotIdsWithUserSpot.has(worldSpot.id)
-  );
+  // V1.2: Mantener orden estable - reemplazar WorldSpot con UserSpot en la misma posición
+  // Esto previene que las cards se muevan cuando se convierte un WorldSpot a UserSpot
+  const combined: UnifiedSpot[] = [];
+  
+  // Primero agregar WorldSpots (si no tienen UserSpot derivado) en su orden original
+  worldSpots.forEach((worldSpot) => {
+    if (worldSpotIdsWithUserSpot.has(worldSpot.id)) {
+      // Este WorldSpot tiene un UserSpot derivado, usar el UserSpot en su lugar
+      const userSpot = userSpotsByOrigin.get(worldSpot.id);
+      if (userSpot) {
+        combined.push(userSpot);
+      }
+    } else {
+      // Este WorldSpot no tiene UserSpot derivado, mantenerlo
+      combined.push(worldSpot);
+    }
+  });
+  
+  // Luego agregar UserSpots que no tienen originWorldSpotId (spots creados directamente)
+  userSpots.forEach((userSpot) => {
+    if (!userSpot.originWorldSpotId) {
+      combined.push(userSpot);
+    }
+    // Si tiene originWorldSpotId, ya fue agregado arriba en lugar del WorldSpot
+  });
 
-  // Combinar: User Spots primero (prioridad), luego World Spots filtrados
-  return [...userSpots, ...filteredWorldSpots];
+  return combined;
 }
 
 /**

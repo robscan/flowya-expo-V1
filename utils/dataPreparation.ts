@@ -129,9 +129,9 @@ export function prepareHomeData(
   const forYouSpots: SpotWithDistance[] = (() => {
     // V1.2: Excluir spots con Pin de esta sección (ya están en Pinned)
     // Usa snapshot para evitar re-filtrado inmediato al cambiar estado de Pin
-    const forYou = filteredSpots
-      .filter((spot) => !usedSpotIds.has(spot.id))
-      .filter((spot) => !isSpotPinned(spot.id)) // V1.2: Usa snapshot (evita re-filtrado inmediato)
+    const availableBeforeFilter = filteredSpots.filter((spot) => !usedSpotIds.has(spot.id));
+    const filteredByPin = availableBeforeFilter.filter((spot) => !isSpotPinned(spot.id)); // V1.2: Usa snapshot (evita re-filtrado inmediato)
+    const forYou = filteredByPin
       .slice(0, 10)
       .map((spot) => {
         usedSpotIds.add(spot.id);

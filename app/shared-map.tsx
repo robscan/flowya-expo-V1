@@ -22,10 +22,14 @@ import { textStyles } from '@/constants/typography';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
+import { useWorldSpots } from '@/contexts/WorldSpotContext';
+import { PinData } from '@/contexts/SavedContext';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
+import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
+import * as pinsService from '@/utils/pinsService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -43,8 +47,15 @@ export default function SharedMapScreen() {
   const { baseLocation } = useBaseLocation();
 
   const { spots, isLoading: spotsLoading, getSpotById } = useSpot();
-  const { isSpotPinned, getPinState, getPinnedSpots } = useSaved();
+  const { worldSpots, isLoading: isLoadingWorldSpots, getWorldSpotById } = useWorldSpots();
   const { user } = useAuth();
+  const [sharedUserPins, setSharedUserPins] = useState<Record<string, PinData>>({});
+  const [isLoadingPins, setIsLoadingPins] = useState(true);
+  
+  // Combinar UserSpots y WorldSpots
+  const allSpots: UnifiedSpot[] = useMemo(() => {
+    return combineSpots(spots, worldSpots);
+  }, [spots, worldSpots]);
   
   // Calcular distancia del spot seleccionado
   const selectedSpotDistance = useSpotDistance(selectedSpot?.id || null, baseLocation);
@@ -52,18 +63,88 @@ export default function SharedMapScreen() {
   // Obtener pinState de los parámetros (default: 'visited')
   const pinState: PinStateParam = params.pinState === 'to_visit' ? 'to_visit' : 'visited';
   
-  // Filtrar spots según estado de Pin
+  // V1.3: Cargar pins del usuario compartido desde Supabase
+  useEffect(() => {
+    const loadSharedUserPins = async () => {
+      if (!params.userId) {
+        setIsLoadingPins(false);
+        return;
+      }
+      
+      try {
+        setIsLoadingPins(true);
+        const pins = await pinsService.fetchUserPins(params.userId);
+        setSharedUserPins(pins);
+      } catch (error) {
+        console.error('Error loading shared user pins:', error);
+        setSharedUserPins({});
+      } finally {
+        setIsLoadingPins(false);
+      }
+    };
+    
+    loadSharedUserPins();
+  }, [params.userId]);
+  
+  // Filtrar spots según estado de Pin del usuario compartido
   const filteredSpots = useMemo(() => {
-    if (spotsLoading) return [];
+    if (spotsLoading || isLoadingWorldSpots || isLoadingPins) return [];
     
-    const pinnedSpotIds = getPinnedSpots(pinState);
+    // Filtrar pins del usuario compartido por el estado especificado
+    const pinnedSpotIds = Object.entries(sharedUserPins)
+      .filter(([_, pin]) => pin.state === pinState)
+      .map(([spotId, _]) => spotId);
     
-    return spots.filter((spot) => {
-      const isPinned = isSpotPinned(spot.id);
-      const spotPinState = getPinState(spot.id);
-      return isPinned && spotPinState === pinState && pinnedSpotIds.includes(spot.id);
+    if (pinnedSpotIds.length === 0) return [];
+    
+    // Obtener los spots que coinciden con los spotIds de los pins filtrados
+    // Los pins pueden tener IDs con prefijo "user-{userId}-", necesitamos extraer el ID base
+    // Crear un Set con los IDs base de los pins (sin el prefijo "user-{userId}-")
+    const baseSpotIds = new Set<string>();
+    pinnedSpotIds.forEach((pinSpotId) => {
+      // Agregar el ID completo (por si es un UserSpot con ese ID)
+      baseSpotIds.add(pinSpotId);
+      
+      // Si tiene prefijo "user-", extraer el ID base
+      // Formato: user-{userId}-{originalSpotId}
+      // userId es un UUID: 1e470c3a-43b5-465c-a177-f8a999f9d27a (5 partes separadas por guiones)
+      if (pinSpotId.startsWith('user-')) {
+        // Extraer el ID base después de "user-{userId}-"
+        // Ejemplo: "user-1e470c3a-43b5-465c-a177-f8a999f9d27a-oslo-opera-house" -> "oslo-opera-house"
+        // UUID tiene 5 partes, entonces: user + 5 partes UUID + originalSpotId = 7+ partes
+        const parts = pinSpotId.split('-');
+        if (parts.length >= 7) {
+          // UUID estándar: user-{uuid-part1}-{uuid-part2}-{uuid-part3}-{uuid-part4}-{uuid-part5}-{originalSpotId}
+          // Tomar todo después del UUID (partes desde índice 6 en adelante)
+          const originalSpotId = parts.slice(6).join('-');
+          if (originalSpotId) {
+            baseSpotIds.add(originalSpotId); // ID base del WorldSpot original
+          }
+        } else if (parts.length >= 4) {
+          // Fallback: si tiene menos partes, intentar tomar todo después de "user-{firstPart}"
+          // Esto maneja casos donde el userId no es un UUID estándar
+          const originalSpotId = parts.slice(2).join('-');
+          if (originalSpotId) {
+            baseSpotIds.add(originalSpotId);
+          }
+        }
+      }
     });
-  }, [spots, pinState, spotsLoading, isSpotPinned, getPinState, getPinnedSpots]);
+    
+    // Buscar spots que coincidan con cualquiera de los IDs base
+    const matchedSpots = allSpots.filter((spot) => {
+      // Verificar coincidencia directa
+      if (baseSpotIds.has(spot.id)) return true;
+      
+      // Verificar si es un UserSpot con originWorldSpotId que coincida
+      if ('originWorldSpotId' in spot && spot.originWorldSpotId && baseSpotIds.has(spot.originWorldSpotId)) {
+        return true;
+      }
+      
+      return false;
+    });
+    return matchedSpots as Spot[];
+  }, [allSpots, sharedUserPins, pinState, spotsLoading, isLoadingWorldSpots, isLoadingPins]);
 
   // Obtener nombre del usuario (usar email o placeholder)
   const userName = useMemo(() => {
@@ -111,12 +192,12 @@ export default function SharedMapScreen() {
     }
   };
 
-  if (spotsLoading) {
+  if (spotsLoading || isLoadingWorldSpots || isLoadingPins) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
         <View style={styles.emptyState}>
-          <Text style={[textStyles.body, { color: colors.icon }]}>Cargando...</Text>
+          <Text style={[textStyles.body, { color: colors.icon }]}>Cargando mapa compartido...</Text>
         </View>
       </View>
     );

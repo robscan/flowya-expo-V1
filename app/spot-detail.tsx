@@ -80,9 +80,9 @@ export default function SpotDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { getSpotById, updateSpot, deleteSpot, markSpotAsSeen, markSpotAsAvailable, getSpotLoadState, generateSpotContent, createSpot } = useSpot();
+  const { getSpotById, updateSpot, deleteSpot, markSpotAsSeen, markSpotAsAvailable, getSpotLoadState, generateSpotContent, createSpot, spots } = useSpot();
   const { getWorldSpotById, convertWorldSpotToUserSpot } = useWorldSpots();
-  const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState, pins, updatePinNotes, addPinPhoto, removePinPhoto } = useSaved();
+  const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState, getPinData, updatePinNotes, addPinPhoto, removePinPhoto } = useSaved();
   const { createPath } = usePath();
   // SCOPE 9: Obtener flowState, currentSpotId y funciones de Flow
   const { flowState, currentSpotId, expandFlow, addSpotToFlow, startFlow } = useFlow();
@@ -120,6 +120,21 @@ export default function SpotDetailScreen() {
   // const [editPlanInfoIconRestrictions, setEditPlanInfoIconRestrictions] = useState<IconName>('paw');
   // const [editPlanInfoIconAccessibility, setEditPlanInfoIconAccessibility] = useState<IconName>('accessibility');
 
+  // V1.3: Estado para rastrear si estamos esperando que un UserSpot esté disponible
+  const [pendingUserSpotId, setPendingUserSpotId] = useState<string | null>(null);
+  
+  // V1.3: useEffect para detectar cuando el UserSpot esté disponible y actualizar la URL
+  useEffect(() => {
+    if (pendingUserSpotId) {
+      const userSpot = getSpotById(pendingUserSpotId);
+      if (userSpot) {
+        // UserSpot está disponible, actualizar la URL
+        router.setParams({ id: pendingUserSpotId });
+        setPendingUserSpotId(null);
+      }
+    }
+  }, [pendingUserSpotId, getSpotById, router, spots]); // Incluir spots para detectar cuando se agrega
+  
   // FASE 7: Get spot from context (UserSpot) or WorldSpot
   const userSpot = id ? getSpotById(id) : null;
   const worldSpot = id ? getWorldSpotById(id) : null;
@@ -196,17 +211,17 @@ export default function SpotDetailScreen() {
   }, []);
 
   // Inicializar notesText cuando cambia el pin o se abre el editor - DEBE estar antes del return temprano
-  // Usamos pinData que depende de spot.id, pero el efecto siempre se ejecuta (con guard interno)
+  // Usamos getPinData que maneja la conversión WorldSpot → UserSpot correctamente
   useEffect(() => {
     if (!id) return;
-    const currentPinData = pins[id];
+    const currentPinData = getPinData(id);
     const currentPersonalNotes = currentPinData?.notes || '';
     if (isEditingNotes && currentPersonalNotes) {
       setNotesText(currentPersonalNotes);
     } else if (!isEditingNotes) {
       setNotesText('');
     }
-  }, [id, isEditingNotes, pins]);
+  }, [id, isEditingNotes, getPinData]);
 
   // CANONICAL: Centrar mapa en spot al montar (siempre, no en userLocation)
   useEffect(() => {
@@ -329,7 +344,7 @@ export default function SpotDetailScreen() {
 
   const isPinned = isSpotPinned(spot.id);
   const pinState = getPinState(spot.id);
-  const pinData = pins[spot.id];
+  const pinData = getPinData(spot.id); // V1.3: Usar getPinData para manejar conversión WorldSpot → UserSpot
   const isVisitedPin = pinState === 'visited';
   const personalNotes = pinData?.notes || '';
   const personalPhotos = pinData?.personalPhotos || [];
@@ -362,13 +377,19 @@ export default function SpotDetailScreen() {
     setHasSeenFirstTime(true); // Actualizar estado local después de marcar
     setToastMessage(state === 'visited' ? 'Pinned · Visited' : 'Pinned · To visit');
     setShowToast(true);
-    
-    // FASE 7: Si se convirtió a User Spot, redirigir al User Spot
+
+    // FASE 7: Si se convirtió a User Spot, esperar a que esté disponible
+    // V1.3: No redirigir inmediatamente, usar useEffect para detectar cuando el UserSpot esté disponible
     if (userSpotId !== spot.id && isWorldSpotFlag) {
-      // Pequeño delay para permitir que el User Spot se cree
-      setTimeout(() => {
-        router.replace(`/spot-detail?id=${userSpotId}`);
-      }, 100);
+      // Verificar inmediatamente si el UserSpot está disponible
+      const userSpotImmediately = getSpotById(userSpotId);
+      if (userSpotImmediately) {
+        // UserSpot ya está disponible, actualizar la URL inmediatamente
+        router.setParams({ id: userSpotId });
+      } else {
+        // UserSpot aún no está disponible, marcar como pendiente para que useEffect lo detecte
+        setPendingUserSpotId(userSpotId);
+      }
     }
     
     // Animación de feedback visual
@@ -376,12 +397,12 @@ export default function SpotDetailScreen() {
       Animated.timing(pinButtonScale, {
         toValue: 0.9,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(pinButtonScale, {
         toValue: 1,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
   };
@@ -408,12 +429,12 @@ export default function SpotDetailScreen() {
       Animated.timing(pinButtonScale, {
         toValue: 0.9,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(pinButtonScale, {
         toValue: 1,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
     
@@ -436,13 +457,19 @@ export default function SpotDetailScreen() {
       const userSpotId = pinSpot(spot.id, 'to_visit');
       setToastMessage('Pinned · To visit');
       setShowToast(true);
-      
-      // FASE 7: Si se convirtió a User Spot, redirigir al User Spot
+
+      // FASE 7: Si se convirtió a User Spot, esperar a que esté disponible
+      // V1.3: No redirigir inmediatamente, usar useEffect para detectar cuando el UserSpot esté disponible
       if (userSpotId !== spot.id && isWorldSpotFlag) {
-        // Pequeño delay para permitir que el User Spot se cree
-        setTimeout(() => {
-          router.replace(`/spot-detail?id=${userSpotId}`);
-        }, 100);
+        // Verificar inmediatamente si el UserSpot está disponible
+        const userSpotImmediately = getSpotById(userSpotId);
+        if (userSpotImmediately) {
+          // UserSpot ya está disponible, actualizar la URL inmediatamente
+          router.setParams({ id: userSpotId });
+        } else {
+          // UserSpot aún no está disponible, marcar como pendiente para que useEffect lo detecte
+          setPendingUserSpotId(userSpotId);
+        }
       }
       return;
     }
@@ -493,9 +520,24 @@ export default function SpotDetailScreen() {
     setNotesText(personalNotes);
   };
 
-  const handleSaveNotes = () => {
+  // V1.3: handleSaveNotes con activación automática de 'visited'
+  const handleSaveNotes = async () => {
     if (!spot) return;
-    updatePinNotes(spot.id, notesText);
+    const currentPin = getPinData(spot.id);
+    
+    if (!currentPin) {
+      // Crear Pin con estado 'visited'
+      pinSpot(spot.id, 'visited');
+      updatePinNotes(spot.id, notesText);
+    } else if (currentPin.state === 'to_visit') {
+      // Cambiar a 'visited' y actualizar notas
+      changePinState(spot.id, 'visited');
+      updatePinNotes(spot.id, notesText);
+    } else {
+      // Solo actualizar notas
+      updatePinNotes(spot.id, notesText);
+    }
+    
     setIsEditingNotes(false);
     setToastMessage('Notas guardadas');
     setShowToast(true);
@@ -1244,8 +1286,14 @@ export default function SpotDetailScreen() {
                           if (!spot) return;
                           try {
                             // FASE 7: Convertir WorldSpot a UserSpot antes de generar contenido
-                            const userSpot = convertWorldSpotToUserSpot(spot.id);
-                            createSpot(userSpot);
+                            if (!user?.id) {
+                              Alert.alert('Error', 'Debes estar autenticado para generar contenido');
+                              return;
+                            }
+                            const userSpot = convertWorldSpotToUserSpot(spot.id, user.id);
+                            // V1.3: Pasar el ID del UserSpot para que createSpot lo use
+                            const { id: userSpotId, createdAt, updatedAt, ...userSpotData } = userSpot;
+                            createSpot(userSpotData, { id: userSpotId });
                             // Generar contenido para el UserSpot convertido
                             await generateSpotContent(userSpot.id);
                             setToastMessage('Contenido generado');
@@ -1407,120 +1455,148 @@ export default function SpotDetailScreen() {
 
           {/* FASE 4: Plan info section ELIMINADO - campos avanzados eliminados (hours, cost, restrictions, accessibility, planInfo) */}
 
-          {/* V1.2: Personal Notes Section (solo si Pin existe) */}
-          {isPinned && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={[textStyles.heading3, { color: colors.text }]}>Personal Notes</Text>
-                {!isEditingNotes && (
-                  <Pressable
-                    onPress={handleStartEditingNotes}
-                    style={({ pressed }) => [
-                      styles.editButton,
-                      pressed && { opacity: 0.7 },
-                    ]}>
-                    <Icon name={personalNotes ? 'edit' : 'add'} size={18} color={colors.tint} />
-                    <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs / 2 }]}>
-                      {personalNotes ? 'Edit' : 'Add Notes'}
+          {/* V1.3: Diary Section (siempre visible) */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                <Text style={[textStyles.heading3, { color: colors.text }]}>Diary</Text>
+                {isPinned && !isVisitedPin && (
+                  <View style={[styles.visitedBadge, { backgroundColor: colors.icon + '20' }]}>
+                    <Text style={[textStyles.caption, { color: colors.icon }]}>
+                      Mark as visited
                     </Text>
-                  </Pressable>
+                  </View>
                 )}
               </View>
-              
-              {isEditingNotes ? (
-                <View style={{ marginTop: spacing.sm }}>
-                  <FormTextArea
-                    value={notesText}
-                    onChangeText={setNotesText}
-                    placeholder="Add your personal notes about this place..."
-                    numberOfLines={6}
-                    style={{ marginBottom: spacing.sm }}
-                  />
-                  <View style={styles.notesActions}>
-                    <Pressable
-                      onPress={handleCancelEditingNotes}
-                      style={({ pressed }) => [
-                        styles.notesActionButton,
-                        styles.notesCancelButton,
-                        {
-                          backgroundColor: colors.icon + '20',
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}>
-                      <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={handleSaveNotes}
-                      style={({ pressed }) => [
-                        styles.notesActionButton,
-                        styles.notesSaveButton,
-                        {
-                          backgroundColor: colors.tint,
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}>
-                      <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : (
-                personalNotes ? (
-                  <Text style={[textStyles.body, { color: colors.text, marginTop: spacing.sm }]}>
-                    {personalNotes}
-                  </Text>
-                ) : null
-              )}
-            </View>
-          )}
-
-          {/* V1.2: Personal Photos Section (solo si Pin existe) */}
-          {isPinned && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={[textStyles.heading3, { color: colors.text }]}>Personal Photos</Text>
+              {!isEditingNotes && (
                 <Pressable
-                  onPress={handleAddPhoto}
+                  onPress={handleStartEditingNotes}
                   style={({ pressed }) => [
                     styles.editButton,
                     pressed && { opacity: 0.7 },
-                  ]}
-                  disabled={imageUploadHook.isOptimizing}>
-                  {imageUploadHook.isOptimizing ? (
-                    <ActivityIndicator size="small" color={colors.tint} />
-                  ) : (
-                    <>
-                      <Icon name="camera" size={18} color={colors.tint} />
-                      <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs / 2 }]}>
-                        Add Photo
-                      </Text>
-                    </>
-                  )}
+                  ]}>
+                  <Icon name={personalNotes ? 'edit' : 'add'} size={18} color={colors.tint} />
+                  <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs / 2 }]}>
+                    {personalNotes ? 'Edit' : 'Add Notes'}
+                  </Text>
                 </Pressable>
-              </View>
-              
-              {personalPhotos.length > 0 ? (
-                <View style={styles.photosGrid}>
-                  {personalPhotos.map((photoUrl, index) => (
-                    <View key={`${photoUrl}-${index}`} style={styles.photoItem}>
-                      <Image source={{ uri: photoUrl }} style={styles.photoThumbnail} resizeMode="cover" />
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.photoRemoveButton,
-                          pressed && { opacity: 0.7 },
-                        ]}
-                        onPress={() => handleRemovePhoto(photoUrl)}>
-                        <Icon name="close" size={16} color={colors.background} />
-                      </Pressable>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, fontStyle: 'italic' }]}>
-                  No photos yet. Add your personal photos from this visit.
-                </Text>
               )}
             </View>
-          )}
+            
+            {/* Metadata temporal: visitedAt */}
+            {isPinned && isVisitedPin && pinData?.visitedAt && (
+              <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.sm }]}>
+                Visited on {new Date(pinData.visitedAt).toLocaleDateString('en-US', { 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </Text>
+            )}
+            
+            {isEditingNotes ? (
+              <View style={{ marginTop: spacing.sm }}>
+                <FormTextArea
+                  value={notesText}
+                  onChangeText={setNotesText}
+                  placeholder="Add your personal notes about this place..."
+                  numberOfLines={6}
+                  style={{ marginBottom: spacing.sm }}
+                />
+                <View style={styles.notesActions}>
+                  <Pressable
+                    onPress={handleCancelEditingNotes}
+                    style={({ pressed }) => [
+                      styles.notesActionButton,
+                      styles.notesCancelButton,
+                      {
+                        backgroundColor: colors.icon + '20',
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}>
+                    <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleSaveNotes}
+                    style={({ pressed }) => [
+                      styles.notesActionButton,
+                      styles.notesSaveButton,
+                      {
+                        backgroundColor: colors.tint,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}>
+                    <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              personalNotes ? (
+                <Text style={[textStyles.body, { color: colors.text, marginTop: spacing.sm }]}>
+                  {personalNotes}
+                </Text>
+              ) : null
+            )}
+          </View>
+
+          {/* V1.3: Personal Photos Section (siempre visible, solo funcional si visited) */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[textStyles.heading3, { color: colors.text }]}>Personal Photos</Text>
+              <Pressable
+                onPress={handleAddPhoto}
+                style={({ pressed }) => [
+                  styles.editButton,
+                  (!isVisitedPin || imageUploadHook.isOptimizing) && styles.disabledButton,
+                  pressed && { opacity: 0.7 },
+                ]}
+                disabled={!isVisitedPin || imageUploadHook.isOptimizing}>
+                {imageUploadHook.isOptimizing ? (
+                  <ActivityIndicator size="small" color={colors.tint} />
+                ) : (
+                  <>
+                    <Icon name="camera" size={18} color={isVisitedPin ? colors.tint : colors.icon} />
+                    <Text style={[textStyles.bodyMedium, { 
+                      color: isVisitedPin ? colors.tint : colors.icon, 
+                      marginLeft: spacing.xs / 2 
+                    }]}>
+                      Add Photo
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+            
+            {!isVisitedPin && (
+              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.sm, fontStyle: 'italic' }]}>
+                Mark as visited to add photos
+              </Text>
+            )}
+            
+            {isVisitedPin && personalPhotos.length > 0 && (
+              <View style={styles.photosGrid}>
+                {personalPhotos.map((photoUrl, index) => (
+                  <View key={`${photoUrl}-${index}`} style={styles.photoItem}>
+                    <Image source={{ uri: photoUrl }} style={styles.photoThumbnail} resizeMode="cover" />
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.photoRemoveButton,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                      onPress={() => handleRemovePhoto(photoUrl)}>
+                      <Icon name="close" size={16} color={colors.background} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+            
+            {isVisitedPin && personalPhotos.length === 0 && (
+              <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, fontStyle: 'italic' }]}>
+                No photos yet. Add your personal photos from this visit.
+              </Text>
+            )}
+          </View>
 
           {/* Bottom padding */}
           <View style={{ height: spacing['2xl'] }} />
@@ -2201,6 +2277,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderStyle: 'dashed',
     minHeight: 48,
+  },
+  visitedBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: 8,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 });
 

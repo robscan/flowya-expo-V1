@@ -40,7 +40,7 @@ import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontSize, fontWeight, textStyles } from '@/constants/typography';
 import { mockFlows } from '@/data/flows';
-import { mockSpots } from '@/data/spots';
+import { mockSpots, Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -67,7 +67,7 @@ export default function DesignSystemScreen() {
     }
   };
 
-  const scrollToSection = (ref: React.RefObject<View>) => {
+  const scrollToSection = (ref: React.RefObject<View | null>) => {
     ref.current?.measureLayout(
       scrollViewRef.current?.getInnerViewNode() || (scrollViewRef.current as any),
       (x, y) => {
@@ -78,9 +78,29 @@ export default function DesignSystemScreen() {
   };
 
   // Datos de ejemplo
-  const exampleSpot = mockSpots[0];
+  // Mock spot para el design system (mockSpots está vacío por diseño)
+  const exampleSpotMock: Spot = {
+    id: 'design-system-spot-1',
+    name: 'Playa del Carmen',
+    type: 'beach',
+    location: {
+      lat: 20.6170,
+      lng: -87.0798,
+      city: 'Playa del Carmen',
+      country: 'México',
+    },
+    shortDescription: 'Una hermosa playa en la Riviera Maya',
+    image: {
+      url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800',
+    },
+    hasGeneratedContent: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  
+  const exampleSpot = mockSpots.length > 0 ? mockSpots[0] : exampleSpotMock;
   const exampleFlow = mockFlows[0];
-  const exampleImageUri = exampleSpot.photos && exampleSpot.photos.length > 0 ? exampleSpot.photos[0] : null;
+  const exampleImageUri = exampleSpot?.image?.url || (exampleSpot?.photos && exampleSpot.photos.length > 0 ? exampleSpot.photos[0] : null);
 
   // Render Navigation Menu
   const renderNavigation = () => {
@@ -918,7 +938,7 @@ export default function DesignSystemScreen() {
         <View style={styles.componentExample}>
           <FlowCard.Display
             flow={exampleFlow}
-            spots={mockSpots}
+            spots={mockSpots.length > 0 ? mockSpots : [exampleSpot]}
           />
         </View>
       </View>
