@@ -14,6 +14,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { Spot, SpotV1_2, SpotImage } from '@/data/spots';
 import { migrateSpotImageToUnsplash } from '@/utils/imageMigration';
+import { supabase } from '@/utils/supabase';
 
 /**
  * WorldSpot: Spot de solo lectura desde seeds globales
@@ -167,12 +168,119 @@ interface WorldSpotContextType {
 const WorldSpotContext = createContext<WorldSpotContextType | undefined>(undefined);
 
 /**
+ * Cargar WorldSpots desde Supabase
+ * Mapea campos de Supabase al formato WorldSpot
+ */
+async function loadWorldSpotsFromSupabase(): Promise<WorldSpot[]> {
+  if (!supabase) {
+    if (__DEV__) {
+      console.warn('[WorldSpot] Supabase client no disponible, usando JSON como fallback');
+    }
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('spots')
+      .select('*')
+      .eq('spot_type', 'world');
+
+    if (error) {
+      if (__DEV__) {
+        console.warn('[WorldSpot] Error cargando desde Supabase:', error);
+      }
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      if (__DEV__) {
+        console.log('[WorldSpot] No hay spots del mundo en Supabase, usando JSON como fallback');
+      }
+      return [];
+    }
+
+    if (__DEV__) {
+      console.log(`[WorldSpot] Cargando ${data.length} spots desde Supabase...`);
+    }
+
+    // Mapear campos de Supabase al formato WorldSpot
+    const mappedSpots = data.map((dbSpot: any) => {
+      // Mapear location desde JSONB
+      const locationData = typeof dbSpot.location === 'string' 
+        ? JSON.parse(dbSpot.location) 
+        : dbSpot.location;
+      
+      // Mapear image desde JSONB
+      const imageData = typeof dbSpot.image === 'string'
+        ? JSON.parse(dbSpot.image)
+        : dbSpot.image;
+
+      return {
+        id: dbSpot.id,
+        name: dbSpot.name,
+        type: dbSpot.type,
+        location: {
+          lat: locationData?.lat || locationData?.latitude || 0,
+          lng: locationData?.lng || locationData?.longitude || 0,
+          ...(locationData?.city && { city: locationData.city }),
+          ...(locationData?.country && { country: locationData.country }),
+        },
+        shortDescription: dbSpot.short_description || undefined,
+        description: dbSpot.description || undefined,
+        image: {
+          url: imageData?.url || '',
+          ...(imageData?.source && { source: imageData.source }),
+          ...(imageData?.license && { license: imageData.license }),
+        },
+        hasGeneratedContent: dbSpot.has_generated_content || false,
+        createdAt: dbSpot.created_at ? new Date(dbSpot.created_at) : new Date(),
+        updatedAt: dbSpot.updated_at ? new Date(dbSpot.updated_at) : new Date(),
+      };
+    });
+
+    // Normalizar cada spot usando la función existente
+    const normalizedSpots: WorldSpot[] = [];
+    const invalidSpots: string[] = [];
+
+    for (const mappedSpot of mappedSpots) {
+      try {
+        const normalized = normalizeWorldSpot(mappedSpot);
+        if (normalized) {
+          normalizedSpots.push(normalized);
+        } else {
+          invalidSpots.push(mappedSpot.id || 'unknown');
+        }
+      } catch (spotError) {
+        if (__DEV__) {
+          console.error(`[WorldSpot] Error normalizando spot ${mappedSpot.id}:`, spotError);
+        }
+        invalidSpots.push(mappedSpot.id || 'unknown');
+      }
+    }
+
+    if (__DEV__) {
+      console.log(`[WorldSpot] ✅ Cargados ${normalizedSpots.length} spots válidos desde Supabase`);
+      if (invalidSpots.length > 0) {
+        console.warn(`[WorldSpot] ⚠️ ${invalidSpots.length} spots inválidos ignorados:`, invalidSpots);
+      }
+    }
+
+    return normalizedSpots;
+  } catch (error) {
+    if (__DEV__) {
+      console.error('[WorldSpot] Error cargando desde Supabase:', error);
+    }
+    return [];
+  }
+}
+
+/**
  * Cargar y normalizar seeds desde JSON (lazy loading)
  * OPTIMIZACIÓN: Carga bajo demanda para evitar cargar datos innecesarios
  * 
  * Aplica validación y normalización a todos los spots del seed
  */
-async function loadWorldSpots(): Promise<WorldSpot[]> {
+async function loadWorldSpotsFromJSON(): Promise<WorldSpot[]> {
   try {
     // Lazy import del JSON - solo se carga cuando se necesita
     const seedSpotsModule = await import('@/data/seedSpots.v1.2.json');
@@ -184,7 +292,7 @@ async function loadWorldSpots(): Promise<WorldSpot[]> {
     }
 
     if (__DEV__) {
-      console.log(`[WorldSpot] Cargando ${seedSpotsData.length} spots desde seed...`);
+      console.log(`[WorldSpot] Cargando ${seedSpotsData.length} spots desde JSON...`);
     }
 
     // Normalizar y validar cada spot
@@ -217,7 +325,7 @@ async function loadWorldSpots(): Promise<WorldSpot[]> {
 
     // Logging para debugging
     if (__DEV__) {
-      console.log(`[WorldSpot] ✅ Cargados ${normalizedSpots.length} spots válidos`);
+      console.log(`[WorldSpot] ✅ Cargados ${normalizedSpots.length} spots válidos desde JSON`);
       
       if (invalidSpots.length > 0) {
         console.warn(`[WorldSpot] ⚠️ ${invalidSpots.length} spots inválidos ignorados:`, invalidSpots);
@@ -232,9 +340,61 @@ async function loadWorldSpots(): Promise<WorldSpot[]> {
     
     return normalizedSpots;
   } catch (error) {
-    console.error('[WorldSpot] Error loading world spots:', error);
+    console.error('[WorldSpot] Error loading world spots from JSON:', error);
     return [];
   }
+}
+
+/**
+ * Cargar WorldSpots: Prioriza Supabase, usa JSON como fallback
+ * Combina ambos si hay datos en ambos (evitando duplicados por ID)
+ */
+async function loadWorldSpots(): Promise<WorldSpot[]> {
+  const spotsFromSupabase: WorldSpot[] = [];
+  const spotsFromJSON: WorldSpot[] = [];
+
+  // Intentar cargar desde Supabase primero
+  try {
+    const supabaseSpots = await loadWorldSpotsFromSupabase();
+    spotsFromSupabase.push(...supabaseSpots);
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[WorldSpot] Error cargando desde Supabase, usando JSON como fallback:', error);
+    }
+  }
+
+  // Cargar desde JSON como fallback o complemento
+  try {
+    const jsonSpots = await loadWorldSpotsFromJSON();
+    spotsFromJSON.push(...jsonSpots);
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[WorldSpot] Error cargando desde JSON:', error);
+    }
+  }
+
+  // Combinar ambos, priorizando Supabase (evitar duplicados por ID)
+  const spotMap = new Map<string, WorldSpot>();
+  
+  // Primero agregar spots de Supabase
+  spotsFromSupabase.forEach(spot => {
+    spotMap.set(spot.id, spot);
+  });
+
+  // Luego agregar spots de JSON solo si no existen en Supabase
+  spotsFromJSON.forEach(spot => {
+    if (!spotMap.has(spot.id)) {
+      spotMap.set(spot.id, spot);
+    }
+  });
+
+  const combinedSpots = Array.from(spotMap.values());
+
+  if (__DEV__) {
+    console.log(`[WorldSpot] ✅ Total combinado: ${combinedSpots.length} spots (${spotsFromSupabase.length} de Supabase, ${spotsFromJSON.length} de JSON)`);
+  }
+
+  return combinedSpots;
 }
 
 export function WorldSpotProvider({ children }: { children: ReactNode }) {

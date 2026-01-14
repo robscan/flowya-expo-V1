@@ -30,11 +30,13 @@ import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/
 import { useAuth } from '@/contexts/AuthContext';
 import { PinState, useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
+import { useSpotMedia } from '@/contexts/SpotMediaContext';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { showAlert } from '@/utils/alertPolyfill';
 import { hasSeenPinModal, markPinModalSeen } from '@/utils/pinFirstTime';
 import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
+import { getSpotDisplayImage } from '@/utils/spotImageHelper';
 
 interface SpotMediaCardProps {
   spot: Spot;
@@ -57,8 +59,12 @@ export const SpotMediaCard = memo(function SpotMediaCard({
   const { markSpotAsSeen } = useSpot();
   const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState } = useSaved();
   const { isAuthenticated } = useAuth();
-  // FASE 5: Usar image.url en lugar de photos[0] (compatible con ambos formatos)
-  const imageUrl = spot.image?.url || (spot.photos && spot.photos.length > 0 ? spot.photos[0] : '');
+  const { getApprovedSpotMedia } = useSpotMedia();
+  
+  // Obtener la mejor imagen disponible según prioridad (spot_media > stock > placeholder)
+  const spotMedia = getApprovedSpotMedia(spot.id);
+  const displayImage = getSpotDisplayImage(spot, spotMedia);
+  const imageUrl = displayImage.url;
   const hasImage = imageUrl && imageUrl.trim().length > 0;
   const spotTypeLabel = getSpotTypeLabel(spot.type);
   const isPinned = isSpotPinned(spot.id);
@@ -231,7 +237,17 @@ export const SpotMediaCard = memo(function SpotMediaCard({
           {spot.name || 'Unnamed spot'}
         </Text>
 
-        {/* InfoMeta debajo del título */}
+        {/* ShortDescription debajo del título (1-2 líneas máximo) */}
+        {(spot.shortDescription || spot.description) && (
+          <Text 
+            style={[styles.smallDescription, { color: colors.icon }]} 
+            numberOfLines={2}
+          >
+            {spot.shortDescription || spot.description}
+          </Text>
+        )}
+
+        {/* InfoMeta debajo de la descripción */}
         {distance !== undefined && distance !== null && (
           <InfoMeta
             distance={distance}
@@ -329,9 +345,9 @@ export const SpotMediaCard = memo(function SpotMediaCard({
             <Text style={[styles.spotName, { color: colors.text }]} numberOfLines={1}>
               {spot.name || 'Unnamed spot'}
             </Text>
-            {spot.description && (
+            {(spot.shortDescription || spot.description) && (
               <Text style={[styles.spotDescription, { color: colors.icon }]} numberOfLines={2}>
-                {spot.description}
+                {spot.shortDescription || spot.description}
               </Text>
             )}
             {/* InfoMeta debajo de la descripción */}
@@ -408,6 +424,13 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     lineHeight: lineHeight.sm,
     fontWeight: '500',
+    marginBottom: spacing.xs / 2,
+  },
+  smallDescription: {
+    fontFamily,
+    fontSize: fontSize.xs,
+    lineHeight: lineHeight.xs,
+    fontWeight: '400',
     marginBottom: spacing.xs / 2,
   },
   // Contenido principal

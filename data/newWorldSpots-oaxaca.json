@@ -1,0 +1,128 @@
+[
+  {
+    "id": "oaxaca-monte-alban",
+    "name": "Monte Albán",
+    "type": "monument",
+    "location": {
+      "lat": 17.0431,
+      "lng": -96.7678,
+      "city": "Oaxaca",
+      "country": "Mexico"
+    },
+    "shortDescription": "A Zapotec city built on a flattened mountaintop, where pyramids and ball courts reveal one of Mesoamerica's earliest urban centers.",
+    "description": "Monte Albán represents one of the earliest and most important cities in Mesoamerica, predating many Mayan sites. The Zapotec flattened the mountaintop to create a massive platform, then built pyramids, palaces, and ball courts. The site's location, high above the Oaxaca Valley, offers panoramic views that would have allowed the Zapotec to monitor trade routes and defend their territory. The site's Danzantes, stone carvings of contorted figures, remain one of Mesoamerica's most enigmatic artistic expressions.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Oaxaca",
+    "category": "culture"
+  },
+  {
+    "id": "oaxaca-hierve-agua",
+    "name": "Hierve el Agua",
+    "type": "park",
+    "location": {
+      "lat": 17.0167,
+      "lng": -96.2833,
+      "city": "San Lorenzo Albarradas",
+      "country": "Mexico"
+    },
+    "shortDescription": "Petrified waterfalls formed by mineral-rich springs, where you can swim in natural pools with views over the Oaxaca Valley.",
+    "description": "Hierve el Agua, meaning 'The Water Boils,' is a natural wonder where mineral-rich springs have created petrified cascades over thousands of years. The site features natural pools at the top, where visitors can swim while looking out over the Oaxaca Valley. The petrified waterfalls themselves look like frozen cascades, creating a surreal landscape. The site's name comes from the bubbling appearance of the springs, though the water is actually cool.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Oaxaca",
+    "category": "nature"
+  },
+  {
+    "id": "oaxaca-mitla",
+    "name": "Mitla",
+    "type": "monument",
+    "location": {
+      "lat": 16.9167,
+      "lng": -96.4000,
+      "city": "Mitla",
+      "country": "Mexico"
+    },
+    "shortDescription": "A Zapotec and Mixtec site known for its intricate geometric mosaics, where every stone was cut and fitted without mortar.",
+    "description": "Mitla stands out for its extraordinary stonework, where thousands of small stones were cut and fitted to create intricate geometric patterns. Unlike the pyramids at Monte Albán, Mitla's architecture focuses on palaces and ceremonial buildings, with walls covered in mosaics that have no equal in Mesoamerica. The site was sacred to both the Zapotec and later the Mixtec, who added their own artistic elements. The precision of the stonework, achieved without mortar, demonstrates remarkable engineering skill.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Oaxaca",
+    "category": "culture"
+  },
+  {
+    "id": "oaxaca-teotitlan-del-valle",
+    "name": "Teotitlán del Valle",
+    "type": "city",
+    "location": {
+      "lat": 17.0333,
+      "lng": -96.5167,
+      "city": "Teotitlán del Valle",
+      "country": "Mexico"
+    },
+    "shortDescription": "A Zapotec village where traditional weaving techniques have been preserved for generations, creating some of Mexico's finest textiles.",
+    "description": "Teotitlán del Valle has maintained its weaving traditions for over 2,000 years, making it one of Mexico's most important textile centers. The village's weavers use natural dyes from plants, insects, and minerals, creating colors that have been used for centuries. Visiting a workshop reveals the entire process, from spinning wool to creating complex patterns on traditional looms. The village's commitment to preserving these techniques, while adapting to contemporary markets, offers a model of cultural sustainability.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1514565131-fce0801e5785?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Oaxaca",
+    "category": "culture"
+  },
+  {
+    "id": "oaxaca-santo-domingo",
+    "name": "Templo de Santo Domingo",
+    "type": "monument",
+    "location": {
+      "lat": 17.0611,
+      "lng": -96.7250,
+      "city": "Oaxaca",
+      "country": "Mexico"
+    },
+    "shortDescription": "A baroque church where gold leaf covers every surface, creating one of Mexico's most opulent religious spaces.",
+    "description": "The Templo de Santo Domingo represents the height of Mexican baroque architecture, where gold leaf covers virtually every surface. The church's interior, with its intricate stucco work and gilded altars, creates an overwhelming sense of opulence. The adjacent Cultural Center, housed in the former monastery, now contains the Regional Museum of Oaxaca, including treasures from Tomb 7 at Monte Albán. The contrast between the church's baroque excess and the museum's archaeological artifacts tells the story of Oaxaca's layered history.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1514565131-fce0801e5785?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Oaxaca",
+    "category": "culture"
+  },
+  {
+    "id": "oaxaca-mazunte",
+    "name": "Mazunte",
+    "type": "beach",
+    "location": {
+      "lat": 15.6667,
+      "lng": -96.5500,
+      "city": "Mazunte",
+      "country": "Mexico"
+    },
+    "shortDescription": "A beach town that transformed from a turtle hunting village to a conservation center, where sea turtles now nest safely.",
+    "description": "Mazunte's story represents one of Mexico's most successful conservation transformations. The town once depended on turtle hunting, but when the practice was banned, the community reinvented itself around turtle conservation. Today, the National Mexican Turtle Center educates visitors about sea turtles, while the beaches remain nesting sites. The town's commitment to sustainable tourism, combined with its beautiful beaches and relaxed atmosphere, makes it a model for coastal communities.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Oaxaca",
+    "category": "nature"
+  }
+]

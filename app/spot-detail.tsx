@@ -55,6 +55,7 @@ import { hasSeenPinModal, markPinModalSeen } from '@/utils/pinFirstTime';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useSpot } from '@/contexts/SpotContext';
 import { useWorldSpots, WorldSpot } from '@/contexts/WorldSpotContext';
+import { useSpotMedia } from '@/contexts/SpotMediaContext';
 import { Spot } from '@/data/spots';
 import { isWorldSpot, UnifiedSpot } from '@/utils/worldSpotHelpers';
 // FASE 4: SpotHours eliminado - campos avanzados eliminados
@@ -83,6 +84,7 @@ export default function SpotDetailScreen() {
   const { getSpotById, updateSpot, deleteSpot, markSpotAsSeen, markSpotAsAvailable, getSpotLoadState, generateSpotContent, createSpot, spots } = useSpot();
   const { getWorldSpotById, convertWorldSpotToUserSpot } = useWorldSpots();
   const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState, getPinData, updatePinNotes, addPinPhoto, removePinPhoto } = useSaved();
+  const { addSpotMedia, getApprovedSpotMedia, getSpotMedia, removeSpotMedia, refreshSpotMedia } = useSpotMedia();
   const { createPath } = usePath();
   // SCOPE 9: Obtener flowState, currentSpotId y funciones de Flow
   const { flowState, currentSpotId, expandFlow, addSpotToFlow, startFlow } = useFlow();
@@ -138,6 +140,13 @@ export default function SpotDetailScreen() {
   // FASE 7: Get spot from context (UserSpot) or WorldSpot
   const userSpot = id ? getSpotById(id) : null;
   const worldSpot = id ? getWorldSpotById(id) : null;
+  
+  // Cargar spot_media cuando el spot esté disponible
+  useEffect(() => {
+    if (id && (userSpot || worldSpot)) {
+      refreshSpotMedia(id);
+    }
+  }, [id, userSpot?.id, worldSpot?.id, refreshSpotMedia]);
   const spot: UnifiedSpot | null = userSpot || worldSpot || null;
   const isWorldSpotFlag = spot ? isWorldSpot(spot) : false;
 
@@ -323,6 +332,30 @@ export default function SpotDetailScreen() {
     },
   });
 
+  // Hook para contribución de media (NO requiere pin)
+  const contributeImageUploadHook = useImageUpload({
+    allowsEditing: true,
+    aspect: [4, 3],
+    quality: 75,
+    onOptimized: async (uri) => {
+      if (id && isAuthenticated) {
+        const media = await addSpotMedia(id, uri);
+        if (media) {
+          setToastMessage('Foto contribuida (pendiente de aprobación)');
+          setShowToast(true);
+          // Refrescar media del spot
+          await refreshSpotMedia(id);
+        } else {
+          Alert.alert('Error', 'No se pudo agregar la foto. Intenta de nuevo.');
+        }
+      }
+    },
+    onError: (error) => {
+      console.error('Error contributing photo:', error);
+      Alert.alert('Error', 'No se pudo agregar la foto. Intenta de nuevo.');
+    },
+  });
+
   if (!spot) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -348,6 +381,10 @@ export default function SpotDetailScreen() {
   const isVisitedPin = pinState === 'visited';
   const personalNotes = pinData?.notes || '';
   const personalPhotos = pinData?.personalPhotos || [];
+  
+  // Obtener media contribuida aprobada para este spot
+  const contributedMedia = getApprovedSpotMedia(spot.id);
+  const userContributedMedia = getSpotMedia(spot.id).filter(media => media.user_id === user?.id && media.status === 'pending');
   
   // FASE 4: hours y cost eliminados - campos avanzados eliminados
 
@@ -563,6 +600,31 @@ export default function SpotDetailScreen() {
     removePinPhoto(spot.id, photoUrl);
     setToastMessage('Foto eliminada');
     setShowToast(true);
+  };
+
+  const handleContributePhoto = async () => {
+    if (!spot || !isAuthenticated) {
+      Alert.alert('Autenticación requerida', 'Debes iniciar sesión para contribuir fotos.');
+      return;
+    }
+    try {
+      await contributeImageUploadHook.pickFromGallery();
+    } catch (error) {
+      console.error('Error contributing photo:', error);
+      Alert.alert('Error', 'No se pudo agregar la foto. Intenta de nuevo.');
+    }
+  };
+
+  const handleRemoveContributedPhoto = async (mediaId: string) => {
+    if (!spot) return;
+    const success = await removeSpotMedia(mediaId);
+    if (success) {
+      setToastMessage('Foto eliminada');
+      setShowToast(true);
+      await refreshSpotMedia(spot.id);
+    } else {
+      Alert.alert('Error', 'No se pudo eliminar la foto.');
+    }
   };
 
   const handleSuggestEdit = () => {
@@ -1598,6 +1660,91 @@ export default function SpotDetailScreen() {
             )}
           </View>
 
+          {/* Contribute Photo Section (NO requiere pin, solo autenticación) */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[textStyles.heading3, { color: colors.text }]}>Contribute Photo</Text>
+              {isAuthenticated ? (
+                <Pressable
+                  onPress={handleContributePhoto}
+                  style={({ pressed }) => [
+                    styles.editButton,
+                    contributeImageUploadHook.isOptimizing && styles.disabledButton,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  disabled={contributeImageUploadHook.isOptimizing}>
+                  {contributeImageUploadHook.isOptimizing ? (
+                    <ActivityIndicator size="small" color={colors.tint} />
+                  ) : (
+                    <>
+                      <Icon name="camera" size={18} color={colors.tint} />
+                      <Text style={[textStyles.bodyMedium, { 
+                        color: colors.tint, 
+                        marginLeft: spacing.xs / 2 
+                      }]}>
+                        Contribute
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              ) : (
+                <Text style={[textStyles.caption, { color: colors.icon }]}>
+                  Sign in to contribute
+                </Text>
+              )}
+            </View>
+            
+            {!isAuthenticated && (
+              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.sm, fontStyle: 'italic' }]}>
+                Sign in to contribute photos that will be visible to everyone (after approval).
+              </Text>
+            )}
+            
+            {/* Mostrar media aprobada contribuida */}
+            {contributedMedia.length > 0 && (
+              <View style={styles.photosGrid}>
+                {contributedMedia.map((media) => (
+                  <View key={media.id} style={styles.photoItem}>
+                    <Image source={{ uri: media.media_url }} style={styles.photoThumbnail} resizeMode="cover" />
+                  </View>
+                ))}
+              </View>
+            )}
+            
+            {/* Mostrar media pendiente del usuario */}
+            {userContributedMedia.length > 0 && (
+              <View style={styles.section}>
+                <Text style={[textStyles.heading3, { color: colors.icon, marginBottom: spacing.sm }]}>
+                  Your Pending Contributions
+                </Text>
+                <View style={styles.photosGrid}>
+                  {userContributedMedia.map((media) => (
+                    <View key={media.id} style={styles.photoItem}>
+                      <Image source={{ uri: media.media_url }} style={styles.photoThumbnail} resizeMode="cover" />
+                      <View style={[styles.pendingBadge, { backgroundColor: colors.icon + '80' }]}>
+                        <Text style={[textStyles.caption, { color: colors.background }]}>Pending</Text>
+                      </View>
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.photoRemoveButton,
+                          pressed && { opacity: 0.7 },
+                        ]}
+                        onPress={() => handleRemoveContributedPhoto(media.id)}>
+                        <Icon name="close" size={16} color={colors.background} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+            
+            {isAuthenticated && contributedMedia.length === 0 && userContributedMedia.length === 0 && (
+              <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, fontStyle: 'italic' }]}>
+                No contributed photos yet. Be the first to contribute!
+              </Text>
+            )}
+          </View>
+
           {/* Bottom padding */}
           <View style={{ height: spacing['2xl'] }} />
         </View>
@@ -2237,6 +2384,16 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pendingBadge: {
+    position: 'absolute',
+    bottom: spacing.xs,
+    left: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },

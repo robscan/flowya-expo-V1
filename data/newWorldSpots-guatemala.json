@@ -1,0 +1,107 @@
+[
+  {
+    "id": "guatemala-tikal",
+    "name": "Tikal",
+    "type": "monument",
+    "location": {
+      "lat": 17.2220,
+      "lng": -89.6237,
+      "city": "Tikal",
+      "country": "Guatemala"
+    },
+    "shortDescription": "One of the largest Mayan cities, where pyramids rise above the jungle canopy and howler monkeys provide the soundtrack.",
+    "description": "Tikal represents the height of Classic Period Mayan civilization, with over 3,000 structures spread across the jungle. The site's isolation, deep in the Petén rainforest, means it remains relatively untouched. Climbing Temple IV, the tallest structure, rewards visitors with views over the jungle canopy—a perspective that reveals the city's true scale. The site is also a national park, protecting jaguars, toucans, and howler monkeys, making it one of the few places where ancient history and wild nature coexist.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Guatemala",
+    "category": "culture"
+  },
+  {
+    "id": "guatemala-lago-atitlan",
+    "name": "Lago de Atitlán",
+    "type": "park",
+    "location": {
+      "lat": 14.7000,
+      "lng": -91.2000,
+      "city": "Panajachel",
+      "country": "Guatemala"
+    },
+    "shortDescription": "A volcanic lake surrounded by three volcanoes, where Mayan villages dot the shoreline and the water reflects the sky.",
+    "description": "Lago de Atitlán is often called the most beautiful lake in the world, and it's easy to see why. The lake sits in a caldera formed by volcanic activity, with three volcanoes rising from its shores. Mayan villages, each with its own distinct identity, dot the shoreline, accessible only by boat. The lake's depth and clarity create stunning reflections, while the surrounding highlands offer hiking and cultural experiences. The area's combination of natural beauty and indigenous culture makes it unique.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Guatemala",
+    "category": "nature"
+  },
+  {
+    "id": "guatemala-chichicastenango",
+    "name": "Chichicastenango Market",
+    "type": "market",
+    "location": {
+      "lat": 14.9333,
+      "lng": -91.1167,
+      "city": "Chichicastenango",
+      "country": "Guatemala"
+    },
+    "shortDescription": "One of Central America's largest markets, where K'iche' Maya traditions meet commerce in a vibrant weekly gathering.",
+    "description": "Chichicastenango's market has been operating for centuries, bringing together K'iche' Maya communities from surrounding highlands. The market takes over the town's central plaza and surrounding streets, creating a maze of stalls selling textiles, produce, and crafts. The adjacent church, Santo Tomás, blends Catholic and Mayan traditions, with steps that serve as both entrance and ceremonial space. The market's scale and authenticity make it one of Guatemala's most important cultural experiences.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1514565131-fce0801e5785?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Guatemala",
+    "category": "culture"
+  },
+  {
+    "id": "guatemala-semuc-champey",
+    "name": "Semuc Champey",
+    "type": "park",
+    "location": {
+      "lat": 15.5333,
+      "lng": -89.9667,
+      "city": "Lanquín",
+      "country": "Guatemala"
+    },
+    "shortDescription": "A natural limestone bridge where turquoise pools cascade over a hidden river, creating one of Guatemala's most beautiful natural wonders.",
+    "description": "Semuc Champey is a natural wonder where the Cahabón River disappears underground, while a series of turquoise pools form on top of a natural limestone bridge. The pools, each with slightly different shades of blue and green, create a staircase effect perfect for swimming. The site requires a hike through the jungle to reach, adding to its sense of discovery. The contrast between the calm pools above and the rushing river below creates a unique geological formation.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Guatemala",
+    "category": "nature"
+  },
+  {
+    "id": "guatemala-quetzaltenango",
+    "name": "Quetzaltenango",
+    "type": "city",
+    "location": {
+      "lat": 14.8333,
+      "lng": -91.5167,
+      "city": "Quetzaltenango",
+      "country": "Guatemala"
+    },
+    "shortDescription": "Guatemala's second city, where neoclassical architecture and indigenous culture create a highland urban center.",
+    "description": "Quetzaltenango, often called Xela by locals, sits at 2,330 meters in Guatemala's western highlands. The city's neoclassical architecture, built during a coffee boom in the late 19th century, creates a unique urban landscape. The city serves as a gateway to surrounding volcanoes and hot springs, while its markets and cultural centers reflect the region's Maya heritage. Xela's university and language schools make it a center for learning Spanish and studying Guatemalan culture.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1514565131-fce0801e5785?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Guatemala",
+    "category": "city"
+  }
+]

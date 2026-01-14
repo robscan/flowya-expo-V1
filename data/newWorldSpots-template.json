@@ -1,0 +1,23 @@
+[
+  {
+    "id": "riviera-maya-tulum-ruins",
+    "name": "Tulum Archaeological Site",
+    "type": "monument",
+    "location": {
+      "lat": 20.2150,
+      "lng": -87.4289,
+      "city": "Tulum",
+      "country": "Mexico"
+    },
+    "shortDescription": "Mayan ruins perched on cliffs overlooking the Caribbean, where ancient history meets turquoise waters.",
+    "description": "Tulum stands as one of the few Mayan cities built on the coast, offering a unique perspective on how the Maya integrated their architecture with the natural landscape. The site's strategic location suggests it was an important trading port, and the view from the cliff-top temples remains one of the most photographed scenes in the Riviera Maya.",
+    "image": {
+      "url": "https://images.unsplash.com/photo-1539650116574-75c0c6d73a6e?w=800&h=600&fit=crop",
+      "source": "Unsplash",
+      "license": "Unsplash License"
+    },
+    "hasGeneratedContent": false,
+    "region": "Riviera Maya",
+    "category": "culture"
+  }
+]

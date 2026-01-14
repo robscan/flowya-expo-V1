@@ -21,6 +21,7 @@ import { PathProvider } from '@/contexts/PathContext';
 import { RegionProvider } from '@/contexts/RegionContext';
 import { SavedProvider } from '@/contexts/SavedContext';
 import { SpotProvider } from '@/contexts/SpotContext';
+import { SpotMediaProvider } from '@/contexts/SpotMediaContext';
 import { WorldSpotProvider } from '@/contexts/WorldSpotContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -64,11 +65,12 @@ export default function RootLayout() {
         <RegionProvider>
           <WorldSpotProvider>
             <SpotProvider>
-              <PathProvider>
-                <FlowProvider>
-                  <NarrationProvider>
-                    <SavedProvider>
-                      <OverlayProvider>
+              <SpotMediaProvider>
+                <PathProvider>
+                  <FlowProvider>
+                    <NarrationProvider>
+                      <SavedProvider>
+                        <OverlayProvider>
                     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
                       <View style={styles.container}>
                         <Stack>
@@ -94,11 +96,12 @@ export default function RootLayout() {
                         )}
                       </View>
                     </ThemeProvider>
-                      </OverlayProvider>
-                    </SavedProvider>
-                  </NarrationProvider>
-                </FlowProvider>
-              </PathProvider>
+                        </OverlayProvider>
+                      </SavedProvider>
+                    </NarrationProvider>
+                  </FlowProvider>
+                </PathProvider>
+              </SpotMediaProvider>
             </SpotProvider>
           </WorldSpotProvider>
         </RegionProvider>
