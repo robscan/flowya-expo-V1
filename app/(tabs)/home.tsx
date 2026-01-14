@@ -30,7 +30,7 @@ import { textStyles } from '@/constants/typography';
 import { useOverlay } from '@/contexts/OverlayContext';
 import { usePath } from '@/contexts/PathContext';
 import { useRegion } from '@/contexts/RegionContext';
-import { useSaved } from '@/contexts/SavedContext';
+import { PinState, useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { useWorldSpots } from '@/contexts/WorldSpotContext';
 import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
@@ -304,38 +304,164 @@ export default function HomeScreen() {
   const { spots, isLoading: isLoadingSpots, refreshSpots } = useSpot();
   const { worldSpots, isLoading: isLoadingWorldSpots } = useWorldSpots();
   const { paths, isLoading: isLoadingPaths, refreshFlows } = usePath();
-  const { isSpotPinned } = useSaved(); // V1.2: Sistema de Pins
+  const { isSpotPinned, getPinnedSpots } = useSaved(); // V1.2: Sistema de Pins
   const { selectedRegionId, currentRegionLabel: contextRegionLabel, setSelectedRegionId, setCurrentLocation, isCurrentLocation } = useRegion();
   
   // FASE 7: Combinar UserSpots y WorldSpots
-  const allSpots: UnifiedSpot[] = combineSpots(spots, worldSpots);
+  // V1.2: Memoizar allSpots de manera estable para evitar re-renders innecesarios
+  // Solo recalcular cuando cambien los IDs o cantidad de spots (no solo por referencia)
+  const prevAllSpotsRef = useRef<UnifiedSpot[]>([]);
+  const prevSpotsIdsRef = useRef<string>('');
+  const prevWorldSpotsIdsRef = useRef<string>('');
+  
+  // Crear dependencias estables basadas en IDs y longitudes
+  const spotsKey = useMemo(() => {
+    const ids = spots.map(s => s.id).sort().join(',');
+    return `${spots.length}:${ids}`;
+  }, [spots]);
+  
+  const worldSpotsKey = useMemo(() => {
+    const ids = worldSpots.map(s => s.id).sort().join(',');
+    return `${worldSpots.length}:${ids}`;
+  }, [worldSpots]);
+  
+  const allSpots: UnifiedSpot[] = useMemo(() => {
+    // Comparar keys estables, no referencias de arrays
+    const currentSpotsKey = spotsKey;
+    const currentWorldSpotsKey = worldSpotsKey;
+    const spotsChanged = prevSpotsIdsRef.current !== currentSpotsKey;
+    const worldSpotsChanged = prevWorldSpotsIdsRef.current !== currentWorldSpotsKey;
+    
+    // Solo recalcular si realmente cambiaron los IDs o longitudes
+    if (!spotsChanged && !worldSpotsChanged && prevAllSpotsRef.current.length > 0) {
+      // Retornar el array anterior (estable por referencia) si los IDs no cambiaron
+      return prevAllSpotsRef.current;
+    }
+    
+    // Actualizar refs
+    prevSpotsIdsRef.current = currentSpotsKey;
+    prevWorldSpotsIdsRef.current = currentWorldSpotsKey;
+    
+    const combined = combineSpots(spots, worldSpots);
+    prevAllSpotsRef.current = combined; // Guardar para próxima comparación
+    return combined;
+  }, [spots, worldSpots, spotsKey, worldSpotsKey]);
   
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
   
   // V1.2: Snapshot de isSpotPinned para evitar re-filtrado inmediato
   // El snapshot se actualiza solo en: carga inicial, refresh, o reentrar a la vista
+  // IMPORTANTE: NO se actualiza inmediatamente cuando se agrega un pin
   const pinnedSnapshotRef = useRef<Set<string>>(new Set());
+  const allSpotsRef = useRef<UnifiedSpot[]>([]);
+  const isSpotPinnedRef = useRef<(spotId: string) => boolean>(() => false);
+  
+  // Mantener refs actualizados sin causar recreaciones
+  allSpotsRef.current = allSpots;
+  isSpotPinnedRef.current = isSpotPinned;
+  
+  // V1.3: Ref para acceder a getPinnedSpots directamente desde SavedContext
+  // Necesitamos esto porque isSpotPinned depende de data.pins que puede no estar actualizado
+  const getPinnedSpotsRef = useRef<(state?: PinState) => string[]>(() => []);
+  getPinnedSpotsRef.current = getPinnedSpots;
+  
   const updatePinnedSnapshot = useCallback(() => {
-    // Capturar estado actual de todos los spots pinned
-    const pinnedSet = new Set<string>();
-    allSpots.forEach((spot) => {
-      if (isSpotPinned(spot.id)) {
-        pinnedSet.add(spot.id);
+    // Capturar estado actual de todos los spots pinned usando refs
+    // Esto evita que el callback se recree cuando allSpots o isSpotPinned cambian
+    // V1.2: IMPORTANTE - Verificar pins usando isSpotPinned que maneja tanto WorldSpots como UserSpots
+    // isSpotPinned internamente verifica tanto el ID directo como el ID del UserSpot derivado
+    // V1.3: Usar getPinnedSpots para obtener los IDs de todos los spots pinned
+    // Esto asegura que siempre lea el estado actual de pins, no una versión obsoleta
+    const pinnedSpotIds = getPinnedSpotsRef.current();
+    const pinnedSet = new Set<string>(pinnedSpotIds);
+    
+    // Crear un mapa de originWorldSpotId -> UserSpot ID para búsqueda rápida
+    const originWorldSpotToUserSpotMap = new Map<string, string>();
+    allSpotsRef.current.forEach((spot) => {
+      if ('originWorldSpotId' in spot && spot.originWorldSpotId) {
+        originWorldSpotToUserSpotMap.set(spot.originWorldSpotId, spot.id);
       }
     });
+    
+    // Agregar los originWorldSpotIds correspondientes a los UserSpots pinned
+    // Esto permite que el snapshot funcione cuando un WorldSpot se convierte a UserSpot
+    pinnedSpotIds.forEach((userSpotId) => {
+      // Buscar si este UserSpot tiene un originWorldSpotId
+      const spot = allSpotsRef.current.find(s => s.id === userSpotId);
+      if (spot && 'originWorldSpotId' in spot && spot.originWorldSpotId) {
+        pinnedSet.add(spot.originWorldSpotId);
+      }
+      // También buscar en el mapa inverso (por si el UserSpot no está en allSpots aún)
+      originWorldSpotToUserSpotMap.forEach((mappedUserSpotId, originWorldSpotId) => {
+        if (mappedUserSpotId === userSpotId) {
+          pinnedSet.add(originWorldSpotId);
+        }
+      });
+    });
+    
+    // También agregar WorldSpots que tienen UserSpots derivados pinned
+    // Esto maneja el caso donde allSpots contiene WorldSpots pero los pins están guardados con IDs de UserSpots
+    allSpotsRef.current.forEach((spot) => {
+      // Si es un WorldSpot, verificar si tiene un UserSpot derivado que está pinned
+      if (!('originWorldSpotId' in spot)) {
+        // Es un WorldSpot, buscar si tiene un UserSpot derivado pinned
+        const userSpotId = originWorldSpotToUserSpotMap.get(spot.id);
+        if (userSpotId && pinnedSet.has(userSpotId)) {
+          pinnedSet.add(spot.id);
+        }
+      }
+    });
+    
     pinnedSnapshotRef.current = pinnedSet;
-  }, [allSpots, isSpotPinned]);
+  }, []); // Sin dependencias - usa refs para acceder a valores actuales
   
   // Función wrapper que usa el snapshot en lugar de la función actual
+  // V1.2: IMPORTANTE - Verificar tanto el ID del spot como el originWorldSpotId si existe
+  // Esto asegura que el snapshot funcione correctamente cuando se convierte un WorldSpot a UserSpot
   const isSpotPinnedSnapshot = useCallback((spotId: string): boolean => {
-    return pinnedSnapshotRef.current.has(spotId);
+    // Verificar el ID directo del spot
+    if (pinnedSnapshotRef.current.has(spotId)) {
+      return true;
+    }
+    
+    // Si es un UserSpot, también verificar el originWorldSpotId
+    // Buscar el spot en allSpots para obtener su originWorldSpotId
+    const spot = allSpotsRef.current.find(s => s.id === spotId);
+    if (spot && 'originWorldSpotId' in spot && spot.originWorldSpotId) {
+      if (pinnedSnapshotRef.current.has(spot.originWorldSpotId)) {
+        return true;
+      }
+    }
+    
+    return false;
   }, []);
   
   // Scroll visibility
   const { isHeaderVisible, isBottomNavVisible, handleScroll } = useScrollVisibility({ 
     threshold: 24 
   });
+
+  // V1.3: Estado para trackear si el contenido es scrollable
+  const [isContentScrollable, setIsContentScrollable] = useState(true);
+  const scrollViewHeightRef = useRef<number>(0);
+  const contentHeightRef = useRef<number>(0);
+
+  // Detectar si el contenido es scrollable
+  const handleContentSizeChange = useCallback((contentWidth: number, contentHeight: number) => {
+    contentHeightRef.current = contentHeight;
+    // Verificar si el contenido es más alto que el viewport
+    const hasScroll = contentHeight > scrollViewHeightRef.current;
+    setIsContentScrollable(hasScroll);
+  }, []);
+
+  const handleScrollViewLayout = useCallback((event: any) => {
+    const { height } = event.nativeEvent.layout;
+    scrollViewHeightRef.current = height;
+    // Verificar si el contenido es más alto que el viewport
+    const hasScroll = contentHeightRef.current > height;
+    setIsContentScrollable(hasScroll);
+  }, []);
 
   // Enable LayoutAnimation on Android
   useEffect(() => {
@@ -356,7 +482,7 @@ export default function HomeScreen() {
       // V1.2: Capturar snapshot inicial de Pins
       updatePinnedSnapshot();
     }
-  }, [isLoading, hasLoadedOnce, updatePinnedSnapshot]);
+  }, [isLoading, hasLoadedOnce]); // updatePinnedSnapshot es estable, no necesita estar en dependencias
 
   // V1.2: Actualizar snapshot al reentrar a la vista
   useFocusEffect(
@@ -364,16 +490,21 @@ export default function HomeScreen() {
       if (hasLoadedOnce) {
         updatePinnedSnapshot();
       }
-    }, [hasLoadedOnce, updatePinnedSnapshot])
+    }, [hasLoadedOnce]) // updatePinnedSnapshot es estable, no necesita estar en dependencias
   );
 
   // Preparación de datos memoizada (usando regionId canónico)
   // V1.2: Usar snapshot de isSpotPinned para evitar re-filtrado inmediato
+  const prevDepsRef = useRef<{hasLoadedOnce:boolean,allSpotsCount:number,pathsCount:number,baseLocation:any,selectedRegionId:string|null}>({hasLoadedOnce:false,allSpotsCount:0,pathsCount:0,baseLocation:null,selectedRegionId:null});
   const homeData = useMemo(() => {
+    const prev = prevDepsRef.current;
+    const current = {hasLoadedOnce,allSpotsCount:allSpots.length,pathsCount:paths.length,baseLocation,selectedRegionId};
+    prevDepsRef.current = current;
     if (!hasLoadedOnce) return emptyHomeData;
     // FASE 7: Usar allSpots (UserSpots + WorldSpots)
     // V1.2: Usar snapshot de Pins en lugar de función actual (evita re-filtrado inmediato)
-    return prepareHomeData(allSpots, paths, baseLocation, isSpotPinnedSnapshot, selectedRegionId);
+    const result = prepareHomeData(allSpots, paths, baseLocation, isSpotPinnedSnapshot, selectedRegionId);
+    return result;
   }, [hasLoadedOnce, allSpots, paths, baseLocation, isSpotPinnedSnapshot, selectedRegionId]);
 
   // Handlers memoizados
@@ -402,14 +533,14 @@ export default function HomeScreen() {
     try {
       await Promise.all([refreshSpots(), refreshFlows()]);
       // V1.2: Actualizar snapshot de Pins al hacer refresh
-      updatePinnedSnapshot();
+      updatePinnedSnapshot(); // updatePinnedSnapshot es estable, accesible desde closure
       // NO resetear hasLoadedOnce, solo refrescar datos
     } catch (error) {
       console.error('Error refreshing:', error);
     } finally {
       setIsRefreshing(false);
     }
-  }, [refreshSpots, refreshFlows]);
+  }, [refreshSpots, refreshFlows]); // updatePinnedSnapshot es estable, no necesita estar en dependencias
 
   // Sincronizar tab bar visibility
   const lastBottomNavVisibleRef = useRef(isBottomNavVisible);
@@ -418,7 +549,12 @@ export default function HomeScreen() {
       lastBottomNavVisibleRef.current = isBottomNavVisible;
       setIsTabBarVisible(isBottomNavVisible);
     }
-  }, [isBottomNavVisible, setIsTabBarVisible]);
+    
+    // V1.3: Asegurar que TabNavBar se muestre cuando no hay scroll
+    if (!isContentScrollable) {
+      setIsTabBarVisible(true);
+    }
+  }, [isBottomNavVisible, isContentScrollable, setIsTabBarVisible]);
 
   // Validar que selectedRegionId existe en availableRegions
   // CANONICAL: Asegura que el regionId seleccionado siempre sea válido y exista en regiones disponibles
@@ -547,6 +683,8 @@ export default function HomeScreen() {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
+        onContentSizeChange={handleContentSizeChange}
+        onLayout={handleScrollViewLayout}
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl

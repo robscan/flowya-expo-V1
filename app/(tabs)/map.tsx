@@ -63,7 +63,7 @@ export default function MapScreen() {
   const selectedSpotDistance = useSpotDistance(selectedSpot?.id || null, baseLocation);
   
   // V1.2: Filtrar spots según estado de Pin
-  // Nota: El filtro de pinState solo aplica a UserSpots (WorldSpots no tienen estado de pin)
+  // Nota: El filtro de pinState busca en allSpots (WorldSpots y UserSpots) y verifica si tienen pins
   const preFilteredSpots = useMemo(() => {
     if (pinStateFilter === 'all') {
       // OPTIMIZACIÓN: Limitar a 200 spots más cercanos cuando se muestran todos
@@ -107,8 +107,8 @@ export default function MapScreen() {
       return allSpots.slice(0, MAX_SPOTS_ON_MAP);
     }
     
-    // Cuando se filtra por pinState, solo mostrar UserSpots filtrados (sin límite)
-    return spots.filter((spot) => {
+    // Cuando se filtra por pinState, buscar en allSpots (incluye WorldSpots y UserSpots)
+    return allSpots.filter((spot) => {
       const isPinned = isSpotPinned(spot.id);
       const pinState = getPinState(spot.id);
       
@@ -122,7 +122,7 @@ export default function MapScreen() {
       
       return false;
     });
-  }, [allSpots, spots, pinStateFilter, isSpotPinned, getPinState]);
+  }, [allSpots, pinStateFilter, isSpotPinned, getPinState]);
 
   // V1.3: Lazy loading - Filtrar spots visibles en viewport
   const filteredSpots = useVisibleSpots(
@@ -237,7 +237,25 @@ export default function MapScreen() {
 
       const stateLabel = state === 'to_visit' ? 'Por visitar' : 'Visitados';
       const userId = user?.id || 'user';
-      const shareUrl = `flowya.app/shared-map?pinState=${state}&userId=${userId}`;
+      
+      // V1.3: Detectar URL base (localhost en desarrollo, https://flowya.app en producción)
+      let baseUrl = 'https://flowya.app';
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+        // En web, detectar si estamos en producción o desarrollo
+        const origin = window.location.origin;
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+          // Desarrollo local: usar la URL actual
+          baseUrl = origin;
+        } else {
+          // Producción: siempre usar flowya.app
+          baseUrl = 'https://flowya.app';
+        }
+      } else if (__DEV__) {
+        // En desarrollo en móviles, usar localhost (asumiendo Expo Go o desarrollo web)
+        baseUrl = 'http://localhost:8081'; // Puerto por defecto de Expo
+      }
+      
+      const shareUrl = `${baseUrl}/shared-map?pinState=${state}&userId=${userId}`;
       const shareMessage = `Mi mapa de lugares ${stateLabel.toLowerCase()} en FLOWYA\n\n${shareUrl}`;
       
       await Share.share({
