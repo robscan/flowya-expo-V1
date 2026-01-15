@@ -1,0 +1,199 @@
+
+FLOWYA — Sistema de Home y Map V2
+Definición Canónica
+
+================================
+HOME V2
+================================
+
+1. Visión
+Home es el centro de descubrimiento y activación de FLOWYA.
+No es un feed social ni un mapa.
+Es el lugar donde el usuario entiende qué vale la pena hoy
+y decide qué hacer a continuación.
+
+Home conecta:
+- Spots (mundo vivo)
+- Flows (experiencias)
+- Contribución comunitaria
+
+---
+
+2. Principios de Home
+
+1. Home debe empujar siempre a una acción clara.
+2. Home nunca debe ocultar información sin explicarla.
+3. Home prioriza cercanía, contexto y oportunidad.
+4. Home activa contribución, no solo consumo.
+5. Home respeta región y estado de Pins.
+
+---
+
+3. Estructura de Home
+
+Home se organiza en tres bloques mentales.
+
+---
+
+3.1 Bloque A — Ahora, aquí
+
+A. Nearby Spots
+- Spots cercanos al usuario
+- Muestran estado de Pin (To Visit / Visited)
+- Si no tienen fotos reales:
+  - Placeholder FLOWYA
+  - CTA: “Agrega la primera foto”
+
+B. Nearby Flows
+- Flows utilizables desde la ubicación actual
+- CTA principal: “Start”
+- Inician directamente FlowScreen
+
+---
+
+3.2 Bloque B — Ideas para ti
+
+C. For You (Spots)
+- Spots recomendados por calidad y contexto
+- Los Spots pinneados NO desaparecen
+- Cambian su CTA según estado:
+  - View in Pinned
+  - Mark as Visited
+  - Add note
+
+D. Recommended Spots
+- Priorizados por:
+  - Fotos reales
+  - Información completa
+  - Contribuciones comunitarias
+
+---
+
+3.3 Bloque C — Ayuda a que el mundo esté vivo
+
+E. Contribute Nearby
+- Spots cercanos que:
+  - No tienen fotos reales
+  - O requieren información
+- CTA:
+  - Add photo
+  - Fix info
+- Aumenta confianza del usuario
+
+F. Crear Flow con IA
+- Card persistente
+- Copy sugerido:
+  “¿Tienes 1–3 horas? La IA te arma un Flow.”
+- CTA: “Crear Flow con IA”
+
+---
+
+4. Reglas clave de Home
+
+- Un Spot nunca desaparece silenciosamente.
+- Los cambios de estado se explican con badges o CTAs.
+- Home no usa snapshots excluyentes.
+- La región seleccionada se respeta en todo momento.
+
+================================
+MAP V2
+================================
+
+5. Visión
+Map es el modo espacial de FLOWYA.
+Permite explorar el mundo visualmente
+y planear recorridos a partir de la geografía real.
+
+---
+
+6. Modos del Map
+
+1. Explore
+- Muestra Spots canónicos por viewport
+- Diseñado para exploración libre
+
+2. My Map
+- Muestra Pins del usuario
+- To Visit
+- Visited
+
+---
+
+7. Región y coherencia
+
+- Map respeta la región seleccionada (Home / Search).
+- Chips visibles indican el contexto:
+  - Región
+  - Current location
+  - All world
+
+---
+
+8. Filtros del Map
+
+Filtros visibles:
+- Explore
+- To Visit
+- Visited
+
+Notas de contexto:
+- Explore muestra densidad por zona.
+- Mover el mapa carga nuevos Spots.
+
+---
+
+9. Escalabilidad
+
+- No existen límites fijos visibles (ej. 200 Spots).
+- Carga basada en viewport.
+- Clustering visual obligatorio:
+  - Clusters por zoom
+  - Tap en cluster = zoom in
+
+---
+
+10. Interacción con Spots
+
+Al tocar un marker:
+- Card contextual inline
+- Acciones directas:
+  - Pin To Visit
+  - Mark Visited
+  - Add photo (si placeholder)
+  - Start Flow from here
+
+---
+
+11. Compartir
+
+- My Map es compartible:
+  - To Visit
+  - Visited
+- Share muestra:
+  “Compartes tu mapa de X lugares”
+
+- Explore no es compartible.
+
+---
+
+12. Home ↔ Map reglas de coherencia
+
+1. Región compartida global.
+2. Pin no elimina contenido sin explicación.
+3. Explore = mundo por viewport.
+4. My Map = Pins completos del usuario.
+
+---
+
+13. Beneficios del Sistema
+
+- Mundo vivo y actualizado
+- Exploración clara
+- Contribución natural
+- Escalabilidad técnica
+- Coherencia total con Spots, Flows, Search y Perfil
+
+---
+
+Estado del documento:
+Definición estratégica — FLOWYA V2

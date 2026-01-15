@@ -1,0 +1,180 @@
+
+FLOWYA — Sistema de Perfil, Usuario y Permisos V2
+Definición Canónica
+
+1. Visión
+El perfil de usuario en FLOWYA no es un perfil social.
+Es una representación de la experiencia real de una persona en el mundo
+y de su contribución a la calidad colectiva de la plataforma.
+
+El perfil existe para generar confianza, no popularidad.
+
+---
+
+2. Principios Rectores
+
+1. El perfil se construye a partir de acciones reales.
+2. La confianza es dinámica, no un rol fijo.
+3. Los permisos emergen del comportamiento.
+4. No existe aprobación previa de contribuciones.
+5. El sistema debe funcionar sin moderación manual.
+6. El perfil debe ser útil incluso si el usuario no lo visita.
+7. El foco es el mundo (Spots / Flows), no la persona.
+
+---
+
+3. Entidades Fundamentales
+
+3.1 UserProfile
+Representa la identidad básica del usuario en FLOWYA.
+
+Campos:
+- user_id
+- display_name
+- avatar_url
+- bio (opcional, breve)
+- trust_score
+- created_at
+
+Notas:
+- El usuario no edita su nivel de confianza.
+- El perfil es liviano y estable.
+
+---
+
+3.2 UserStats
+Representa métricas derivadas del comportamiento.
+
+Campos:
+- user_id
+- spots_created
+- spots_edited
+- public_photos_added
+- flows_created
+- flows_completed
+- reports_received
+- reports_validated
+
+Notas:
+- No es editable manualmente.
+- Se recalcula automáticamente.
+
+---
+
+4. Sistema de Confianza
+
+4.1 Qué es la confianza
+La confianza es una medida interna de la calidad de las aportaciones
+de un usuario al sistema.
+
+No se muestra como un número absoluto.
+
+---
+
+4.2 Acciones que aumentan confianza
+- Subir fotos públicas no reportadas
+- Ser primer contribuidor de un Spot
+- Editar información que no es revertida
+- Completar Flows reales
+- Reportar errores correctamente
+
+---
+
+4.3 Acciones que reducen confianza
+- Recibir reportes válidos
+- Tener contribuciones revertidas
+- Subir contenido irrelevante o spam
+
+---
+
+5. Permisos Progresivos
+
+Los permisos no se asignan por rol,
+se habilitan conforme al nivel de confianza.
+
+Ejemplos:
+
+- Crear Spot: cuenta requerida
+- Editar texto de Spot: confianza básica
+- Subir foto pública: confianza básica
+- Cambiar cover de Spot: confianza media
+- Mover ubicación: confianza alta
+- Reportar contenido: siempre permitido
+
+---
+
+6. Perfil como Centro de Sentido
+
+El perfil debe responder tres preguntas:
+
+1. ¿Dónde has estado?
+- Spots visitados
+- Flows completados
+
+2. ¿Qué has aportado?
+- Fotos públicas
+- Ediciones realizadas
+- Spots creados
+
+3. ¿Qué tan confiable eres?
+- Etiquetas cualitativas
+- Historial limpio
+- Antigüedad
+
+---
+
+7. Integración con Spots V2
+
+- Cada foto pública muestra autor.
+- Ediciones muestran contribuidor.
+- Tap en autor abre perfil contextual.
+- Subir fotos desde placeholders incrementa confianza.
+
+---
+
+8. Integración con Flows V2
+
+- Completar Flows incrementa confianza.
+- Crear Flows útiles impacta reputación.
+- El historial de FlowRuns alimenta el perfil.
+
+---
+
+9. Integración con Search V2
+
+- Search invita a contribuir.
+- Aportes desde Search generan feedback inmediato.
+- La confianza puede influir en ranking futuro.
+
+---
+
+10. Privacidad y Fricción
+
+- El perfil público es informativo, no social.
+- No existen seguidores ni likes.
+- No hay rankings globales.
+- El usuario no necesita interactuar con perfiles para usar FLOWYA.
+
+---
+
+11. Qué NO debe existir
+
+- Roles rígidos (admin/editor)
+- Aprobaciones previas
+- Gamificación agresiva
+- Comparativas públicas entre usuarios
+
+---
+
+12. Beneficios del Sistema
+
+- Comunidad auto-regulada
+- Información viva y confiable
+- Incentivos claros sin ruido social
+- Escalabilidad sin deuda técnica
+- Base sólida para curaduría futura y uso de IA
+
+---
+
+Estado del documento:
+Definición estratégica — FLOWYA V2

@@ -1,0 +1,178 @@
+
+FLOWYA — Sistema de Search V2
+Definición Canónica
+
+1. Visión
+Search en FLOWYA no es solo una pantalla de búsqueda.
+Es un sistema de interpretación de intención que permite a los usuarios:
+- encontrar lugares (Spots),
+- descubrir recorridos (Flows),
+- explorar categorías,
+- ubicar áreas geográficas,
+y activar la creación de experiencias personalizadas con IA.
+
+Search conecta Planeación, Exploración y Acción.
+
+---
+
+2. Principios Rectores
+
+1. Search detecta intención antes de mostrar resultados.
+2. Search no intenta ser Google Maps.
+3. Search nunca miente sobre el origen de los resultados.
+4. Search activa exploración y contribución.
+5. Search integra IA como opción natural, no forzada.
+6. Search debe ser rápido, claro y predecible.
+7. Search funciona con Spots y Flows canónicos.
+
+---
+
+3. Estados de Search
+
+3.1 Estado Vacío (Explorar)
+Cuando el input está vacío, Search muestra módulos:
+- Spots cerca de ti
+- Pinned recientes
+- Flows recomendados
+- Categorías (chips)
+
+Objetivo:
+Convertir Search en una puerta de entrada, no en un callejón vacío.
+
+---
+
+3.2 Estado Typing (Sugerencias)
+Al escribir 1–2 caracteres, Search muestra sugerencias:
+- Buscar como categoría
+- Buscar en Spots
+- Buscar en Flows
+- Buscar como área (si aplica)
+
+No se muestran resultados completos aún.
+
+---
+
+3.3 Estado Resultados
+Los resultados se organizan por tipo:
+- Spots
+- Flows
+- Categorías
+- Áreas
+
+Cada grupo mantiene su identidad visual.
+
+---
+
+4. Tipos de Resultados
+
+4.1 Spots
+- Basados en Spots canónicos
+- Ordenados por relevancia y proximidad
+- Si no tienen fotos reales:
+  - Mostrar placeholder FLOWYA
+  - Copy invitando a subir fotos reales
+
+Ejemplo de copy:
+“Este lugar aún no tiene fotos reales”
+“Sube una foto y ayuda a otros a descubrirlo”
+
+---
+
+4.2 Flows
+- Flows definidos o generados por IA
+- Mostrar intención y duración
+- CTA directo para iniciar o editar
+
+---
+
+4.3 Categorías
+- Chips interactivos
+- Activan búsqueda filtrada de Spots
+- Priorizan exploración rápida sin escribir
+
+---
+
+4.4 Áreas
+- Resultados provenientes de geocoding
+- Representan zonas, no lugares
+- Al seleccionarse:
+  - Abren Map centrado
+  - Filtran Spots en viewport
+
+---
+
+5. Integración con IA
+
+Search siempre puede ofrecer:
+“Crear Flow con IA usando esta búsqueda”
+
+Casos:
+- Búsquedas vagas (“atardecer”, “arte”)
+- Búsquedas con tiempo implícito (“plan de 2 horas”)
+- Búsquedas sin resultados
+
+La IA:
+- Evalúa si tiene contexto suficiente
+- Pregunta si es necesario
+- Propone Flow editable
+- Nunca ejecuta sin confirmación
+
+---
+
+6. Integración con Spots V2
+
+- Search solo indexa Spots canónicos
+- Ediciones en Spots se reflejan automáticamente
+- Spots sin fotos reales se elevan como oportunidades de contribución
+- Subir fotos desde Search aumenta confiabilidad del usuario
+
+---
+
+7. Integración con Flows V2
+
+- Search permite encontrar Flows existentes
+- Search sugiere crear nuevos Flows con IA
+- Search conecta directamente a FlowScreen
+
+---
+
+8. Performance
+
+- Debounce de input (150–250 ms)
+- Índice local en memoria
+- Búsqueda incremental
+- Corte temprano de resultados
+- Virtualización de listas si es necesario
+
+---
+
+9. Navegación
+
+Search es una sección independiente.
+
+Estructura de la app:
+1. Home
+2. Map
+3. Pinned
+4. Flows
+5. Search
+
+Search no compite con Map:
+- Search decide intención
+- Map explora visualmente
+
+---
+
+10. Beneficios del Sistema
+
+- Búsqueda clara y honesta
+- Menos frustración
+- Activación de comunidad
+- Entrada natural a IA
+- Escalabilidad
+- Coherencia total con Spots y Flows
+
+---
+
+Estado del documento:
+Definición estratégica — FLOWYA V2

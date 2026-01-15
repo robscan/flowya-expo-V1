@@ -1,0 +1,140 @@
+
+FLOWYA — Sistema de Spots V2
+Definición Canónica
+
+1. Visión
+FLOWYA construye un mapa vivo del mundo a partir de la experiencia real de las personas.
+Los spots no son objetos estáticos ni propiedad de un usuario, sino entidades compartidas que evolucionan con la comunidad.
+
+2. Principios Rectores
+1. Un lugar real corresponde a un único Spot canónico.
+2. El diario personal (Pin) nunca modifica el Spot público.
+3. La información pública se construye mediante contribuciones comunitarias.
+4. Todo cambio es inmediato, pero siempre reversible.
+5. La confianza se gana aportando valor real.
+6. Un Spot sin fotos reales es una invitación, no un error.
+
+3. Entidades Principales
+
+3.1 Spot (Canónico / Público)
+Representa un lugar real compartido por todos los usuarios.
+Campos clave:
+- id (uuid)
+- name
+- location (lat, lng)
+- category
+- description_short
+- tags
+- cover_media_id
+- status (active | needs_review | soft_hidden)
+- source (seed | user_created)
+- seed_snapshot (opcional)
+
+3.2 Pin (Diario / Privado)
+Relación usuario ↔ spot.
+Campos:
+- user_id
+- spot_id
+- state (to_visit | visited)
+- notes_private
+- photos_private
+- visited_at
+
+3.3 SpotContribution
+Registro de ediciones públicas realizadas por usuarios.
+Tipos:
+- edit_text
+- add_public_photo
+- set_cover_photo
+- move_location
+Campos:
+- id
+- spot_id
+- type
+- payload
+- created_by
+- created_at
+
+3.4 SpotVersion
+Snapshot del estado completo de un Spot tras una contribución.
+Campos:
+- id
+- spot_id
+- snapshot_json
+- created_at
+- created_by
+- source_contribution_id
+
+3.5 SpotMediaPublic
+Fotos públicas asociadas a un Spot.
+Campos:
+- id
+- spot_id
+- url
+- created_by
+- created_at
+- status
+- report_count
+
+3.6 SpotReport
+Reportes comunitarios.
+Campos:
+- id
+- target_type (spot | media | contribution)
+- target_id
+- reason
+- created_by
+- created_at
+
+4. Imágenes y Placeholders
+
+4.1 Placeholder de Spot
+Cuando un Spot no tiene fotos públicas reales:
+- Se muestra un placeholder genérico FLOWYA
+- El placeholder no representa el lugar
+- Incluye copy invitando a aportar fotos reales
+
+Ejemplos de copy:
+- “Este lugar aún no tiene fotos reales”
+- “¿Estás aquí? Ayuda a otros a descubrirlo”
+
+4.2 Fotos Públicas
+- Son aportes comunitarios
+- Representan el lugar
+- Se publican inmediatamente
+- Son reportables y reversibles
+
+5. Sistema de Confianza
+La confiabilidad de un usuario aumenta al:
+- Aportar fotos públicas no reportadas
+- Ser autor de la primera foto real de un spot
+- Hacer ediciones no revertidas
+- Aportar en spots sin contenido previo
+
+La confiabilidad disminuye al:
+- Recibir reportes
+- Tener contribuciones revertidas
+- Generar duplicados o spam
+
+La confianza habilita acciones más sensibles (ej. cambiar cover).
+
+6. Moderación y Control
+- No hay aprobación previa.
+- Todo es versionado.
+- Los reportes actúan de forma localizada.
+- El estado needs_review no bloquea el spot.
+- El rollback es siempre posible.
+
+7. Prevención de Duplicados
+Al crear un Spot:
+- Se buscan spots cercanos y similares
+- Se sugiere reutilizar existentes
+- Se permite crear de todos modos
+- Se marca posible duplicado para revisión futura
+
+8. Compatibilidad con Planeación, Flow y Pin
+- Planeación: mapa global vivo y confiable
+- Flow: aportes contextuales desde el lugar
+- Pin: diario personal separado y protegido
+
+Estado: Borrador estratégico

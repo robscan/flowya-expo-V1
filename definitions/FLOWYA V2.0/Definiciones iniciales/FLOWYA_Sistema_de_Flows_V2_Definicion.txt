@@ -1,0 +1,191 @@
+
+FLOWYA — Sistema de Flows V2
+Definición Canónica
+
+1. Visión
+Un Flow en FLOWYA es una experiencia guiada para recorrer el mundo.
+No es una lista ni un objeto estático, sino una secuencia viva de lugares (Spots canónicos)
+diseñada para ser ejecutada, adaptada y vivida en tiempo real.
+
+FLOWYA utiliza Flows para transformar la exploración en experiencias significativas,
+ya sea creadas por el usuario, sugeridas por el sistema o diseñadas colaborativamente con IA.
+
+---
+
+2. Principios Rectores
+
+1. Un Flow es una experiencia, no un contenido editorial.
+2. Los Flows se construyen siempre sobre Spots canónicos.
+3. La ejecución de un Flow es independiente de su definición.
+4. El usuario puede editar un Flow antes y durante su ejecución.
+5. La IA colabora, no impone.
+6. Un Flow debe poder adaptarse en tiempo real.
+7. FlowScreen es el núcleo de la experiencia.
+8. No existe aprobación previa ni bloqueo creativo.
+
+---
+
+3. Entidades Fundamentales
+
+3.1 Flow (Definición)
+Representa la estructura conceptual de un recorrido.
+
+Campos:
+- id (uuid)
+- title
+- intent (tipo de experiencia: exploración, cultural, slow walk, etc.)
+- movementMode (walking | bike | car)
+- spot_ids[] (ordenados, Spots canónicos)
+- estimatedDuration
+- generatedBy (user | ai | hybrid)
+- createdAt
+- updatedAt
+
+Notas:
+- El Flow no contiene estado de progreso.
+- El Flow puede ser generado por IA, usuario o ambos.
+- El Flow es liviano y editable.
+
+---
+
+3.2 FlowRun (Ejecución)
+Representa una instancia viva de un Flow siendo recorrido por un usuario.
+
+Campos:
+- id (uuid)
+- flow_id
+- user_id
+- startedAt
+- lastSpotIndex
+- status (active | paused | completed | abandoned)
+- updatedAt
+
+Notas:
+- Permite retomar un Flow.
+- Permite historial de recorridos.
+- Permite métricas futuras.
+- No modifica el Flow original.
+
+---
+
+4. Creación de Flows
+
+4.1 Creación Manual
+El usuario puede:
+- Seleccionar Spots
+- Definir orden
+- Elegir modo de movimiento
+- Nombrar el Flow
+- Guardarlo o iniciarlo
+
+No existen Flows vacíos.
+Un Flow requiere al menos dos Spots.
+
+---
+
+4.2 Creación con IA (Guía Inteligente)
+
+La IA actúa como diseñador de experiencias.
+
+Proceso:
+1. El usuario elige “Crear Flow con IA”
+2. La IA evalúa contexto disponible:
+   - Ubicación
+   - Tiempo disponible
+   - Preferencias previas (si existen)
+   - Densidad de Spots
+3. Si la información es insuficiente, la IA pregunta:
+   - Tiempo disponible
+   - Tipo de experiencia deseada
+   - Ritmo
+   - Intereses principales
+4. La IA propone un Flow:
+   - Selección de Spots
+   - Orden lógico
+   - Duración estimada
+   - Intención clara
+5. El usuario revisa, edita o acepta.
+
+La IA nunca ejecuta un Flow sin confirmación del usuario.
+
+---
+
+5. Edición de Flows
+
+5.1 Antes de Iniciar
+- Reordenar Spots
+- Agregar o eliminar Spots
+- Cambiar modo de movimiento
+- Ajustar título
+
+5.2 Durante la Ejecución (FlowRun activo)
+- Agregar Spots futuros
+- Reordenar Spots futuros
+- Eliminar Spots futuros
+- Pausar y retomar
+
+Regla:
+El pasado no se reescribe, el futuro es flexible.
+
+---
+
+6. Ejecución del Flow
+
+6.1 FlowScreen
+FlowScreen es la única pantalla necesaria para ejecutar Flows.
+
+Responsabilidades:
+- Mostrar el Spot actual
+- Permitir navegación entre Spots
+- Mostrar progreso
+- Permitir edición contextual
+- Permitir minimizar
+- Permitir abandonar o completar
+
+No existe Flow Detail como pantalla separada.
+
+---
+
+7. Persistencia
+
+- Flows se persisten como definiciones.
+- FlowRuns se persisten como experiencias.
+- Ambos pueden sincronizarse en backend.
+- El progreso se guarda en FlowRun.
+
+---
+
+8. Integración con Spots
+
+- Los Flows solo referencian Spots canónicos.
+- Cambios en Spots mejoran automáticamente todos los Flows.
+- Spots eliminados o fusionados actualizan Flows automáticamente.
+
+---
+
+9. Secciones de la App
+
+Estructura propuesta:
+1. Home
+2. Map
+3. Pinned (Diario)
+4. Flows
+5. Search
+
+Flows tiene entidad propia como espacio de experiencias guiadas.
+
+---
+
+10. Beneficios del Sistema
+
+- Experiencias vivas y adaptables
+- Flows inteligentes y personalizados
+- Retomo de recorridos
+- Edición sin fricción
+- Base sólida para IA
+- Escalabilidad sin deuda
+
+---
+
+Estado del documento:
+Definición estratégica — FLOWYA V2

@@ -1,0 +1,76 @@
+FLOWYA — Sistema de Creación de Spots V2
+Definición Canónica
+
+1. Visión
+Crear un Spot en FLOWYA no es publicar contenido.
+Es señalar algo en el mundo real.
+
+Un Spot es una observación inicial que puede crecer,
+mejorar y mantenerse viva gracias a la comunidad.
+
+La creación debe ser rápida, ligera, comprensible
+y sin castigos por curiosidad.
+
+2. Principio Maestro
+“Crear un Spot debe sentirse como decir:
+‘Noté algo aquí’.”
+
+3. Entrada al flujo
+La creación de Spots solo ocurre desde contexto:
+- Map (tap o long press)
+- Flow activo
+- Search (no results / área)
+- Home (Contribute)
+
+Nunca desde una pantalla vacía.
+
+4. Flujo de Creación V2
+
+4.1 Paso 1 — Señalar (10 segundos)
+Inputs mínimos:
+- Ubicación (editable)
+- Tipo de Spot
+- Nombre (opcional)
+
+CTA: Guardar Spot
+
+4.2 Detección de duplicados
+Si existe un Spot cercano:
+- Mostrar Spot existente
+- Permitir usarlo o crear uno nuevo
+
+Nunca redirecciones silenciosas.
+
+4.3 Spot creado
+Mensaje:
+“Spot creado. Ayuda a completarlo cuando quieras.”
+
+5. Completar un Spot (opcional)
+Un Spot incompleto no es un error.
+
+5.1 Placeholders
+Spots sin fotos reales muestran placeholder FLOWYA
+con copy invitando a contribuir.
+
+5.2 Edición comunitaria
+- No existe ownership
+- Todo se versiona
+- Todo es reversible
+- La confianza regula profundidad de edición
+
+6. Fotos y Textos
+Los usuarios pueden subir fotos reales y editar textos.
+Esto se considera contribución.
+
+7. Integración con Flow
+Si el Spot se crea durante un Flow:
+“¿Agregar este lugar a tu Flow?”
+
+8. Reglas clave
+- Spot siempre canónico
+- No WorldSpot vs UserSpot
+- No falsas revisiones
+- Backups protegen estado original
+
+Estado del documento:
+Definición estratégica — FLOWYA V2
