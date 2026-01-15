@@ -179,11 +179,11 @@ export function FlowPlayerControls({
               <View style={styles.statusRow}>
                 <View style={styles.statusLeft}>
                   <View style={[styles.greenDot, { backgroundColor: '#FF3B30' }]} />
-                  <Text style={[textStyles.caption, styles.statusText, { color: colors.icon }]}>NOW MOVING</Text>
+                  <Text style={[textStyles.caption, styles.statusText, { color: colors.icon }]}>EN MOVIMIENTO</Text>
                 </View>
                 {totalSpots > 0 && (
                   <Text style={[textStyles.caption, styles.statusText, { color: colors.text }]}>
-                    {totalSpots} {totalSpots === 1 ? 'spot' : 'spots'} added
+                    {totalSpots} {totalSpots === 1 ? 'spot' : 'spots'} agregados
                   </Text>
                 )}
               </View>

@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -16,7 +17,6 @@ import {
   View,
 } from 'react-native';
 
-import { AIContentPreview } from '@/components/ui/AIContentPreview';
 import { FormField } from '@/components/ui/FormField';
 import { FormImagePicker } from '@/components/ui/FormImagePicker';
 import { FormTextArea } from '@/components/ui/FormTextArea';
@@ -29,37 +29,63 @@ import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSpot } from '@/contexts/SpotContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotForm } from '@/hooks/useSpotForm';
-import { isAIConfigured } from '@/utils/aiConfig';
+import { createSpotContribution, fetchUserContributions } from '@/utils/spotContributionsService';
+import { isAdminUser } from '@/utils/permissions';
+import { getTrustPermissions, getTrustTier, getTrustTierLabel, TrustPermissions, TrustTier } from '@/utils/trustScore';
 
 export default function CreateSpotScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ lat?: string; lng?: string }>();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { createSpot } = useSpot();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const isAdmin = isAdminUser(user);
   
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
   
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [trustTier, setTrustTier] = useState<TrustTier>('nuevo');
+  const [trustPermissions, setTrustPermissions] = useState<TrustPermissions | null>(null);
+  const [isTrustEnforced, setIsTrustEnforced] = useState(false);
+  const [isLoadingTrust, setIsLoadingTrust] = useState(false);
   // FASE 4: showAdvancedFields eliminado - campos avanzados eliminados
   // FASE 2: showAIPreview eliminado - IA desactivada en creación
 
   // Hook de gestión de estado del formulario
   const form = useSpotForm({
-    onSave: (spotData) => {
-      // P0-03: Si hay spot existente, NO crear nuevo spot (esta verificación se hace en handleSave antes de llamar onSave)
-      // Si llegamos aquí, es porque NO hay spot existente
-      const newSpot = createSpot(spotData);
+    onSave: async (spotData) => {
+      if (!user?.id) {
+        Alert.alert('Iniciar sesión requerido', 'Debes iniciar sesión para contribuir spots.');
+        return;
+      }
+      if (isTrustEnforced && trustPermissions && !trustPermissions.canCreateSpots && !isAdmin) {
+        Alert.alert(
+          'Nivel de confianza insuficiente',
+          'Aun no tienes permiso para crear nuevos spots. Tus contribuciones aprobadas habilitan este permiso.'
+        );
+        return;
+      }
+      const payload = {
+        name: spotData.name,
+        type: spotData.type,
+        location: spotData.location,
+        short_description: spotData.shortDescription,
+        description: spotData.description,
+        image: spotData.image,
+        has_generated_content: spotData.hasGeneratedContent,
+      };
+      const result = await createSpotContribution(null, payload, user.id);
+      if (result.error) {
+        Alert.alert('Error', 'No se pudo enviar la contribución. Intenta de nuevo.');
+        return;
+      }
       setShowSuccessMessage(true);
-      // Redirigir a SpotDetail después de crear (no al mapa)
       setTimeout(() => {
-        router.replace(`/spot-detail?id=${newSpot.id}`);
+        router.replace('/(tabs)/home');
       }, 1500);
     },
     onCancel: () => {
@@ -75,8 +101,15 @@ export default function CreateSpotScreen() {
       router.replace(`/spot-detail?id=${form.existingSpot.id}`);
       return;
     }
-    
-    // Si NO hay spot existente, proceder con guardado normal (llama a form.handleSave que ejecuta onSave)
+
+    if (isTrustEnforced && trustPermissions && !trustPermissions.canCreateSpots && !isAdmin) {
+      Alert.alert(
+        'Nivel de confianza insuficiente',
+        'Aun no tienes permiso para crear nuevos spots. Tus contribuciones aprobadas habilitan este permiso.'
+      );
+      return;
+    }
+
     form.handleSave();
   };
 
@@ -98,6 +131,33 @@ export default function CreateSpotScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.lat, params.lng, baseLocation]);
+
+  useEffect(() => {
+    const loadTrust = async () => {
+      if (!isAuthenticated || !user?.id) {
+        setTrustTier('invitado');
+        setTrustPermissions(getTrustPermissions('invitado', false));
+        setIsTrustEnforced(false);
+        return;
+      }
+      setIsLoadingTrust(true);
+      const result = await fetchUserContributions(user.id);
+      if (result.error) {
+        setTrustTier(getTrustTier([], true));
+        setTrustPermissions(getTrustPermissions(getTrustTier([], true), true));
+        setIsTrustEnforced(false);
+        setIsLoadingTrust(false);
+        return;
+      }
+      const tier = getTrustTier(result.data, true);
+      setTrustTier(tier);
+      setTrustPermissions(getTrustPermissions(tier, true));
+      setIsTrustEnforced(true);
+      setIsLoadingTrust(false);
+    };
+
+    loadTrust();
+  }, [isAuthenticated, user?.id]);
 
   // FASE 2: Generación de IA desactivada en creación de Spot
   // La IA solo se usa bajo demanda en Spot Detail (lazy generation)
@@ -144,22 +204,22 @@ export default function CreateSpotScreen() {
           >
             <Icon name="profile" size={48} color={colors.tint} />
             <Text style={[textStyles.heading4, { color: colors.text, marginTop: spacing.md, textAlign: 'center' }]}>
-              Create an account to add spots to FLOWYA
+              Crea una cuenta para agregar spots en FLOWYA
             </Text>
             <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, textAlign: 'center', marginBottom: spacing.lg }]}>
-              Sign up to contribute spots and share your favorite places with the community.
+              Regístrate para contribuir spots y compartir tus lugares favoritos con la comunidad.
             </Text>
             <TouchableOpacity
               style={[styles.authButton, { backgroundColor: colors.tint }]}
               onPress={() => router.push('/(tabs)/signup')}
               activeOpacity={0.7}>
-              <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Sign Up</Text>
+              <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Crear cuenta</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.authButton, { backgroundColor: colors.icon + '20', marginTop: spacing.sm }]}
               onPress={() => router.push('/(tabs)/login')}
               activeOpacity={0.7}>
-              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Sign In</Text>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Iniciar sesión</Text>
             </TouchableOpacity>
           </GlassView>
         </View>
@@ -259,10 +319,26 @@ export default function CreateSpotScreen() {
         </View>
       )}
 
+      {(isLoadingTrust || isTrustEnforced) && trustPermissions && (
+        <View style={[styles.trustBanner, { borderColor: colors.icon + '20', backgroundColor: colors.icon + '08' }]}>
+          <Text style={[textStyles.bodyMedium, { color: colors.text }]}>
+            Nivel de confianza: {getTrustTierLabel(trustTier)}
+          </Text>
+          <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
+            {isLoadingTrust ? 'Cargando nivel de confianza...' : 'Se calcula internamente segun tus aportes aplicados.'}
+          </Text>
+          {!isLoadingTrust && isTrustEnforced && !trustPermissions.canCreateSpots && !isAdmin && (
+            <Text style={[textStyles.caption, { color: colors.error || '#FF3B30', marginTop: spacing.xs / 2 }]}>
+              Aun no puedes crear spots nuevos. Completa aportes aplicados para habilitar este permiso.
+            </Text>
+          )}
+        </View>
+      )}
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Section 1: Location (Required) */}
         <View style={styles.section}>
-          <FormField label="Location" required error={form.errors.location}>
+          <FormField label="Ubicación" required error={form.errors.location}>
             <LocationSelectorWeb
               location={form.location}
               onLocationChange={(loc) => {
@@ -291,16 +367,16 @@ export default function CreateSpotScreen() {
 
         {/* Section 2: Basic Info */}
         <View style={styles.section}>
-          <FormField label="Name">
+          <FormField label="Nombre">
             <FormTextInput
               value={form.name}
               onChangeText={form.setName}
-              placeholder="e.g. Main Square, Sunset Viewpoint..."
+              placeholder="Ej. Plaza principal, Mirador al atardecer..."
             />
           </FormField>
 
           {/* FASE 5: Photo field (imagen única) */}
-          <FormField label="Image" required error={form.errors.photo}>
+          <FormField label="Imagen" required error={form.errors.photo}>
             <FormImagePicker
               initialUri={form.image?.url || null}
               onPickImage={form.pickImage}
@@ -309,43 +385,17 @@ export default function CreateSpotScreen() {
             />
           </FormField>
 
-          {/* FASE 2: Botón "Enrich with AI" DESACTIVADO
-           * La generación de IA NO se ejecuta durante la creación de un Spot.
-           * La IA solo se usa bajo demanda cuando el usuario abre el detalle de un Spot sin contenido.
-           * 
-           * TODO: Eliminar completamente en Fase 4 cuando se refactorice UI
-           */}
-          {false && !form.existingSpot && isAIConfigured() && (
-            <TouchableOpacity
-              style={[
-                styles.aiButtonInline, 
-                { 
-                  backgroundColor: colors.icon + '10', 
-                  borderColor: colors.icon + '30',
-                  opacity: 0.5,
-                  marginBottom: spacing.sm,
-                }
-              ]}
-              disabled={true}
-              activeOpacity={0.7}>
-              <Icon name="info" size={16} color={colors.icon} />
-              <Text style={[textStyles.bodyMedium, { color: colors.icon, marginLeft: spacing.xs }]}>
-                AI disabled in creation
-              </Text>
-            </TouchableOpacity>
-          )}
-
           {/* FASE 4: Short Description field */}
-          <FormField label="Short Description">
+          <FormField label="Descripción corta">
             <FormTextArea
               value={form.shortDescription}
               onChangeText={form.setShortDescription}
-              placeholder="A brief, evocative description (1-2 lines). e.g. A viewpoint with panoramic city views..."
+              placeholder="Una descripción breve y evocadora (1-2 líneas). Ej. Un mirador con vista panorámica."
               numberOfLines={2}
             />
           </FormField>
 
-          <FormField label="Type">
+          <FormField label="Tipo">
             <FormTypeSelector
               selectedType={form.type}
               onSelectType={form.setType}
@@ -362,7 +412,7 @@ export default function CreateSpotScreen() {
           style={[styles.cancelButton, { backgroundColor: colors.icon + '20' }]}
           onPress={form.handleCancel}
           activeOpacity={0.7}>
-          <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
+          <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancelar</Text>
         </TouchableOpacity>
         
         
@@ -375,34 +425,12 @@ export default function CreateSpotScreen() {
           disabled={!form.isValid}
           activeOpacity={0.7}>
           <Text style={[textStyles.bodyMedium, { color: form.isValid ? colors.background : colors.icon }]}>
-            Send
+            Enviar
           </Text>
         </TouchableOpacity>
       </View>
       
-      {/* AI Error message */}
-      {form.aiError && (
-        <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
-          <Text style={[textStyles.caption, { color: '#FF6B6B' }]}>{form.aiError}</Text>
-        </View>
-      )}
-
-      {/* FASE 2: AI Content Preview DESACTIVADO
-       * La generación de IA NO se ejecuta durante la creación de un Spot.
-       * El preview de IA solo se usa en Spot Detail (lazy generation).
-       * 
-       * TODO: Eliminar completamente en Fase 4 cuando se refactorice UI
-       */}
-      {false && form.previewContent && (
-        <AIContentPreview
-          content={form.previewContent || { shortDescription: '' }}
-          visible={false}
-          onAccept={() => {}}
-          onReject={() => {}}
-          onEdit={() => {}}
-          title="Generated Content"
-        />
-      )}
+      {/* IA deshabilitada en creación: sin preview ni errores */}
     </View>
   );
 }
@@ -422,6 +450,15 @@ const styles = StyleSheet.create({
   existingSpotBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  trustBanner: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     marginHorizontal: spacing.md,
@@ -482,27 +519,11 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
     minWidth: 140,
   },
-  // SCOPE 7.3: Estilo discreto para botón sobre campo Description
-  aiButtonInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 12,
-    borderWidth: 1,
-    minHeight: 40,
-  },
   sendButton: {
     flex: 1,
     height: 48,
     borderRadius: 12,
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorContainer: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
     alignItems: 'center',
   },
   overlay: {

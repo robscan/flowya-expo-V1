@@ -1,3 +1,5 @@
+import { ImageSourcePropType } from 'react-native';
+import { Spot } from '@/data/spots';
 /**
  * Image Helpers
  * Utilities for handling spot images, detecting stock images, and providing fallbacks
@@ -121,4 +123,28 @@ export function getOptimizedImageUrl(imageUrl: string | null | undefined): strin
   
   // Para otras URLs, retornar sin cambios (pueden agregarse más optimizaciones aquí)
   return imageUrl;
+}
+
+const FLOWYA_PLACEHOLDER_IMAGE: ImageSourcePropType = require('../assets/images/icon.png');
+
+export function getPlaceholderImageSource(): ImageSourcePropType {
+  return FLOWYA_PLACEHOLDER_IMAGE;
+}
+
+export function getSpotImageSource(spot: Spot): ImageSourcePropType {
+  const candidates = [spot.image?.url, ...(spot.photos ?? [])].filter(
+    (url): url is string => Boolean(url && url.trim().length > 0)
+  );
+  const validUrl = candidates.find((url) => !isStockImage(url));
+  if (validUrl) {
+    return { uri: validUrl };
+  }
+  return FLOWYA_PLACEHOLDER_IMAGE;
+}
+
+export function getSpotImageUrls(spot: Spot): string[] {
+  const candidates = [spot.image?.url, ...(spot.photos ?? [])].filter(
+    (url): url is string => Boolean(url && url.trim().length > 0)
+  );
+  return candidates.filter((url) => !isStockImage(url));
 }

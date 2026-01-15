@@ -61,10 +61,10 @@ export function PinStateModal({
             shadowLevel="subtle">
             <View style={styles.content}>
               <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.md }]}>
-                Pin this spot
+                Pinear este spot
               </Text>
               <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
-                Choose how you want to pin this spot
+                Elige cómo quieres guardar este spot
               </Text>
 
               <View style={styles.options}>
@@ -83,10 +83,10 @@ export function PinStateModal({
                     <Icon name="pin" size={24} color="#2196F3" />
                     <View style={styles.optionText}>
                       <Text style={[textStyles.body, { color: colors.text, fontWeight: '500' }]}>
-                        To Visit
+                        Por visitar
                       </Text>
                       <Text style={[textStyles.caption, { color: colors.icon }]}>
-                        Places I want to visit
+                        Lugares que quiero visitar
                       </Text>
                     </View>
                   </View>
@@ -107,10 +107,10 @@ export function PinStateModal({
                     <Icon name="check-circle" size={24} color="#4CAF50" />
                     <View style={styles.optionText}>
                       <Text style={[textStyles.body, { color: colors.text, fontWeight: '500' }]}>
-                        Visited
+                        Visitado
                       </Text>
                       <Text style={[textStyles.caption, { color: colors.icon }]}>
-                        Places I've already visited
+                        Lugares que ya visité
                       </Text>
                     </View>
                   </View>
@@ -121,7 +121,7 @@ export function PinStateModal({
                 style={styles.cancelButton}
                 onPress={onCancel}
                 android_ripple={{ color: colors.icon + '20' }}>
-                <Text style={[textStyles.body, { color: colors.icon }]}>Cancel</Text>
+                <Text style={[textStyles.body, { color: colors.icon }]}>Cancelar</Text>
               </Pressable>
             </View>
           </GlassView>

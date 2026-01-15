@@ -58,7 +58,7 @@ export function SectionHeader({
   // Search variant props
   searchValue,
   onSearchChange,
-  searchPlaceholder = 'Search places...',
+  searchPlaceholder = 'Buscar lugares...',
   onSearchFocus,
   onSearchBlur,
   onSearchSubmit,

@@ -9,25 +9,23 @@
  * - Ordenadas alfabéticamente
  * - Con label listo para UI
  * 
- * FASE 7: Extendido para soportar WorldSpots sin locationRegion
- * - Genera regiones desde location.city/country cuando no hay locationRegion
+ * FASE 7: Genera regiones desde location.city/country cuando no hay locationRegion
  * - Mantiene compatibilidad con spots que ya tienen locationRegion canónico
  * 
  * IMPORTANTE:
  * - Esta función NO calcula regiones en runtime
  * - Solo lee locationRegion canónico de spots existentes
- * - Para WorldSpots, genera locationRegion desde city/country
+ * - Para spots sin locationRegion, genera locationRegion desde city/country
  * - Home debe usar esta función, nunca calcular regiones al vuelo
  */
 
 import { Spot } from '@/data/spots';
 import { LocationRegion } from '@/types/locationRegion';
-import { UnifiedSpot } from '@/utils/worldSpotHelpers';
 import { generateCanonicalRegionId } from './regionIdGenerator';
 
 /**
  * Mapeo de nombres de países a códigos ISO 3166-1 alpha-2
- * FASE 7: Para generar regionId canónicos desde WorldSpots
+ * FASE 7: Para generar regionId canónicos desde spots sin locationRegion
  */
 const COUNTRY_TO_ISO_CODE: Record<string, string> = {
   'Argentina': 'AR',
@@ -69,7 +67,7 @@ const COUNTRY_TO_ISO_CODE: Record<string, string> = {
 
 /**
  * Convertir nombre de país a código ISO 3166-1 alpha-2
- * FASE 7: Helper para generar regionId canónicos desde WorldSpots
+ * FASE 7: Helper para generar regionId canónicos desde spots sin locationRegion
  */
 function getCountryCode(countryName: string | undefined): string | null {
   if (!countryName || typeof countryName !== 'string') {
@@ -109,14 +107,14 @@ export interface RegionOption {
  * Obtener lista de regiones disponibles desde spots existentes
  * CANONICAL: Usa regionId para deduplicar, retorna labels para UI
  * 
- * FASE 7: Extendido para soportar UnifiedSpot (UserSpots + WorldSpots)
- * - Procesa spots con locationRegion canónico (UserSpots)
- * - Genera regiones desde location.city/country para spots sin locationRegion (WorldSpots)
+ * FASE 7: Soporta spots con o sin locationRegion
+ * - Procesa spots con locationRegion canónico
+ * - Genera regiones desde location.city/country para spots sin locationRegion
  * 
  * Esta función:
  * - Consulta spots existentes (NO calcula regiones)
  * - Extrae regionIds únicos de spots con locationRegion canónico
- * - Para WorldSpots sin locationRegion, genera LocationRegion desde city/country
+ * - Para spots sin locationRegion, genera LocationRegion desde city/country
  * - DEDUPLICA por regionId (no por label) - un regionId = una opción
  * - Retorna labels para mostrar en UI
  * - Ordena por label alfabéticamente
@@ -129,10 +127,10 @@ export interface RegionOption {
  * - Sin duplicados (deduplicación por regionId)
  * - Sin regiones vacías
  * 
- * @param spots - Array de spots existentes (UserSpots + WorldSpots)
+ * @param spots - Array de spots existentes
  * @returns Array de regiones disponibles (solo las que tienen spots, deduplicadas por regionId)
  */
-export function getAvailableRegionsFromSpots(spots: UnifiedSpot[]): RegionOption[] {
+export function getAvailableRegionsFromSpots(spots: Spot[]): RegionOption[] {
   // Mapa de regionId -> LocationRegion para deduplicar
   // IMPORTANTE: Un regionId = una opción en el dropdown (no por label)
   const regionsMap = new Map<string, LocationRegion>();
@@ -140,13 +138,13 @@ export function getAvailableRegionsFromSpots(spots: UnifiedSpot[]): RegionOption
   spots.forEach((spot) => {
     let region: LocationRegion | null = null;
 
-    // Caso 1: Spot con locationRegion canónico (UserSpots)
+    // Caso 1: Spot con locationRegion canónico
     if (spot.locationRegion && 
         typeof spot.locationRegion === 'object' && 
         'regionId' in spot.locationRegion) {
       region = spot.locationRegion as LocationRegion;
     }
-    // Caso 2: Spot sin locationRegion pero con city/country (WorldSpots)
+    // Caso 2: Spot sin locationRegion pero con city/country
     else if (spot.location?.city && spot.location?.country) {
       const city = spot.location.city.trim();
       const countryName = spot.location.country.trim();
@@ -209,21 +207,21 @@ export function getAvailableRegionsFromSpots(spots: UnifiedSpot[]): RegionOption
  * Filtrar spots por región usando regionId canónico
  * CANONICAL: Compara por regionId (nunca por strings libres)
  * 
- * FASE 7: Extendido para soportar UnifiedSpot (UserSpots + WorldSpots)
- * - Filtra spots con locationRegion canónico (UserSpots)
- * - Genera regionId desde city/country para WorldSpots sin locationRegion
+ * FASE 7: Soporta spots con o sin locationRegion
+ * - Filtra spots con locationRegion canónico
+ * - Genera regionId desde city/country para spots sin locationRegion
  * 
  * Esta función:
  * - Filtra spots que tienen locationRegion canónico
- * - Para WorldSpots sin locationRegion, genera regionId desde city/country
+ * - Para spots sin locationRegion, genera regionId desde city/country
  * - Compara por regionId (nunca por label o texto libre)
- * - Excluye spots sin región canónica (o sin city/country para WorldSpots)
+ * - Excluye spots sin región canónica (o sin city/country)
  * 
- * @param spots - Array de spots a filtrar (UserSpots + WorldSpots)
+ * @param spots - Array de spots a filtrar
  * @param regionId - regionId de la región objetivo (null = todas las regiones)
  * @returns Array de spots filtrados por región
  */
-export function getSpotsByRegion(spots: UnifiedSpot[], regionId: string | null): UnifiedSpot[] {
+export function getSpotsByRegion(spots: Spot[], regionId: string | null): Spot[] {
   if (!regionId) {
     return spots; // null = todas las regiones
   }
@@ -232,14 +230,14 @@ export function getSpotsByRegion(spots: UnifiedSpot[], regionId: string | null):
   return spots.filter((spot) => {
     let spotRegionId: string | null = null;
 
-    // Caso 1: Spot con locationRegion canónico (UserSpots)
+    // Caso 1: Spot con locationRegion canónico
     if (spot.locationRegion && 
         typeof spot.locationRegion === 'object' && 
         'regionId' in spot.locationRegion) {
       const region = spot.locationRegion as LocationRegion;
       spotRegionId = region.regionId;
     }
-    // Caso 2: Spot sin locationRegion pero con city/country (WorldSpots)
+    // Caso 2: Spot sin locationRegion pero con city/country
     else if (spot.location?.city && spot.location?.country) {
       const city = spot.location.city.trim();
       const countryName = spot.location.country.trim();

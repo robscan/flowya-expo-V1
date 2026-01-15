@@ -8,6 +8,7 @@
 
 import { supabase } from './supabase';
 import type { PinData, PinState } from '@/contexts/SavedContext';
+import { normalizeSpotId } from '@/utils/normalizeSpotId';
 
 export interface SupabasePin {
   id: string;
@@ -34,7 +35,7 @@ export interface SupabasePin {
  */
 function pinDataToSupabase(pin: PinData, userId: string): Omit<SupabasePin, 'id' | 'created_at' | 'updated_at'> {
   return {
-    spot_id: pin.spotId,
+    spot_id: normalizeSpotId(pin.spotId),
     user_id: userId,
     state: pin.state,
     // V1.3: Enviar timestamp del cliente (será reconciliado por Supabase si hay conflicto)
@@ -50,7 +51,7 @@ function pinDataToSupabase(pin: PinData, userId: string): Omit<SupabasePin, 'id'
  */
 function supabaseToPinData(supabasePin: SupabasePin): PinData {
   return {
-    spotId: supabasePin.spot_id,
+    spotId: normalizeSpotId(supabasePin.spot_id),
     state: supabasePin.state,
     pinnedAt: new Date(supabasePin.pinned_at),
     visitedAt: supabasePin.visited_at ? new Date(supabasePin.visited_at) : undefined,
@@ -151,10 +152,11 @@ export async function deletePin(spotId: string, userId: string): Promise<{ succe
   }
 
   try {
+    const normalizedSpotId = normalizeSpotId(spotId);
     const { error } = await supabase
       .from('pins')
       .delete()
-      .eq('spot_id', spotId)
+      .eq('spot_id', normalizedSpotId)
       .eq('user_id', userId);
 
     if (error) {

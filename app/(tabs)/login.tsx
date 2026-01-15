@@ -57,13 +57,13 @@ export default function LoginScreen() {
 
   const handleSignIn = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Required fields', 'Enter your email and password');
+      Alert.alert('Campos requeridos', 'Ingresa tu email y contraseña');
       return;
     }
 
     // Validar formato de email
     if (!isValidEmail(email.trim())) {
-      Alert.alert('Invalid email', 'Enter a valid email address');
+      Alert.alert('Email inválido', 'Ingresa un email válido');
       return;
     }
 
@@ -72,21 +72,21 @@ export default function LoginScreen() {
       const { error } = await signIn(email.trim(), password);
       if (error) {
         // Mensajes de error específicos
-        let errorMessage = 'Couldn\'t sign in';
+        let errorMessage = 'No se pudo iniciar sesión';
         if (error.message.includes('Invalid login credentials') || error.message.includes('invalid')) {
-          errorMessage = 'Email or password incorrect';
+          errorMessage = 'Email o contraseña incorrectos';
         } else if (error.message.includes('network') || error.message.includes('fetch')) {
-          errorMessage = 'Connection error. Check your internet and try again.';
+          errorMessage = 'Error de conexión. Revisa tu internet e intenta de nuevo.';
         } else if (error.message) {
           errorMessage = error.message;
         }
-        Alert.alert('Sign in error', errorMessage);
+        Alert.alert('Error al iniciar sesión', errorMessage);
       } else {
         // Redirección se maneja en useEffect
         router.replace('/(tabs)/home');
       }
     } catch {
-      Alert.alert('Unexpected error', 'Something went wrong. Please try again.');
+      Alert.alert('Error inesperado', 'Algo salió mal. Intenta nuevamente.');
     } finally {
       setIsLoading(false);
     }
@@ -98,12 +98,12 @@ export default function LoginScreen() {
 
   const handleForgotPassword = async () => {
     if (!email.trim()) {
-      Alert.alert('Email required', 'Enter your email to reset password');
+      Alert.alert('Email requerido', 'Ingresa tu email para restablecer la contraseña');
       return;
     }
 
     if (!isValidEmail(email.trim())) {
-      Alert.alert('Invalid email', 'Enter a valid email address');
+      Alert.alert('Email inválido', 'Ingresa un email válido');
       return;
     }
 
@@ -111,15 +111,15 @@ export default function LoginScreen() {
     try {
       const { error } = await resetPassword(email.trim());
       if (error) {
-        Alert.alert('Error', error.message || 'Couldn\'t send reset email. Try again.');
+        Alert.alert('Error', error.message || 'No se pudo enviar el email de recuperación. Intenta nuevamente.');
       } else {
         Alert.alert(
-          'Email sent',
-          'Check your email to reset your password. Check spam if you don\'t see it.'
+          'Email enviado',
+          'Revisa tu correo para restablecer la contraseña. Si no lo ves, revisa spam.'
         );
       }
     } catch {
-      Alert.alert('Error', 'Something went wrong. Try again.');
+      Alert.alert('Error', 'Algo salió mal. Intenta nuevamente.');
     } finally {
       setIsResettingPassword(false);
     }
@@ -151,7 +151,7 @@ export default function LoginScreen() {
               activeOpacity={0.7}>
               <Icon name="arrow-left" size={24} color={colors.text} />
             </TouchableOpacity>
-            <Text style={[textStyles.heading, { color: colors.text }]}>Sign in</Text>
+            <Text style={[textStyles.heading, { color: colors.text }]}>Iniciar sesión</Text>
             <View style={styles.backButtonPlaceholder} />
           </View>
 
@@ -174,7 +174,7 @@ export default function LoginScreen() {
                   ]}
                   value={email}
                   onChangeText={setEmail}
-                  placeholder="your@email.com"
+                  placeholder="tu@email.com"
                   placeholderTextColor={colors.icon}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -187,7 +187,7 @@ export default function LoginScreen() {
               {/* Password Input */}
               <View style={styles.inputContainer}>
                 <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
-                  Password
+                  Contraseña
                 </Text>
                 <TextInput
                   style={[
@@ -220,7 +220,7 @@ export default function LoginScreen() {
                 {isLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={[styles.primaryButtonText, { color: '#fff' }]}>Sign in</Text>
+                  <Text style={[styles.primaryButtonText, { color: '#fff' }]}>Iniciar sesión</Text>
                 )}
               </TouchableOpacity>
 
@@ -234,17 +234,17 @@ export default function LoginScreen() {
                   <ActivityIndicator size="small" color={colors.tint} />
                 ) : (
                   <Text style={[textStyles.body, { color: colors.tint, textAlign: 'center' }]}>
-                    Forgot password?
+                    ¿Olvidaste tu contraseña?
                   </Text>
                 )}
               </TouchableOpacity>
 
               {/* Sign Up Link */}
               <View style={styles.signupContainer}>
-                <Text style={[textStyles.body, { color: colors.icon }]}>Don&apos;t have an account? </Text>
+                <Text style={[textStyles.body, { color: colors.icon }]}>¿No tienes cuenta? </Text>
                 <TouchableOpacity onPress={handleNavigateToSignup} disabled={isLoading} activeOpacity={0.7}>
                   <Text style={[textStyles.body, { color: colors.tint, fontFamily: fontFamilyMedium }]}>
-                    Create account
+                    Crear cuenta
                   </Text>
                 </TouchableOpacity>
               </View>

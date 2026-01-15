@@ -37,7 +37,7 @@ export default function VerifyEmailScreen() {
 
   const handleResendEmail = async () => {
     if (!email) {
-      Alert.alert('Error', 'Email address not found');
+      Alert.alert('Error', 'No se encontró el email');
       return;
     }
 
@@ -49,15 +49,15 @@ export default function VerifyEmailScreen() {
       // O mejor: usar el método de Supabase para reenviar
       const { error } = await resetPassword(email);
       if (error) {
-        Alert.alert('Error', error.message || 'Couldn\'t resend email. Try again.');
+        Alert.alert('Error', error.message || 'No se pudo reenviar el email. Intenta nuevamente.');
       } else {
         Alert.alert(
-          'Email sent',
-          'We\'ve sent you a new verification email. Please check your inbox.'
+          'Email enviado',
+          'Te enviamos un nuevo email de verificación. Revisa tu bandeja de entrada.'
         );
       }
     } catch {
-      Alert.alert('Error', 'Something went wrong. Try again.');
+      Alert.alert('Error', 'Algo salió mal. Intenta nuevamente.');
     } finally {
       setIsResending(false);
     }
@@ -81,12 +81,12 @@ export default function VerifyEmailScreen() {
 
           {/* Title */}
           <Text style={[textStyles.heading, { color: colors.text, marginTop: spacing.xl, textAlign: 'center' }]}>
-            Check your email
+            Revisa tu email
           </Text>
 
           {/* Description */}
           <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.md, textAlign: 'center' }]}>
-            We&apos;ve sent a verification email to
+            Enviamos un email de verificación a
           </Text>
           {email && (
             <Text style={[textStyles.bodyMedium, { color: colors.tint, marginTop: spacing.xs, textAlign: 'center' }]}>
@@ -95,7 +95,7 @@ export default function VerifyEmailScreen() {
           )}
 
           <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.md, textAlign: 'center' }]}>
-            Please click the link in the email to verify your account before signing in.
+            Haz clic en el enlace del email para verificar tu cuenta antes de iniciar sesión.
           </Text>
 
           {/* Info Box */}
@@ -103,7 +103,7 @@ export default function VerifyEmailScreen() {
             <View style={styles.infoRow}>
               <Icon name="info" size={20} color={colors.tint} />
               <Text style={[textStyles.caption, { color: colors.text, marginLeft: spacing.sm, flex: 1 }]}>
-                Didn&apos;t receive the email? Check your spam folder or try resending.
+                ¿No recibiste el email? Revisa spam o intenta reenviar.
               </Text>
             </View>
           </GlassView>
@@ -120,7 +120,7 @@ export default function VerifyEmailScreen() {
               <>
                 <Icon name="refresh" size={18} color={colors.tint} />
                 <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
-                  Resend verification email
+                  Reenviar email de verificación
                 </Text>
               </>
             )}
@@ -132,7 +132,7 @@ export default function VerifyEmailScreen() {
             onPress={handleGoToLogin}
             activeOpacity={0.8}>
             <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>
-              Go to sign in
+              Ir a iniciar sesión
             </Text>
           </TouchableOpacity>
         </View>

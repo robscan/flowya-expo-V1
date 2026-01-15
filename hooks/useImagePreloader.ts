@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react';
 import { Image } from 'expo-image';
 import { Platform } from 'react-native';
 import { Spot } from '@/data/spots';
-import { getOptimizedImageUrl } from '@/utils/imageHelpers';
+import { getOptimizedImageUrl, getSpotImageUrls } from '@/utils/imageHelpers';
 
 interface UseImagePreloaderOptions {
   /** Número de imágenes a precargar (default: 6) */
@@ -46,11 +46,7 @@ export function useImagePreloader(options: UseImagePreloaderOptions = {}) {
     // Obtener las primeras N imágenes a precargar
     const imagesToPreload = spots
       .slice(0, count)
-      .map(spot => {
-        const imageUrl = spot.image?.url;
-        if (!imageUrl) return null;
-        return getOptimizedImageUrl(imageUrl);
-      })
+      .flatMap((spot) => getSpotImageUrls(spot).map((url) => getOptimizedImageUrl(url)))
       .filter((url): url is string => url !== null);
 
     if (imagesToPreload.length === 0) return;
@@ -113,11 +109,7 @@ export async function preloadSpotImages(
 ): Promise<void> {
   const imagesToPreload = spots
     .slice(0, count)
-    .map(spot => {
-      const imageUrl = spot.image?.url;
-      if (!imageUrl) return null;
-      return getOptimizedImageUrl(imageUrl);
-    })
+    .flatMap((spot) => getSpotImageUrls(spot).map((url) => getOptimizedImageUrl(url)))
     .filter((url): url is string => url !== null);
 
   if (imagesToPreload.length === 0) return;

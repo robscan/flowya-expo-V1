@@ -99,7 +99,7 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
           {isSuggested ? (
             <View style={[styles.suggestedBadge, { backgroundColor: colors.tint + '20' }]}>
               <Text style={[styles.suggestedBadgeText, { color: colors.tint }]}>
-                Suggested
+                Sugerido
               </Text>
           </View>
           ) : (
@@ -126,7 +126,7 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
           <View style={styles.spotInfo}>
             <View style={styles.spotInfoHeader}>
             <Text style={[styles.spotTitle, { color: colors.text }]} numberOfLines={1}>
-              {spot.name || 'Unnamed spot'}
+              {spot.name || 'Spot sin nombre'}
             </Text>
             </View>
             {spot.description && (

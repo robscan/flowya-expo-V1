@@ -57,26 +57,26 @@ export default function SignupScreen() {
   // Obtener mensaje de error amigable desde error de Supabase
   const getErrorMessage = (error: any): string => {
     if (!error || !error.message) {
-      return 'Couldn\'t create account. Please try again.';
+      return 'No se pudo crear la cuenta. Intenta nuevamente.';
     }
 
     const errorMessage = error.message.toLowerCase();
 
     // Errores comunes de Supabase
     if (errorMessage.includes('user already registered') || errorMessage.includes('already registered')) {
-      return 'This email is already registered. Try signing in instead.';
+      return 'Este email ya está registrado. Intenta iniciar sesión.';
     }
     if (errorMessage.includes('invalid email') || errorMessage.includes('email')) {
-      return 'Please enter a valid email address.';
+      return 'Ingresa un email válido.';
     }
     if (errorMessage.includes('password') && errorMessage.includes('weak')) {
-      return 'Password is too weak. Use at least 6 characters with a mix of letters and numbers.';
+      return 'La contraseña es muy débil. Usa al menos 6 caracteres con letras y números.';
     }
     if (errorMessage.includes('network') || errorMessage.includes('fetch') || errorMessage.includes('connection')) {
-      return 'Connection error. Check your internet and try again.';
+      return 'Error de conexión. Revisa tu internet e intenta de nuevo.';
     }
     if (errorMessage.includes('rate limit') || errorMessage.includes('too many')) {
-      return 'Too many attempts. Please wait a moment and try again.';
+      return 'Demasiados intentos. Espera un momento y vuelve a intentar.';
     }
 
     // Retornar mensaje original si no coincide con ningún patrón conocido
@@ -86,25 +86,25 @@ export default function SignupScreen() {
   const handleSignUp = async () => {
     // Validar campos vacíos
     if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
-      Alert.alert('Required fields', 'Please fill in all fields');
+      Alert.alert('Campos requeridos', 'Completa todos los campos');
       return;
     }
 
     // Validar formato de email
     if (!isValidEmail(email.trim())) {
-      Alert.alert('Invalid email', 'Please enter a valid email address');
+      Alert.alert('Email inválido', 'Ingresa un email válido');
       return;
     }
 
     // Validar longitud de contraseña
     if (password.length < 6) {
-      Alert.alert('Password too short', 'Password must be at least 6 characters');
+      Alert.alert('Contraseña muy corta', 'La contraseña debe tener al menos 6 caracteres');
       return;
     }
 
     // Validar que las contraseñas coincidan
     if (password !== confirmPassword) {
-      Alert.alert('Passwords don\'t match', 'Please make sure both passwords are the same');
+      Alert.alert('Las contraseñas no coinciden', 'Verifica que ambas contraseñas sean iguales');
       return;
     }
 
@@ -113,7 +113,7 @@ export default function SignupScreen() {
       const { error } = await signUp(email.trim(), password);
       if (error) {
         const friendlyMessage = getErrorMessage(error);
-        Alert.alert('Sign up error', friendlyMessage);
+        Alert.alert('Error al registrarse', friendlyMessage);
       } else {
         // Éxito: usuario creado, requiere verificación de email
         // Nota: Supabase puede mostrar un error 400 en la consola cuando intenta
@@ -128,7 +128,7 @@ export default function SignupScreen() {
       }
     } catch (error: any) {
       console.error('Unexpected error in signup:', error);
-      Alert.alert('Unexpected error', 'Something went wrong. Please try again.');
+      Alert.alert('Error inesperado', 'Algo salió mal. Intenta nuevamente.');
     } finally {
       setIsLoading(false);
     }
@@ -164,7 +164,7 @@ export default function SignupScreen() {
               activeOpacity={0.7}>
               <Icon name="arrow-left" size={24} color={colors.text} />
             </TouchableOpacity>
-            <Text style={[textStyles.heading, { color: colors.text }]}>Create account</Text>
+            <Text style={[textStyles.heading, { color: colors.text }]}>Crear cuenta</Text>
             <View style={styles.backButtonPlaceholder} />
           </View>
 
@@ -187,7 +187,7 @@ export default function SignupScreen() {
                   ]}
                   value={email}
                   onChangeText={setEmail}
-                  placeholder="your@email.com"
+                  placeholder="tu@email.com"
                   placeholderTextColor={colors.icon}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -200,7 +200,7 @@ export default function SignupScreen() {
               {/* Password Input */}
               <View style={styles.inputContainer}>
                 <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
-                  Password
+                  Contraseña
                 </Text>
                 <TextInput
                   style={[
@@ -213,7 +213,7 @@ export default function SignupScreen() {
                   ]}
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="•••••••• (min. 6 characters)"
+                  placeholder="•••••••• (mín. 6 caracteres)"
                   placeholderTextColor={colors.icon}
                   secureTextEntry
                   autoCapitalize="none"
@@ -226,7 +226,7 @@ export default function SignupScreen() {
               {/* Confirm Password Input */}
               <View style={styles.inputContainer}>
                 <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
-                  Confirm Password
+                  Confirmar contraseña
                 </Text>
                 <TextInput
                   style={[
@@ -259,16 +259,16 @@ export default function SignupScreen() {
                 {isLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={[styles.primaryButtonText, { color: '#fff' }]}>Create account</Text>
+                  <Text style={[styles.primaryButtonText, { color: '#fff' }]}>Crear cuenta</Text>
                 )}
               </TouchableOpacity>
 
               {/* Login Link */}
               <View style={styles.loginContainer}>
-                <Text style={[textStyles.body, { color: colors.icon }]}>Already have an account? </Text>
+                <Text style={[textStyles.body, { color: colors.icon }]}>¿Ya tienes cuenta? </Text>
                 <TouchableOpacity onPress={handleNavigateToLogin} disabled={isLoading} activeOpacity={0.7}>
                   <Text style={[textStyles.body, { color: colors.tint, fontFamily: fontFamilyMedium }]}>
-                    Sign in
+                    Iniciar sesión
                   </Text>
                 </TouchableOpacity>
               </View>

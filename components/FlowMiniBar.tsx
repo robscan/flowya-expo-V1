@@ -44,7 +44,7 @@ export function FlowMiniBar({ onExpand }: FlowMiniBarProps) {
 
   // Determinar visibilidad: solo visible cuando flow está activo o pausado
   const isVisible = flowState.status === 'active' || flowState.status === 'paused';
-  const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
+  const flow = flowState.flowId ? getFlowById(flowState.flowId) : null;
 
   // Ocultar cuando FlowScreen está abierta
   const isFlowScreenOpen = pathname === '/flow-screen' || pathname?.includes('flow-screen');
@@ -65,7 +65,7 @@ export function FlowMiniBar({ onExpand }: FlowMiniBarProps) {
   }
 
   const totalSpots = flow.spots.length;
-  const spotsText = totalSpots === 1 ? '1 spot added' : `${totalSpots} spots added`;
+  const spotsText = totalSpots === 1 ? '1 spot agregado' : `${totalSpots} spots agregados`;
 
   const handlePress = () => {
     expandFlow();
@@ -98,7 +98,7 @@ export function FlowMiniBar({ onExpand }: FlowMiniBarProps) {
                 </Text>
               ) : (
                 <Text style={[textStyles.heading5, { color: colors.text }]}>
-                  Now moving
+                  En movimiento
                 </Text>
               )}
               <Text style={[textStyles.bodySmall, { color: colors.icon }]}>

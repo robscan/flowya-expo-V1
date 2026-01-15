@@ -22,14 +22,13 @@ import { textStyles } from '@/constants/typography';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { useWorldSpots } from '@/contexts/WorldSpotContext';
 import { PinData } from '@/contexts/SavedContext';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
-import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
 import * as pinsService from '@/utils/pinsService';
+import { normalizeSpotId } from '@/utils/normalizeSpotId';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -46,16 +45,12 @@ export default function SharedMapScreen() {
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
 
-  const { spots, isLoading: spotsLoading, getSpotById } = useSpot();
-  const { worldSpots, isLoading: isLoadingWorldSpots, getWorldSpotById } = useWorldSpots();
+  const { spots, isLoading: spotsLoading } = useSpot();
   const { user } = useAuth();
   const [sharedUserPins, setSharedUserPins] = useState<Record<string, PinData>>({});
   const [isLoadingPins, setIsLoadingPins] = useState(true);
   
-  // Combinar UserSpots y WorldSpots
-  const allSpots: UnifiedSpot[] = useMemo(() => {
-    return combineSpots(spots, worldSpots);
-  }, [spots, worldSpots]);
+  const allSpots = useMemo(() => spots, [spots]);
   
   // Calcular distancia del spot seleccionado
   const selectedSpotDistance = useSpotDistance(selectedSpot?.id || null, baseLocation);
@@ -88,7 +83,7 @@ export default function SharedMapScreen() {
   
   // Filtrar spots según estado de Pin del usuario compartido
   const filteredSpots = useMemo(() => {
-    if (spotsLoading || isLoadingWorldSpots || isLoadingPins) return [];
+    if (spotsLoading || isLoadingPins) return [];
     
     // Filtrar pins del usuario compartido por el estado especificado
     const pinnedSpotIds = Object.entries(sharedUserPins)
@@ -102,6 +97,10 @@ export default function SharedMapScreen() {
     // Crear un Set con los IDs base de los pins (sin el prefijo "user-{userId}-")
     const baseSpotIds = new Set<string>();
     pinnedSpotIds.forEach((pinSpotId) => {
+      const normalizedPinSpotId = normalizeSpotId(pinSpotId);
+      if (normalizedPinSpotId) {
+        baseSpotIds.add(normalizedPinSpotId);
+      }
       // Agregar el ID completo (por si es un UserSpot con ese ID)
       baseSpotIds.add(pinSpotId);
       
@@ -118,7 +117,7 @@ export default function SharedMapScreen() {
           // Tomar todo después del UUID (partes desde índice 6 en adelante)
           const originalSpotId = parts.slice(6).join('-');
           if (originalSpotId) {
-            baseSpotIds.add(originalSpotId); // ID base del WorldSpot original
+            baseSpotIds.add(originalSpotId);
           }
         } else if (parts.length >= 4) {
           // Fallback: si tiene menos partes, intentar tomar todo después de "user-{firstPart}"
@@ -135,16 +134,10 @@ export default function SharedMapScreen() {
     const matchedSpots = allSpots.filter((spot) => {
       // Verificar coincidencia directa
       if (baseSpotIds.has(spot.id)) return true;
-      
-      // Verificar si es un UserSpot con originWorldSpotId que coincida
-      if ('originWorldSpotId' in spot && spot.originWorldSpotId && baseSpotIds.has(spot.originWorldSpotId)) {
-        return true;
-      }
-      
       return false;
     });
     return matchedSpots as Spot[];
-  }, [allSpots, sharedUserPins, pinState, spotsLoading, isLoadingWorldSpots, isLoadingPins]);
+  }, [allSpots, sharedUserPins, pinState, spotsLoading, isLoadingPins]);
 
   // Obtener nombre del usuario (usar email o placeholder)
   const userName = useMemo(() => {
@@ -159,10 +152,10 @@ export default function SharedMapScreen() {
     return userIdName.charAt(0).toUpperCase() + userIdName.slice(1);
   }, [params.userId, user]);
 
-  // Título según estado (en inglés como ejemplo: "Visited places of Oscar")
+  // Título según estado
   const title = useMemo(() => {
-    const stateLabel = pinState === 'visited' ? 'Visited places' : 'Places to visit';
-    return `${stateLabel} of ${userName}`;
+    const stateLabel = pinState === 'visited' ? 'Lugares visitados' : 'Lugares por visitar';
+    return `${stateLabel} de ${userName}`;
   }, [pinState, userName]);
 
   // Enable LayoutAnimation on Android
@@ -192,7 +185,7 @@ export default function SharedMapScreen() {
     }
   };
 
-  if (spotsLoading || isLoadingWorldSpots || isLoadingPins) {
+  if (spotsLoading || isLoadingPins) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />

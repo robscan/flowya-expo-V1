@@ -13,11 +13,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
-import { useSpot } from './SpotContext';
-import { useWorldSpots } from './WorldSpotContext';
 import { useAuth } from './AuthContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import * as pinsService from '@/utils/pinsService';
+import { normalizeSpotId, normalizeSpotIds } from '@/utils/normalizeSpotId';
 
 const STORAGE_KEY = '@flowya_saved';
 
@@ -78,7 +77,7 @@ interface SavedContextType {
   changePinState: (spotId: string, newState: PinState) => void;
   isSpotPinned: (spotId: string) => boolean;
   getPinState: (spotId: string) => PinState | null;
-  getPinData: (spotId: string) => PinData | null; // V1.3: Obtener PinData usando ID correcto (WorldSpot o UserSpot)
+  getPinData: (spotId: string) => PinData | null; // V1.3: Obtener PinData usando ID normalizado
   getPinnedSpots: (state?: PinState) => string[];
   // V1.2: Funciones de Diario de Viaje
   updatePinNotes: (spotId: string, notes: string) => void;
@@ -135,12 +134,61 @@ const defaultData: SavedData = {
   savedPaths: [],
 };
 
+const normalizeSpotIdInput = (spotId: string): string => {
+  const normalized = normalizeSpotId(spotId);
+  return normalized || spotId;
+};
+
+const mergePinData = (primary: PinData, secondary: PinData): PinData => {
+  return {
+    ...primary,
+    notes: primary.notes ?? secondary.notes,
+    personalPhotos: primary.personalPhotos ?? secondary.personalPhotos,
+    visitedAt: primary.visitedAt ?? secondary.visitedAt,
+  };
+};
+
+const normalizePinsRecord = (pins: Record<string, PinData> | undefined): Record<string, PinData> => {
+  if (!pins) return {};
+  const normalizedPins: Record<string, PinData> = {};
+
+  Object.entries(pins).forEach(([spotId, pin]) => {
+    const normalizedId = normalizeSpotIdInput(pin.spotId || spotId);
+    if (!normalizedId) return;
+    const normalizedPin: PinData = {
+      ...pin,
+      spotId: normalizedId,
+    };
+
+    const existing = normalizedPins[normalizedId];
+    if (!existing) {
+      normalizedPins[normalizedId] = normalizedPin;
+      return;
+    }
+
+    const primary = existing.pinnedAt >= normalizedPin.pinnedAt ? existing : normalizedPin;
+    const secondary = primary === existing ? normalizedPin : existing;
+    normalizedPins[normalizedId] = mergePinData(primary, secondary);
+  });
+
+  return normalizedPins;
+};
+
+const normalizeTimelineEntries = (entries: TimelineEntry[] | undefined): TimelineEntry[] => {
+  if (!entries) return [];
+  return entries.map((entry) => {
+    if (entry.type !== 'spot') return entry;
+    return {
+      ...entry,
+      itemId: normalizeSpotIdInput(entry.itemId),
+    };
+  });
+};
+
 export function SavedProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<SavedData>(defaultData);
   const [isLoading, setIsLoading] = useState(true);
   const { isAuthenticated, user } = useAuth();
-  const { getWorldSpotById, convertWorldSpotToUserSpot } = useWorldSpots();
-  const { createSpot, getSpotById, spots } = useSpot();
   const isOnline = useNetworkStatus();
   
   // V1.3: Flags de control de sincronización
@@ -240,6 +288,15 @@ export function SavedProvider({ children }: { children: ReactNode }) {
         if (parsed.visitedPaths) {
           delete parsed.visitedPaths;
         }
+
+        // Normalizar IDs legacy de spots en pins y listas
+        parsed.pins = normalizePinsRecord(parsed.pins);
+        parsed.likedSpots = normalizeSpotIds(parsed.likedSpots);
+        parsed.likedSpotsFromPlayer = normalizeSpotIds(parsed.likedSpotsFromPlayer);
+        parsed.notMyVibeSpots = normalizeSpotIds(parsed.notMyVibeSpots);
+        parsed.savedSpots = normalizeSpotIds(parsed.savedSpots);
+        parsed.timeline = normalizeTimelineEntries(parsed.timeline);
+
         setData(parsed);
       }
     } catch (error) {
@@ -276,17 +333,18 @@ export function SavedProvider({ children }: { children: ReactNode }) {
 
       // 2. Cargar pins desde Supabase (source of truth)
       const supabasePins = await pinsService.fetchUserPins(user.id);
+      const normalizedPins = normalizePinsRecord(supabasePins);
       
       // 3. Actualizar estado local con pins de Supabase
       setData((prev) => ({
         ...prev,
-        pins: supabasePins,
+        pins: normalizedPins,
       }));
 
       // 4. Actualizar cache local
       await saveDataToLocal({
         ...data,
-        pins: supabasePins,
+        pins: normalizedPins,
       });
 
       lastSyncRef.current = new Date();
@@ -306,7 +364,11 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      await pinsService.upsertPin(pin, user.id);
+      const normalizedPin: PinData = {
+        ...pin,
+        spotId: normalizeSpotIdInput(pin.spotId),
+      };
+      await pinsService.upsertPin(normalizedPin, user.id);
     } catch (error) {
       console.error('Error syncing pin to Supabase:', error);
       // Error no crítico: cache local ya está actualizado
@@ -355,7 +417,8 @@ export function SavedProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      await pinsService.deletePin(spotId, user.id);
+      const normalizedSpotId = normalizeSpotIdInput(spotId);
+      await pinsService.deletePin(normalizedSpotId, user.id);
     } catch (error) {
       console.error('Error deleting pin from Supabase:', error);
     }
@@ -477,18 +540,19 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleLikeSpot = (spotId: string) => {
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
     setData((prev) => {
-      const isLiked = prev.likedSpots.includes(spotId);
+      const isLiked = prev.likedSpots.includes(normalizedSpotId);
       const newLikedSpots = isLiked
-        ? prev.likedSpots.filter((id) => id !== spotId)
-        : [...prev.likedSpots, spotId];
+        ? prev.likedSpots.filter((id) => id !== normalizedSpotId)
+        : [...prev.likedSpots, normalizedSpotId];
 
       // Si se quita el like, también quitar de notMyVibe si está
       const newNotMyVibeSpots = isLiked
         ? prev.notMyVibeSpots
-        : prev.notMyVibeSpots.filter((id) => id !== spotId);
+        : prev.notMyVibeSpots.filter((id) => id !== normalizedSpotId);
 
-      addToTimeline('spot', isLiked ? 'like' : 'like', spotId);
+      addToTimeline('spot', isLiked ? 'like' : 'like', normalizedSpotId);
 
       return {
         ...prev,
@@ -516,14 +580,15 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleLikeSpotFromPlayer = (spotId: string, spotType?: string) => {
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
     setData((prev) => {
-      const isLiked = prev.likedSpotsFromPlayer.includes(spotId);
+      const isLiked = prev.likedSpotsFromPlayer.includes(normalizedSpotId);
       const newLikedSpotsFromPlayer = isLiked
-        ? prev.likedSpotsFromPlayer.filter((id) => id !== spotId)
-        : [...prev.likedSpotsFromPlayer, spotId];
+        ? prev.likedSpotsFromPlayer.filter((id) => id !== normalizedSpotId)
+        : [...prev.likedSpotsFromPlayer, normalizedSpotId];
 
       // También agregar/quitar del timeline
-      addToTimeline('spot', 'like', spotId);
+      addToTimeline('spot', 'like', normalizedSpotId);
 
       // SCOPE 5: Actualizar afinidad por tipo de spot (aumentar si like, disminuir si unlike)
       const newSpotTypeAffinity = spotType
@@ -539,18 +604,19 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleNotMyVibeSpot = (spotId: string, spotType?: string) => {
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
     setData((prev) => {
-      const isNotMyVibe = prev.notMyVibeSpots.includes(spotId);
+      const isNotMyVibe = prev.notMyVibeSpots.includes(normalizedSpotId);
       const newNotMyVibeSpots = isNotMyVibe
-        ? prev.notMyVibeSpots.filter((id) => id !== spotId)
-        : [...prev.notMyVibeSpots, spotId];
+        ? prev.notMyVibeSpots.filter((id) => id !== normalizedSpotId)
+        : [...prev.notMyVibeSpots, normalizedSpotId];
 
       // Si se marca como not my vibe, quitar de likes si está
       const newLikedSpots = isNotMyVibe
         ? prev.likedSpots
-        : prev.likedSpots.filter((id) => id !== spotId);
+        : prev.likedSpots.filter((id) => id !== normalizedSpotId);
 
-      addToTimeline('spot', 'not_my_vibe', spotId);
+      addToTimeline('spot', 'not_my_vibe', normalizedSpotId);
 
       // SCOPE 5: Actualizar afinidad por tipo de spot (disminuir si dislike, aumentar ligeramente si unlike)
       const newSpotTypeAffinity = spotType
@@ -567,15 +633,14 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleSaveSpot = (spotId: string) => {
-    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
-    const actualSpotId = ensureUserSpot(spotId);
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
     setData((prev) => {
-      const isSaved = prev.savedSpots.includes(actualSpotId);
+      const isSaved = prev.savedSpots.includes(normalizedSpotId);
       const newSavedSpots = isSaved
-        ? prev.savedSpots.filter((id) => id !== actualSpotId)
-        : [...prev.savedSpots, actualSpotId];
+        ? prev.savedSpots.filter((id) => id !== normalizedSpotId)
+        : [...prev.savedSpots, normalizedSpotId];
 
-      addToTimeline('spot', 'saved', actualSpotId);
+      addToTimeline('spot', 'saved', normalizedSpotId);
 
       return {
         ...prev,
@@ -658,10 +723,10 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   // Aliases para compatibilidad temporal
   const toggleSavePath = toggleSaveFlow;
 
-  const isSpotLiked = (spotId: string) => data.likedSpots.includes(spotId);
-  const isSpotLikedFromPlayer = (spotId: string) => data.likedSpotsFromPlayer.includes(spotId);
-  const isSpotNotMyVibe = (spotId: string) => data.notMyVibeSpots.includes(spotId);
-  const isSpotSaved = (spotId: string) => data.savedSpots.includes(spotId);
+  const isSpotLiked = (spotId: string) => data.likedSpots.includes(normalizeSpotIdInput(spotId));
+  const isSpotLikedFromPlayer = (spotId: string) => data.likedSpotsFromPlayer.includes(normalizeSpotIdInput(spotId));
+  const isSpotNotMyVibe = (spotId: string) => data.notMyVibeSpots.includes(normalizeSpotIdInput(spotId));
+  const isSpotSaved = (spotId: string) => data.savedSpots.includes(normalizeSpotIdInput(spotId));
   const isFlowSaved = (flowId: string) => data.savedFlows.includes(flowId);
   // Aliases para compatibilidad
   const isPathSaved = isFlowSaved;
@@ -672,44 +737,9 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   // V1.2: Funciones de Pin
-  // FASE 7: Helper para convertir WorldSpot a UserSpot si es necesario
-  // REGLA PRINCIPAL V1.2: Convierte WorldSpot a UserSpot al primer cambio de estatus
-  const ensureUserSpot = (spotId: string): string => {
-    // Validar que el usuario esté autenticado
-    if (!user?.id) {
-      throw new Error('User must be authenticated to convert WorldSpot to UserSpot');
-    }
-
-    // Verificar si es un WorldSpot
-    const worldSpot = getWorldSpotById(spotId);
-    if (worldSpot) {
-      // V1.2: ID estable para buscar si ya existe un UserSpot convertido
-      const expectedUserSpotId = `user-${user.id}-${spotId}`;
-      
-      // Verificar si ya existe un UserSpot convertido para este WorldSpot
-      const existingUserSpot = getSpotById(expectedUserSpotId);
-      if (existingUserSpot) {
-        // Ya existe, retornar el ID existente (evitar duplicados)
-        return existingUserSpot.id;
-      }
-
-      // No existe, convertir WorldSpot a UserSpot
-      const userSpot = convertWorldSpotToUserSpot(spotId, user.id);
-      // Crear el spot en SpotContext (se persiste automáticamente) con el ID del UserSpot
-      // V1.3: Pasar el ID del UserSpot para que createSpot lo use en lugar de generar uno nuevo
-      const { id: userSpotId, createdAt, updatedAt, ...userSpotData } = userSpot;
-      const createdSpot = createSpot(userSpotData, { id: userSpotId });
-      // Retornar el nuevo ID del UserSpot (usar el ID del spot creado para asegurar consistencia)
-      return createdSpot.id;
-    }
-    // Si no es WorldSpot, retornar el ID original
-    return spotId;
-  };
-
   const pinSpot = (spotId: string, state: PinState): string => {
-    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
-    // Esto crea el User Spot y retorna su ID
-    const actualSpotId = ensureUserSpot(spotId);
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
+    const actualSpotId = normalizedSpotId;
 
     let newPinData: PinData | null = null;
 
@@ -718,7 +748,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       
       // FASE 7: Transferir estado del pin al User Spot
       // Si había un pin con el ID del World Spot, migrarlo al User Spot
-      const existingPin = prev.pins[spotId];
+      const existingPin = prev.pins[normalizedSpotId];
       const existingUserSpotPin = prev.pins[actualSpotId];
       
       // Si ya existe un pin para el User Spot, actualizarlo
@@ -744,7 +774,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       newPinData = pinData;
 
       // Remover pin del World Spot si existe (migración)
-      const { [spotId]: removedWorldSpotPin, ...remainingPins } = prev.pins;
+      const { [normalizedSpotId]: removedLegacyPin, ...remainingPins } = prev.pins;
 
       const newPins = {
         ...remainingPins,
@@ -768,20 +798,8 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const unpinSpot = (spotId: string) => {
-    // FASE 7: Usar el ID correcto (puede ser WorldSpot o UserSpot)
-    const worldSpot = getWorldSpotById(spotId);
-    let actualSpotId = spotId;
-    
-    if (worldSpot && user?.id) {
-      // V1.2: Buscar UserSpot convertido usando ID estable
-      const expectedUserSpotId = `user-${user.id}-${spotId}`;
-      if (expectedUserSpotId in data.pins) {
-        actualSpotId = expectedUserSpotId;
-      } else if (spotId in data.pins) {
-        // Si el pin está con el ID del WorldSpot, mantenerlo (caso legacy)
-        actualSpotId = spotId;
-      }
-    }
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
+    const actualSpotId = normalizedSpotId;
     
     setData((prev) => {
       const { [actualSpotId]: removed, ...remainingPins } = prev.pins;
@@ -800,57 +818,9 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const changePinState = (spotId: string, newState: PinState) => {
-    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
-    // V1.2: REGLA PRINCIPAL - Convertir al primer cambio de estatus si es WorldSpot
-    let actualSpotId = spotId;
-    const worldSpot = getWorldSpotById(spotId);
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
+    const actualSpotId = normalizedSpotId;
     let updatedPinData: PinData | null = null;
-    
-    // Si es WorldSpot, buscar o crear UserSpot convertido
-    if (worldSpot && user?.id) {
-      const expectedUserSpotId = `user-${user.id}-${spotId}`;
-      // Verificar si ya existe pin con el ID del WorldSpot (caso legacy) o con el UserSpot
-      if (spotId in data.pins) {
-        // Migrar pin del WorldSpot al UserSpot
-        actualSpotId = ensureUserSpot(spotId);
-        // Mover el pin al UserSpot
-        setData((prev) => {
-          const existingPin = prev.pins[spotId];
-          if (existingPin) {
-            const { [spotId]: removed, ...remainingPins } = prev.pins;
-            const now = new Date();
-            const updatedPin: PinData = {
-              ...existingPin,
-              spotId: actualSpotId,
-              state: newState,
-              visitedAt: newState === 'visited' ? (existingPin.visitedAt || now) : undefined,
-            };
-            updatedPinData = updatedPin;
-            return {
-              ...prev,
-              pins: {
-                ...remainingPins,
-                [actualSpotId]: updatedPin,
-              },
-            };
-          }
-          return prev;
-        });
-        
-        // V1.3: Sincronizar con Supabase
-        if (updatedPinData && isAuthenticated) {
-          syncPinToSupabase(updatedPinData).catch((error) => {
-            console.error('Error syncing pin to Supabase:', error);
-          });
-        }
-        return;
-      } else if (expectedUserSpotId in data.pins) {
-        actualSpotId = expectedUserSpotId;
-      } else {
-        // No existe pin, convertir WorldSpot a UserSpot
-        actualSpotId = ensureUserSpot(spotId);
-      }
-    }
     
     setData((prev) => {
       const existingPin = prev.pins[actualSpotId];
@@ -885,45 +855,23 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const isSpotPinned = (spotId: string): boolean => {
-    // FASE 7: Verificar tanto el ID original como el ID convertido (si es WorldSpot)
-    if (spotId in data.pins) return true;
-    const worldSpot = getWorldSpotById(spotId);
-    if (worldSpot && user?.id) {
-      // V1.2: Buscar UserSpot convertido usando ID estable
-      const expectedUserSpotId = `user-${user.id}-${spotId}`;
-      if (expectedUserSpotId in data.pins) return true;
-    }
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
+    if (normalizedSpotId in data.pins) return true;
     return false;
   };
 
   const getPinState = (spotId: string): PinState | null => {
-    // FASE 7: Verificar tanto el ID original como el ID convertido (si es WorldSpot)
-    if (data.pins[spotId]) {
-      return data.pins[spotId].state;
-    }
-    const worldSpot = getWorldSpotById(spotId);
-    if (worldSpot && user?.id) {
-      // V1.2: Buscar UserSpot convertido usando ID estable
-      const expectedUserSpotId = `user-${user.id}-${spotId}`;
-      if (data.pins[expectedUserSpotId]) {
-        return data.pins[expectedUserSpotId].state;
-      }
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
+    if (data.pins[normalizedSpotId]) {
+      return data.pins[normalizedSpotId].state;
     }
     return null;
   };
 
   const getPinData = (spotId: string): PinData | null => {
-    // FASE 7: Verificar tanto el ID original como el ID convertido (si es WorldSpot)
-    if (data.pins[spotId]) {
-      return data.pins[spotId];
-    }
-    const worldSpot = getWorldSpotById(spotId);
-    if (worldSpot && user?.id) {
-      // V1.2: Buscar UserSpot convertido usando ID estable
-      const expectedUserSpotId = `user-${user.id}-${spotId}`;
-      if (data.pins[expectedUserSpotId]) {
-        return data.pins[expectedUserSpotId];
-      }
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
+    if (data.pins[normalizedSpotId]) {
+      return data.pins[normalizedSpotId];
     }
     return null;
   };
@@ -938,18 +886,8 @@ export function SavedProvider({ children }: { children: ReactNode }) {
 
   // V1.2: Funciones de Diario de Viaje
   const updatePinNotes = (spotId: string, notes: string) => {
-    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
-    // V1.2: Buscar UserSpot convertido si existe, sino convertir
-    let actualSpotId = spotId;
-    const worldSpot = getWorldSpotById(spotId);
-    if (worldSpot && user?.id) {
-      const expectedUserSpotId = `user-${user.id}-${spotId}`;
-      if (expectedUserSpotId in data.pins) {
-        actualSpotId = expectedUserSpotId;
-      } else {
-        actualSpotId = ensureUserSpot(spotId);
-      }
-    }
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
+    const actualSpotId = normalizedSpotId;
 
     let updatedPinData: PinData | null = null;
 
@@ -981,18 +919,8 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const addPinPhoto = (spotId: string, photoUrl: string) => {
-    // FASE 7: Convertir WorldSpot a UserSpot si es necesario
-    // V1.2: Buscar UserSpot convertido si existe, sino convertir
-    let actualSpotId = spotId;
-    const worldSpot = getWorldSpotById(spotId);
-    if (worldSpot && user?.id) {
-      const expectedUserSpotId = `user-${user.id}-${spotId}`;
-      if (expectedUserSpotId in data.pins) {
-        actualSpotId = expectedUserSpotId;
-      } else {
-        actualSpotId = ensureUserSpot(spotId);
-      }
-    }
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
+    const actualSpotId = normalizedSpotId;
 
     let updatedPinData: PinData | null = null;
 
@@ -1028,18 +956,8 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   };
 
   const removePinPhoto = (spotId: string, photoUrl: string) => {
-    // FASE 7: Usar el ID correcto (puede ser WorldSpot o UserSpot)
-    // V1.2: Buscar UserSpot convertido si existe, sino convertir
-    let actualSpotId = spotId;
-    const worldSpot = getWorldSpotById(spotId);
-    if (worldSpot && user?.id) {
-      const expectedUserSpotId = `user-${user.id}-${spotId}`;
-      if (expectedUserSpotId in data.pins) {
-        actualSpotId = expectedUserSpotId;
-      } else {
-        actualSpotId = ensureUserSpot(spotId);
-      }
-    }
+    const normalizedSpotId = normalizeSpotIdInput(spotId);
+    const actualSpotId = normalizedSpotId;
 
     let updatedPinData: PinData | null = null;
 

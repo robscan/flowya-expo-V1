@@ -44,29 +44,29 @@ interface SaveFlowModalProps {
  * Generar nombre sugerido basado en los spots del flow
  */
 function generateSuggestedName(flow: Flow | null, spots: Spot[]): string {
-  if (!flow) return 'My Flow';
+  if (!flow) return 'Mi flow';
   
   const flowSpots = flow.spots
     .map((spotId) => spots.find((s) => s.id === spotId))
     .filter((s): s is Spot => s !== undefined);
   
   if (flowSpots.length === 0) {
-    return flow.title || 'My Flow';
+    return flow.title || 'Mi flow';
   }
   
   // Si hay un solo spot, usar su nombre
   if (flowSpots.length === 1) {
-    return `${flowSpots[0].name || 'Flow'} Tour`;
+    return `${flowSpots[0].name || 'Flow'} Recorrido`;
   }
   
   // Si hay múltiples spots, usar el primero y último
   if (flowSpots.length >= 2) {
-    const first = flowSpots[0].name || 'Start';
-    const last = flowSpots[flowSpots.length - 1].name || 'End';
-    return `${first} to ${last}`;
+    const first = flowSpots[0].name || 'Inicio';
+    const last = flowSpots[flowSpots.length - 1].name || 'Fin';
+    return `${first} a ${last}`;
   }
   
-  return flow.title || 'My Flow';
+  return flow.title || 'Mi flow';
 }
 
 export function SaveFlowModal({
@@ -168,12 +168,12 @@ export function SaveFlowModal({
               <View style={styles.header}>
                 <Text style={[textStyles.heading3, { color: colors.text }]}>
                   {confirmationStep === 'naming'
-                    ? 'Save Flow'
+                    ? 'Guardar flow'
                     : flowState === 'edited'
-                    ? 'Save changes?'
+                    ? '¿Guardar cambios?'
                     : isSaved
-                    ? 'Close Flow'
-                    : 'Save Flow'}
+                    ? 'Cerrar flow'
+                    : 'Guardar flow'}
                 </Text>
                 <Pressable
                   onPress={handleCancel}
@@ -195,19 +195,19 @@ export function SaveFlowModal({
                   {/* Mensaje según estado del flow */}
                   {flowState === 'draft' && hasChanges ? (
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                      Do you want to save this Flow before leaving?
+                      ¿Quieres guardar este flow antes de salir?
                     </Text>
                   ) : flowState === 'edited' ? (
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                      {currentName ? `Save changes to "${currentName}"?` : 'Save changes to this Flow?'}
+                      {currentName ? `¿Guardar cambios en "${currentName}"?` : '¿Guardar cambios en este flow?'}
                     </Text>
                   ) : flowState === 'saved' && !hasChanges ? (
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                      {currentName || 'Flow saved'}
+                      {currentName || 'Flow guardado'}
                     </Text>
                   ) : (
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                      Exit without saving?
+                      ¿Salir sin guardar?
                     </Text>
                   )}
 
@@ -225,7 +225,7 @@ export function SaveFlowModal({
                             },
                           ]}
                           onPress={handleConfirmSave}>
-                          <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save</Text>
+                          <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Guardar</Text>
                         </Pressable>
                       </View>
                       <Pressable
@@ -235,7 +235,7 @@ export function SaveFlowModal({
                         ]}
                         onPress={onExitWithoutSaving}>
                         <Text style={[textStyles.bodyMedium, { color: colors.icon }]}>
-                          Don't save
+                          No guardar
                         </Text>
                       </Pressable>
                     </>
@@ -252,7 +252,7 @@ export function SaveFlowModal({
                             },
                           ]}
                           onPress={handleSave}>
-                          <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save Changes</Text>
+                          <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Guardar cambios</Text>
                         </Pressable>
                       </View>
                       <Pressable
@@ -262,7 +262,7 @@ export function SaveFlowModal({
                         ]}
                         onPress={onDiscardChanges || onExitWithoutSaving}>
                         <Text style={[textStyles.bodyMedium, { color: colors.icon }]}>
-                          Discard Changes
+                          Descartar cambios
                         </Text>
                       </Pressable>
                     </>
@@ -278,7 +278,7 @@ export function SaveFlowModal({
                           },
                         ]}
                         onPress={onExitWithoutSaving}>
-                        <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Close</Text>
+                        <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Cerrar</Text>
                       </Pressable>
                     </View>
                   ) : (
@@ -293,7 +293,7 @@ export function SaveFlowModal({
                           },
                         ]}
                         onPress={onExitWithoutSaving}>
-                        <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Exit</Text>
+                        <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Salir</Text>
                       </Pressable>
                     </View>
                   )}
@@ -310,13 +310,13 @@ export function SaveFlowModal({
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled">
                     <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, marginBottom: spacing.md }]}>
-                      Give your Flow a name so you can find it later.
+                      Ponle un nombre al flow para encontrarlo después.
                     </Text>
 
                     {/* Input */}
                     <View style={styles.inputContainer}>
                       <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
-                        Flow name
+                        Nombre del flow
                       </Text>
                       <TextInput
                         style={[
@@ -337,7 +337,7 @@ export function SaveFlowModal({
                         onSubmitEditing={handleSave}
                       />
                       <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2 }]}>
-                        {flowName.length}/50 characters
+                        {flowName.length}/50 caracteres
                       </Text>
                     </View>
 
@@ -353,7 +353,7 @@ export function SaveFlowModal({
                           },
                         ]}
                         onPress={handleSave}>
-                        <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save Flow</Text>
+                        <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Guardar flow</Text>
                       </Pressable>
                     </View>
                   </ScrollView>

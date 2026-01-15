@@ -115,7 +115,7 @@ export default function DesignSystemScreen() {
     return (
       <View style={[styles.navContainer, { backgroundColor: colors.background, borderRightColor: colors.icon + '20' }]}>
         <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.md }]}>
-          Navigation
+          Navegación
         </Text>
         {navItems.map((item) => (
           <TouchableOpacity
@@ -243,14 +243,14 @@ export default function DesignSystemScreen() {
                     {value}
                   </Text>
                   {key === 'text' && (
-                    <Text style={[textStyles.body, { color: value, marginTop: spacing.xs }]} numberOfLines={1}>
-                      Sample text in this color
-                    </Text>
+                      <Text style={[textStyles.body, { color: value, marginTop: spacing.xs }]} numberOfLines={1}>
+                        Texto de ejemplo en este color
+                      </Text>
                   )}
                   {key === 'background' && (
                     <View style={[styles.colorPreview, { backgroundColor: value, borderWidth: 1, borderColor: colors.icon + '40' }]}>
                       <Text style={[textStyles.caption, { color: displayColors.text }]}>
-                        Background preview
+                        Vista previa de fondo
                       </Text>
                     </View>
                   )}
@@ -591,14 +591,14 @@ export default function DesignSystemScreen() {
             <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
               large (default)
             </Text>
-            <SectionHeader title="Nearby - Spots" variant="large" />
+            <SectionHeader title="Cerca de ti - Spots" variant="large" />
           </View>
 
           <View style={styles.componentExample}>
             <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
               small
             </Text>
-            <SectionHeader title="Maybe You Like" variant="small" />
+            <SectionHeader title="Tal vez te guste" variant="small" />
           </View>
 
           <View style={styles.componentExample}>
@@ -606,7 +606,7 @@ export default function DesignSystemScreen() {
               con subtítulo
             </Text>
             <SectionHeader 
-              title="Recommended - Spots" 
+              title="Recomendados - Spots"
               subtitle="Basado en tu ubicación"
               variant="large" 
             />
@@ -617,7 +617,7 @@ export default function DesignSystemScreen() {
               con acciones
             </Text>
             <SectionHeader 
-              title="My Flows" 
+              title="Mis flows"
               actions={[
                 { icon: 'profile', onPress: () => {}, variant: 'secondary' },
                 { icon: 'add', onPress: () => {}, variant: 'secondary' },
@@ -706,11 +706,11 @@ export default function DesignSystemScreen() {
             <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
               FormField (base)
             </Text>
-            <FormField label="Name" required>
-              <FormTextInput placeholder="Enter name" />
+            <FormField label="Nombre" required>
+              <FormTextInput placeholder="Ingresa el nombre" />
             </FormField>
-            <FormField label="Description" error="This field is required">
-              <FormTextArea placeholder="Enter description" />
+            <FormField label="Descripción" error="Este campo es obligatorio">
+              <FormTextArea placeholder="Ingresa la descripción" />
             </FormField>
           </View>
 
@@ -719,10 +719,10 @@ export default function DesignSystemScreen() {
             <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
               FormTextInput
             </Text>
-            <FormTextInput placeholder="Default input" />
-            <FormTextInput placeholder="With left icon" leftIcon="search" style={{ marginTop: spacing.sm }} />
-            <FormTextInput placeholder="With error" error style={{ marginTop: spacing.sm }} />
-            <FormTextInput placeholder="Disabled" disabled style={{ marginTop: spacing.sm }} />
+            <FormTextInput placeholder="Input por defecto" />
+            <FormTextInput placeholder="Con icono a la izquierda" leftIcon="search" style={{ marginTop: spacing.sm }} />
+            <FormTextInput placeholder="Con error" error style={{ marginTop: spacing.sm }} />
+            <FormTextInput placeholder="Deshabilitado" disabled style={{ marginTop: spacing.sm }} />
           </View>
 
           {/* FormTextArea */}
@@ -730,7 +730,7 @@ export default function DesignSystemScreen() {
             <Text style={[textStyles.label, { color: colors.icon, marginBottom: spacing.xs }]}>
               FormTextArea
             </Text>
-            <FormTextArea placeholder="Enter multiline text" numberOfLines={3} />
+            <FormTextArea placeholder="Ingresa texto multilinea" numberOfLines={3} />
           </View>
 
           {/* FormTypeSelector */}
@@ -797,7 +797,7 @@ export default function DesignSystemScreen() {
           SpotMediaCard
         </Text>
         <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.md }]}>
-          CANONICAL: Spot card with image. Used in: Home, Search (grid), Saved, recommendations
+          CANONICAL: Card de spot con imagen. Usado en: Home, Search (grid), Saved, recomendaciones
         </Text>
         
         <View style={styles.componentExamples}>
@@ -838,7 +838,7 @@ export default function DesignSystemScreen() {
           SpotInlineCard
         </Text>
         <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.md }]}>
-          CANONICAL: Spot card without image. Used in: FlowScreen, Map overlays, editing contexts
+          CANONICAL: Card de spot sin imagen. Usado en: FlowScreen, overlays de mapa, edición
         </Text>
         
         <View style={styles.componentExamples}>
@@ -932,7 +932,7 @@ export default function DesignSystemScreen() {
           FlowCard.Display
         </Text>
         <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.md }]}>
-          CANONICAL: Flow card for listings. Used in: Home, Search, Saved
+          CANONICAL: Card de flow para listados. Usado en: Home, Search, Saved
         </Text>
         
         <View style={styles.componentExample}>
@@ -953,9 +953,9 @@ export default function DesignSystemScreen() {
         </Text>
         
         <View style={styles.componentExample}>
-          <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.sm }]}>
-            (Requiere flow activo en FlowContext para renderizarse)
-          </Text>
+            <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.sm }]}>
+              (Requiere flow activo en FlowContext para renderizarse)
+            </Text>
         </View>
       </View>
     </View>
@@ -968,7 +968,7 @@ export default function DesignSystemScreen() {
       {
         icon: 'back',
         onPress: () => {},
-        tooltip: 'Back',
+        tooltip: 'Volver',
       },
     ];
 
@@ -976,12 +976,12 @@ export default function DesignSystemScreen() {
       {
         icon: 'share',
         onPress: () => {},
-        tooltip: 'Share',
+        tooltip: 'Compartir',
       },
       {
         icon: 'bookmark',
         onPress: () => {},
-        tooltip: 'Bookmark',
+        tooltip: 'Guardar',
         isActive: false,
       },
     ];
@@ -1076,7 +1076,7 @@ export default function DesignSystemScreen() {
               </Text>
               <View style={[styles.patternExample, { borderColor: colors.icon + '20', padding: spacing.md }]}>
                 <Text style={[textStyles.heading, { color: colors.text, marginBottom: spacing.sm }]}>
-                  Flow Title
+                  Título del flow
                 </Text>
                 <InfoMeta
                   chip={{ label: 'WALKING' }}

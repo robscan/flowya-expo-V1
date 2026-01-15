@@ -47,7 +47,7 @@ export default function FlowFullPlayerScreen() {
   const flowMiniBarHeight = 56;
   const dynamicPaddingBottom = flowMiniBarHeight + (isTabBarVisible ? tabBarHeight : 0) + spacing.md;
 
-  const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
+  const flow = flowState.flowId ? getFlowById(flowState.flowId) : null;
   const flowSpots = flow ? getFlowSpots(flow, spots) : [];
   const currentSpot = currentSpotId ? getSpotById(currentSpotId) : null;
 
@@ -117,7 +117,7 @@ export default function FlowFullPlayerScreen() {
             />
           </View>
           <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
-            {progress}% completed
+            {progress}% completado
           </Text>
         </View>
 
@@ -126,7 +126,7 @@ export default function FlowFullPlayerScreen() {
           <View style={styles.currentSpotContainer}>
             <View style={styles.currentSpotHeader}>
               <Text style={[textStyles.bodyMedium, { color: colors.icon }]}>
-                Current spot
+                Spot actual
               </Text>
             </View>
             <SpotInlineCard spot={currentSpot} state="active" />
@@ -136,7 +136,7 @@ export default function FlowFullPlayerScreen() {
         {/* Path spots list */}
         <View style={styles.spotsListContainer}>
           <Text style={[textStyles.bodyMedium, { color: colors.icon, marginBottom: spacing.md }]}>
-            Full route
+            Ruta completa
           </Text>
           {flowSpots.map((spot, index) => {
             const isCurrent = spot.id === currentSpotId;

@@ -32,8 +32,6 @@ import { usePath } from '@/contexts/PathContext';
 import { useRegion } from '@/contexts/RegionContext';
 import { PinState, useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { useWorldSpots } from '@/contexts/WorldSpotContext';
-import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
 import { Flow } from '@/data/flows';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -218,7 +216,7 @@ function HomeSkeleton({ colors }: HomeSkeletonProps) {
       <View style={styles.exploreContent}>
         {/* Skeleton para sliders principales */}
         <View style={styles.section}>
-          <SectionHeader title="Nearby - Spots" variant="large" />
+          <SectionHeader title="Cerca de ti - Spots" variant="large" />
           <View style={styles.sliderContent}>
             {Array.from({ length: 3 }).map((_, index) => (
               <View key={index} style={[styles.sliderCard, { width: CARD_WIDTH }]}>
@@ -228,7 +226,7 @@ function HomeSkeleton({ colors }: HomeSkeletonProps) {
           </View>
         </View>
         <View style={styles.section}>
-          <SectionHeader title="For You - Spots" variant="large" />
+          <SectionHeader title="Para ti - Spots" variant="large" />
           <View style={styles.sliderContent}>
             {Array.from({ length: 3 }).map((_, index) => (
               <View key={index} style={[styles.sliderCard, { width: CARD_WIDTH }]}>
@@ -239,7 +237,7 @@ function HomeSkeleton({ colors }: HomeSkeletonProps) {
         </View>
         {/* Skeleton para lista de flows */}
         <View style={styles.section}>
-          <SectionHeader title="Nearby - Flows" variant="large" />
+          <SectionHeader title="Cerca de ti - Flows" variant="large" />
           <View style={styles.pathsList}>
             {Array.from({ length: 3 }).map((_, index) => (
               <SkeletonCard key={index} size="medium" showImage={false} />
@@ -278,7 +276,7 @@ function HomeEmptyState({ colors, selectedRegionLabel, onAddSpot, onExploreMap }
           activeOpacity={0.8}>
           <Icon name="plus" size={20} color="#fff" />
           <Text style={[textStyles.bodyMedium, { color: '#fff', marginLeft: spacing.xs }]}>
-            Add a new spot
+            Agregar nuevo spot
           </Text>
         </TouchableOpacity>
       </View>
@@ -302,17 +300,14 @@ export default function HomeScreen() {
   
   // Hooks de datos
   const { spots, isLoading: isLoadingSpots, refreshSpots } = useSpot();
-  const { worldSpots, isLoading: isLoadingWorldSpots } = useWorldSpots();
   const { paths, isLoading: isLoadingPaths, refreshFlows } = usePath();
   const { isSpotPinned, getPinnedSpots } = useSaved(); // V1.2: Sistema de Pins
   const { selectedRegionId, currentRegionLabel: contextRegionLabel, setSelectedRegionId, setCurrentLocation, isCurrentLocation } = useRegion();
   
-  // FASE 7: Combinar UserSpots y WorldSpots
   // V1.2: Memoizar allSpots de manera estable para evitar re-renders innecesarios
   // Solo recalcular cuando cambien los IDs o cantidad de spots (no solo por referencia)
-  const prevAllSpotsRef = useRef<UnifiedSpot[]>([]);
+  const prevAllSpotsRef = useRef<Spot[]>([]);
   const prevSpotsIdsRef = useRef<string>('');
-  const prevWorldSpotsIdsRef = useRef<string>('');
   
   // Crear dependencias estables basadas en IDs y longitudes
   const spotsKey = useMemo(() => {
@@ -320,32 +315,24 @@ export default function HomeScreen() {
     return `${spots.length}:${ids}`;
   }, [spots]);
   
-  const worldSpotsKey = useMemo(() => {
-    const ids = worldSpots.map(s => s.id).sort().join(',');
-    return `${worldSpots.length}:${ids}`;
-  }, [worldSpots]);
   
-  const allSpots: UnifiedSpot[] = useMemo(() => {
+  const allSpots: Spot[] = useMemo(() => {
     // Comparar keys estables, no referencias de arrays
     const currentSpotsKey = spotsKey;
-    const currentWorldSpotsKey = worldSpotsKey;
     const spotsChanged = prevSpotsIdsRef.current !== currentSpotsKey;
-    const worldSpotsChanged = prevWorldSpotsIdsRef.current !== currentWorldSpotsKey;
     
     // Solo recalcular si realmente cambiaron los IDs o longitudes
-    if (!spotsChanged && !worldSpotsChanged && prevAllSpotsRef.current.length > 0) {
+    if (!spotsChanged && prevAllSpotsRef.current.length > 0) {
       // Retornar el array anterior (estable por referencia) si los IDs no cambiaron
       return prevAllSpotsRef.current;
     }
     
     // Actualizar refs
     prevSpotsIdsRef.current = currentSpotsKey;
-    prevWorldSpotsIdsRef.current = currentWorldSpotsKey;
     
-    const combined = combineSpots(spots, worldSpots);
-    prevAllSpotsRef.current = combined; // Guardar para próxima comparación
-    return combined;
-  }, [spots, worldSpots, spotsKey, worldSpotsKey]);
+    prevAllSpotsRef.current = spots; // Guardar para próxima comparación
+    return spots;
+  }, [spots, spotsKey]);
   
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
@@ -354,7 +341,7 @@ export default function HomeScreen() {
   // El snapshot se actualiza solo en: carga inicial, refresh, o reentrar a la vista
   // IMPORTANTE: NO se actualiza inmediatamente cuando se agrega un pin
   const pinnedSnapshotRef = useRef<Set<string>>(new Set());
-  const allSpotsRef = useRef<UnifiedSpot[]>([]);
+  const allSpotsRef = useRef<Spot[]>([]);
   const isSpotPinnedRef = useRef<(spotId: string) => boolean>(() => false);
   
   // Mantener refs actualizados sin causar recreaciones
@@ -369,71 +356,20 @@ export default function HomeScreen() {
   const updatePinnedSnapshot = useCallback(() => {
     // Capturar estado actual de todos los spots pinned usando refs
     // Esto evita que el callback se recree cuando allSpots o isSpotPinned cambian
-    // V1.2: IMPORTANTE - Verificar pins usando isSpotPinned que maneja tanto WorldSpots como UserSpots
-    // isSpotPinned internamente verifica tanto el ID directo como el ID del UserSpot derivado
     // V1.3: Usar getPinnedSpots para obtener los IDs de todos los spots pinned
     // Esto asegura que siempre lea el estado actual de pins, no una versión obsoleta
     const pinnedSpotIds = getPinnedSpotsRef.current();
     const pinnedSet = new Set<string>(pinnedSpotIds);
     
-    // Crear un mapa de originWorldSpotId -> UserSpot ID para búsqueda rápida
-    const originWorldSpotToUserSpotMap = new Map<string, string>();
-    allSpotsRef.current.forEach((spot) => {
-      if ('originWorldSpotId' in spot && spot.originWorldSpotId) {
-        originWorldSpotToUserSpotMap.set(spot.originWorldSpotId, spot.id);
-      }
-    });
-    
-    // Agregar los originWorldSpotIds correspondientes a los UserSpots pinned
-    // Esto permite que el snapshot funcione cuando un WorldSpot se convierte a UserSpot
-    pinnedSpotIds.forEach((userSpotId) => {
-      // Buscar si este UserSpot tiene un originWorldSpotId
-      const spot = allSpotsRef.current.find(s => s.id === userSpotId);
-      if (spot && 'originWorldSpotId' in spot && spot.originWorldSpotId) {
-        pinnedSet.add(spot.originWorldSpotId);
-      }
-      // También buscar en el mapa inverso (por si el UserSpot no está en allSpots aún)
-      originWorldSpotToUserSpotMap.forEach((mappedUserSpotId, originWorldSpotId) => {
-        if (mappedUserSpotId === userSpotId) {
-          pinnedSet.add(originWorldSpotId);
-        }
-      });
-    });
-    
-    // También agregar WorldSpots que tienen UserSpots derivados pinned
-    // Esto maneja el caso donde allSpots contiene WorldSpots pero los pins están guardados con IDs de UserSpots
-    allSpotsRef.current.forEach((spot) => {
-      // Si es un WorldSpot, verificar si tiene un UserSpot derivado que está pinned
-      if (!('originWorldSpotId' in spot)) {
-        // Es un WorldSpot, buscar si tiene un UserSpot derivado pinned
-        const userSpotId = originWorldSpotToUserSpotMap.get(spot.id);
-        if (userSpotId && pinnedSet.has(userSpotId)) {
-          pinnedSet.add(spot.id);
-        }
-      }
-    });
-    
     pinnedSnapshotRef.current = pinnedSet;
   }, []); // Sin dependencias - usa refs para acceder a valores actuales
   
   // Función wrapper que usa el snapshot en lugar de la función actual
-  // V1.2: IMPORTANTE - Verificar tanto el ID del spot como el originWorldSpotId si existe
-  // Esto asegura que el snapshot funcione correctamente cuando se convierte un WorldSpot a UserSpot
   const isSpotPinnedSnapshot = useCallback((spotId: string): boolean => {
     // Verificar el ID directo del spot
     if (pinnedSnapshotRef.current.has(spotId)) {
       return true;
     }
-    
-    // Si es un UserSpot, también verificar el originWorldSpotId
-    // Buscar el spot en allSpots para obtener su originWorldSpotId
-    const spot = allSpotsRef.current.find(s => s.id === spotId);
-    if (spot && 'originWorldSpotId' in spot && spot.originWorldSpotId) {
-      if (pinnedSnapshotRef.current.has(spot.originWorldSpotId)) {
-        return true;
-      }
-    }
-    
     return false;
   }, []);
   
@@ -471,8 +407,7 @@ export default function HomeScreen() {
   }, []);
 
   // Combinar estados de carga (ubicación es opcional, no bloquea)
-  // FASE 7: Incluir isLoadingWorldSpots en el estado de carga
-  const isLoading = anyLoading(isLoadingSpots, isLoadingWorldSpots, isLoadingPaths);
+  const isLoading = anyLoading(isLoadingSpots, isLoadingPaths);
 
   // Marcar hasLoadedOnce cuando los datos estén listos (no cargando)
   // Nota: No esperamos a ubicación porque es opcional (puede ser null)
@@ -501,7 +436,6 @@ export default function HomeScreen() {
     const current = {hasLoadedOnce,allSpotsCount:allSpots.length,pathsCount:paths.length,baseLocation,selectedRegionId};
     prevDepsRef.current = current;
     if (!hasLoadedOnce) return emptyHomeData;
-    // FASE 7: Usar allSpots (UserSpots + WorldSpots)
     // V1.2: Usar snapshot de Pins en lugar de función actual (evita re-filtrado inmediato)
     const result = prepareHomeData(allSpots, paths, baseLocation, isSpotPinnedSnapshot, selectedRegionId);
     return result;
@@ -698,36 +632,36 @@ export default function HomeScreen() {
         <View style={styles.exploreContent}>
           {/* Sliders de spots (card completa) */}
           <SpotSlider
-            title="Nearby - Spots"
+            title="Cerca de ti - Spots"
             spots={homeData.nearbySpots}
             onSpotPress={handleSpotPress}
           />
           <SpotSlider
-            title="For You - Spots"
+            title="Para ti - Spots"
             spots={homeData.forYouSpots}
             onSpotPress={handleSpotPress}
           />
           <SpotSlider
-            title="Recommended - Spots"
+            title="Recomendados - Spots"
             spots={homeData.recommendedSpots}
             onSpotPress={handleSpotPress}
           />
 
           {/* Sliders de spots compactos (card pequeña) */}
           <SpotSliderCompact
-            title="Maybe You Like - Spots"
+            title="Tal vez te guste - Spots"
             spots={homeData.maybeYouLikeSpots}
             onSpotPress={handleSpotPress}
           />
           <SpotSliderCompact
-            title="New - Spots"
+            title="Nuevos - Spots"
             spots={homeData.newSpots}
             onSpotPress={handleSpotPress}
           />
 
           {/* Listados de flows */}
           <FlowList
-            title="Nearby - Flows"
+            title="Cerca de ti - Flows"
             flows={homeData.nearbyFlows}
             spots={spots}
             onFlowPress={handleFlowPress}

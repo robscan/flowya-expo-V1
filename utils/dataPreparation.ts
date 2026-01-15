@@ -20,7 +20,6 @@ import { BaseLocation } from '@/contexts/LocationContext';
 import { Flow } from '@/data/flows';
 import { Spot } from '@/data/spots';
 import { LocationRegion } from '@/types/locationRegion';
-import { UnifiedSpot } from '@/utils/worldSpotHelpers';
 import { getAvailableRegionsFromSpots, getSpotsByRegion, RegionOption } from '@/core/region';
 import { getSpotDistance } from '@/hooks/useSpotDistance';
 import { isFlowComplete } from '@/utils/flowValidation';
@@ -77,7 +76,7 @@ export type { RegionOption } from '@/core/region';
  * @returns Datos preparados para Home Screen
  */
 export function prepareHomeData(
-  spots: UnifiedSpot[], // FASE 7: UserSpots + WorldSpots
+  spots: Spot[],
   flows: Flow[],
   baseLocation: BaseLocation | null,
   isSpotPinned: (spotId: string) => boolean, // V1.2: Sistema de Pins

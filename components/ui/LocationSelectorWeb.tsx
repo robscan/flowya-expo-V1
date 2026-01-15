@@ -1016,12 +1016,12 @@ export function LocationSelectorWeb({
       {/* Instrucciones */}
       {!disabled && !locationState.coordinates && (
         <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
-          Search for an address or use your current location
+          Busca una dirección o usa tu ubicación actual
         </Text>
       )}
       {!disabled && locationState.coordinates && (
         <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
-          Click on the map to adjust the location
+          Haz clic en el mapa para ajustar la ubicación
         </Text>
       )}
     </View>

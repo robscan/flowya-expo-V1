@@ -36,10 +36,10 @@ export interface AIFieldSelectorProps {
 }
 
 const FIELD_LABELS: Record<AIField, string> = {
-  whyItMatters: 'Why it matters',
-  culturalContext: 'Cultural context',
-  howToVisit: 'How to visit',
-  narration: 'Narration (for Flow)',
+  whyItMatters: 'Por qué importa',
+  culturalContext: 'Contexto cultural',
+  howToVisit: 'Cómo visitar',
+  narration: 'Narración (para Flow)',
 };
 
 /**
@@ -51,7 +51,7 @@ export function AIFieldSelector({
   onFieldsChange,
   visible,
   onClose,
-  title = 'Select fields to regenerate',
+  title = 'Selecciona campos para regenerar',
 }: AIFieldSelectorProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -132,7 +132,7 @@ export function AIFieldSelector({
               style={[styles.actionButton, styles.cancelButton, { backgroundColor: colors.icon + '20' }]}
               onPress={handleCancel}
               activeOpacity={0.7}>
-              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancelar</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.applyButton, { backgroundColor: colors.tint }]}
@@ -140,7 +140,7 @@ export function AIFieldSelector({
               disabled={tempSelected.length === 0}
               activeOpacity={0.7}>
               <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>
-                Regenerate ({tempSelected.length})
+                Regenerar ({tempSelected.length})
               </Text>
             </TouchableOpacity>
           </View>

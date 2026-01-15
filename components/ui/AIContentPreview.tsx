@@ -50,7 +50,7 @@ export function AIContentPreview({
   onReject,
   visible,
   onEdit,
-  title = 'Generated Content',
+  title = 'Contenido generado',
 }: AIContentPreviewProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -155,7 +155,7 @@ export function AIContentPreview({
               style={[styles.actionButton, styles.editButton, { borderColor: colors.icon + '30' }]}
               onPress={onEdit}
               activeOpacity={0.7}>
-              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Edit</Text>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Editar</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity

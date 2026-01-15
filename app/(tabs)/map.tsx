@@ -25,9 +25,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOverlay } from '@/contexts/OverlayContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { useWorldSpots } from '@/contexts/WorldSpotContext';
 import { Spot } from '@/data/spots';
-import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
@@ -45,38 +43,31 @@ export default function MapScreen() {
   const { baseLocation } = useBaseLocation();
 
   const { spots, isLoading: spotsLoading, getSpotById } = useSpot();
-  const { worldSpots, isLoading: isLoadingWorldSpots, getWorldSpotById } = useWorldSpots();
   const { setIsTabBarVisible } = useOverlay();
   const { isSpotPinned, getPinState, getPinnedSpots } = useSaved();
   const { user } = useAuth();
-  const [selectedSpot, setSelectedSpot] = useState<UnifiedSpot | null>(null);
+  const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pinStateFilter, setPinStateFilter] = useState<PinStateFilterType>('all');
   const [viewportBounds, setViewportBounds] = useState<ViewportBounds | null>(null);
   
-  // FASE 7: Combinar UserSpots y WorldSpots
-  const allSpots: UnifiedSpot[] = useMemo(() => {
-    return combineSpots(spots, worldSpots);
-  }, [spots, worldSpots]);
-
   // Calcular distancia del spot seleccionado (siempre, no condicionalmente)
   const selectedSpotDistance = useSpotDistance(selectedSpot?.id || null, baseLocation);
   
   // V1.2: Filtrar spots según estado de Pin
-  // Nota: El filtro de pinState busca en allSpots (WorldSpots y UserSpots) y verifica si tienen pins
   const preFilteredSpots = useMemo(() => {
     if (pinStateFilter === 'all') {
       // OPTIMIZACIÓN: Limitar a 200 spots más cercanos cuando se muestran todos
       // Esto mejora el rendimiento del mapa sin afectar la experiencia del usuario
       const MAX_SPOTS_ON_MAP = 200;
       
-      if (allSpots.length <= MAX_SPOTS_ON_MAP) {
-        return allSpots;
+      if (spots.length <= MAX_SPOTS_ON_MAP) {
+        return spots;
       }
       
       // Si hay baseLocation, ordenar por distancia y tomar los más cercanos
       if (baseLocation) {
-        const spotsWithDistance = allSpots.map((spot) => {
+        const spotsWithDistance = spots.map((spot) => {
           const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
           const lat = 'lat' in loc && loc.lat !== undefined ? loc.lat : (loc.latitude ?? 0);
           const lng = 'lng' in loc && loc.lng !== undefined ? loc.lng : (loc.longitude ?? 0);
@@ -104,11 +95,11 @@ export default function MapScreen() {
       }
       
       // Sin ubicación, tomar los primeros MAX_SPOTS_ON_MAP
-      return allSpots.slice(0, MAX_SPOTS_ON_MAP);
+      return spots.slice(0, MAX_SPOTS_ON_MAP);
     }
     
-    // Cuando se filtra por pinState, buscar en allSpots (incluye WorldSpots y UserSpots)
-    return allSpots.filter((spot) => {
+    // Cuando se filtra por pinState, buscar en spots
+    return spots.filter((spot) => {
       const isPinned = isSpotPinned(spot.id);
       const pinState = getPinState(spot.id);
       
@@ -122,7 +113,7 @@ export default function MapScreen() {
       
       return false;
     });
-  }, [allSpots, pinStateFilter, isSpotPinned, getPinState]);
+  }, [spots, pinStateFilter, isSpotPinned, getPinState]);
 
   // V1.3: Lazy loading - Filtrar spots visibles en viewport
   const filteredSpots = useVisibleSpots(
@@ -171,7 +162,7 @@ export default function MapScreen() {
   };
 
   // Handle SpotCard press (navegar a SpotDetail)
-  const handleSpotCardPress = (spot: UnifiedSpot) => {
+  const handleSpotCardPress = (spot: Spot) => {
     router.push(`/spot-detail?id=${spot.id}`);
     setSelectedSpot(null); // Limpiar selección
   };
@@ -270,17 +261,11 @@ export default function MapScreen() {
 
   // Centrar y destacar spot cuando hay spotId en params
   useEffect(() => {
-    if (!params.spotId || spotsLoading || isLoadingWorldSpots) {
+    if (!params.spotId || spotsLoading) {
       return;
     }
 
-    // Buscar en UserSpots primero
-    let spot: UnifiedSpot | undefined = getSpotById(params.spotId);
-    
-    // Si no se encuentra, buscar en WorldSpots
-    if (!spot) {
-      spot = getWorldSpotById(params.spotId);
-    }
+    let spot: Spot | undefined = getSpotById(params.spotId);
     
     if (!spot) {
       console.warn(`MapScreen: Spot with id ${params.spotId} not found`);
@@ -295,7 +280,7 @@ export default function MapScreen() {
       mapViewRef.current.centerOnSpot(params.spotId!);
     }
     // El card solo aparecerá si el usuario toca explícitamente el marker
-  }, [params.spotId, spotsLoading, isLoadingWorldSpots, getSpotById, getWorldSpotById]);
+  }, [params.spotId, spotsLoading, getSpotById]);
 
   // Limpiar selección cuando cambia highlightedSpotId desde params
   useEffect(() => {
@@ -304,7 +289,7 @@ export default function MapScreen() {
     }
   }, [params.spotId]);
 
-  if (spotsLoading || isLoadingWorldSpots) {
+  if (spotsLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.emptyState}>

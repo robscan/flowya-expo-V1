@@ -94,7 +94,7 @@ export function MapControls({
         {showFullscreen && onFullscreenToggle && (
           <>
             <View style={styles.buttonDivider} />
-            <Tooltip text={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}>
+            <Tooltip text={isFullscreen ? 'Salir de pantalla completa' : 'Entrar a pantalla completa'}>
               <Pressable
                 style={({ pressed }) => [
                   buttonBaseStyle,

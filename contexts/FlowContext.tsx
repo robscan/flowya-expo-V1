@@ -7,35 +7,22 @@
  * - pauseFlow
  * - endFlow
  * - nextSpot
- * - Progreso del Path actual
+ * - Progreso del Flow actual
  * - Spot actual y siguiente
  */
 
 import { useRouter } from 'expo-router';
 import { createContext, ReactNode, useContext, useMemo, useRef, useState } from 'react';
+import { FlowRun, NarrationBlock } from '@/data/flows';
 import { flowEventEmitter } from '@/utils/flowEventEmitter';
 import { usePath } from './PathContext';
 
-export type FlowStatus = 'idle' | 'active' | 'paused';
-
-export type NarrationBlock = 'anticipation' | 'presence' | 'transition';
-
-export interface FlowState {
-  status: FlowStatus;
-  currentPathId: string | null;
-  currentSpotIndex: number;
-  currentNarrationBlock: NarrationBlock | null; // SCOPE 2: Bloque narrativo actual dentro del spot
-  startedAt: Date | null;
-  pausedAt: Date | null;
-  isMinimized: boolean; // Estado de minimizado
-}
-
 interface FlowContextType {
-  flowState: FlowState;
+  flowState: FlowRun;
   currentSpotId: string | null;
   nextSpotId: string | null;
   progress: number; // 0-100
-  startFlow: (pathId: string) => void;
+  startFlow: (flowId: string) => void;
   pauseFlow: () => void;
   resumeFlow: () => void;
   endFlow: () => void; // Legacy - use closeFlow instead
@@ -52,9 +39,9 @@ interface FlowContextType {
   removeSpotFromFlow: (spotId: string) => void; // Remover spot del flow actual
 }
 
-const defaultFlowState: FlowState = {
+const defaultFlowRun: FlowRun = {
   status: 'idle',
-  currentPathId: null,
+  flowId: null,
   currentSpotIndex: 0,
   currentNarrationBlock: null, // SCOPE 2: Sin bloque narrativo cuando está idle
   startedAt: null,
@@ -65,7 +52,7 @@ const defaultFlowState: FlowState = {
 const FlowContext = createContext<FlowContextType | undefined>(undefined);
 
 export function FlowProvider({ children }: { children: ReactNode }) {
-  const [flowState, setFlowState] = useState<FlowState>(defaultFlowState);
+  const [flowState, setFlowState] = useState<FlowRun>(defaultFlowRun);
   const router = useRouter();
   const { getFlowById, updateFlow } = usePath();
   
@@ -75,7 +62,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
 
   // Calcular spot IDs actual y siguiente basado en el estado
   const { currentSpotId, nextSpotId, progress } = useMemo(() => {
-    if (!flowState.currentPathId || flowState.status === 'idle') {
+    if (!flowState.flowId || flowState.status === 'idle') {
       return {
         currentSpotId: null,
         nextSpotId: null,
@@ -83,7 +70,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const flow = getFlowById(flowState.currentPathId);
+    const flow = getFlowById(flowState.flowId);
     if (!flow || flow.spots.length === 0) {
       return {
         currentSpotId: null,
@@ -109,9 +96,9 @@ export function FlowProvider({ children }: { children: ReactNode }) {
       nextSpotId,
       progress,
     };
-  }, [flowState.currentPathId, flowState.currentSpotIndex, flowState.status, getFlowById]);
+  }, [flowState.flowId, flowState.currentSpotIndex, flowState.status, getFlowById]);
 
-  const startFlow = (pathId: string) => {
+  const startFlow = (flowId: string) => {
     // Resetear eventos one-shot emitidos para nuevo Flow
     flowEventEmitter.resetOneShots();
     flowStartedEmittedRef.current = false;
@@ -119,7 +106,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
 
     setFlowState({
       status: 'active',
-      currentPathId: pathId,
+      flowId,
       currentSpotIndex: 0,
       currentNarrationBlock: 'anticipation', // SCOPE 2: Iniciar con primer bloque narrativo
       startedAt: new Date(),
@@ -162,7 +149,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
    * @deprecated Use closeFlow() instead for complete flow closure
    */
   const endFlow = () => {
-    setFlowState(defaultFlowState);
+    setFlowState(defaultFlowRun);
   };
 
   /**
@@ -195,7 +182,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
     }
 
     // Step 2: Clear active flow state
-    setFlowState(defaultFlowState);
+    setFlowState(defaultFlowRun);
 
     // Step 3: Reset flow-related UI state is handled by state reset above
     // (isMinimized, currentSpotIndex, etc. all reset to defaults)
@@ -260,11 +247,11 @@ export function FlowProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!flowState.currentPathId) {
+    if (!flowState.flowId) {
       return;
     }
 
-    const flow = getFlowById(flowState.currentPathId);
+    const flow = getFlowById(flowState.flowId);
     if (!flow) {
       return;
     }
@@ -310,11 +297,11 @@ export function FlowProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!flowState.currentPathId) {
+    if (!flowState.flowId) {
       return;
     }
 
-    const flow = getFlowById(flowState.currentPathId);
+    const flow = getFlowById(flowState.flowId);
     if (!flow) {
       return;
     }
@@ -352,11 +339,11 @@ export function FlowProvider({ children }: { children: ReactNode }) {
   };
 
   const addSpotToFlow = (spotId: string) => {
-    if (!flowState.currentPathId || (flowState.status !== 'active' && flowState.status !== 'paused')) {
+    if (!flowState.flowId || (flowState.status !== 'active' && flowState.status !== 'paused')) {
       return;
     }
 
-    const flow = getFlowById(flowState.currentPathId);
+    const flow = getFlowById(flowState.flowId);
     if (!flow) {
       return;
     }
@@ -368,17 +355,17 @@ export function FlowProvider({ children }: { children: ReactNode }) {
 
     // Agregar el spot al final del flow
     const updatedSpots = [...flow.spots, spotId];
-    updateFlow(flowState.currentPathId, {
+    updateFlow(flowState.flowId, {
       spots: updatedSpots,
     });
   };
 
   const reorderFlowSpots = (newOrder: string[]) => {
-    if (!flowState.currentPathId || (flowState.status !== 'active' && flowState.status !== 'paused')) {
+    if (!flowState.flowId || (flowState.status !== 'active' && flowState.status !== 'paused')) {
       return;
     }
 
-    const flow = getFlowById(flowState.currentPathId);
+    const flow = getFlowById(flowState.flowId);
     if (!flow) {
       return;
     }
@@ -394,17 +381,17 @@ export function FlowProvider({ children }: { children: ReactNode }) {
     }
 
     // Actualizar el orden del flow
-    updateFlow(flowState.currentPathId, {
+    updateFlow(flowState.flowId, {
       spots: newOrder,
     });
   };
 
   const removeSpotFromFlow = (spotId: string) => {
-    if (!flowState.currentPathId || (flowState.status !== 'active' && flowState.status !== 'paused')) {
+    if (!flowState.flowId || (flowState.status !== 'active' && flowState.status !== 'paused')) {
       return;
     }
 
-    const flow = getFlowById(flowState.currentPathId);
+    const flow = getFlowById(flowState.flowId);
     if (!flow) {
       return;
     }
@@ -422,7 +409,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
 
     // Remover el spot del flow
     const updatedSpots = flow.spots.filter(id => id !== spotId);
-    updateFlow(flowState.currentPathId, {
+    updateFlow(flowState.flowId, {
       spots: updatedSpots,
     });
   };

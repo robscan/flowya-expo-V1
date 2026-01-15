@@ -33,9 +33,9 @@ export function PinStateFilter({
 
   // Opciones del filtro (orden fijo)
   const filterOptions: { value: PinStateFilterType; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'to_visit', label: 'To Visit' },
-    { value: 'visited', label: 'Visited' },
+    { value: 'all', label: 'Todos' },
+    { value: 'to_visit', label: 'Por visitar' },
+    { value: 'visited', label: 'Visitados' },
   ];
 
   return (
@@ -84,14 +84,14 @@ const styles = StyleSheet.create({
   container: {
     paddingTop: spacing.xs,
     paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 0,
     borderBottomWidth: 1,
     marginBottom: spacing.sm,
   },
   tabsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   tab: {
     paddingVertical: spacing.xs,

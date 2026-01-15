@@ -21,7 +21,6 @@ import { PathProvider } from '@/contexts/PathContext';
 import { RegionProvider } from '@/contexts/RegionContext';
 import { SavedProvider } from '@/contexts/SavedContext';
 import { SpotProvider } from '@/contexts/SpotContext';
-import { WorldSpotProvider } from '@/contexts/WorldSpotContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // Mantener la splash screen visible mientras cargan las fuentes
@@ -62,14 +61,13 @@ export default function RootLayout() {
     <AuthProvider>
       <LocationProvider>
         <RegionProvider>
-          <WorldSpotProvider>
-            <SpotProvider>
-              <PathProvider>
-                <FlowProvider>
-                  <NarrationProvider>
-                    <SavedProvider>
-                      <OverlayProvider>
-                    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <SpotProvider>
+            <PathProvider>
+              <FlowProvider>
+                <NarrationProvider>
+                  <SavedProvider>
+                    <OverlayProvider>
+                  <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
                       <View style={styles.container}>
                         <Stack>
                           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -93,14 +91,13 @@ export default function RootLayout() {
                           </View>
                         )}
                       </View>
-                    </ThemeProvider>
-                      </OverlayProvider>
-                    </SavedProvider>
-                  </NarrationProvider>
-                </FlowProvider>
-              </PathProvider>
-            </SpotProvider>
-          </WorldSpotProvider>
+                  </ThemeProvider>
+                    </OverlayProvider>
+                  </SavedProvider>
+                </NarrationProvider>
+              </FlowProvider>
+            </PathProvider>
+          </SpotProvider>
         </RegionProvider>
       </LocationProvider>
   </AuthProvider>

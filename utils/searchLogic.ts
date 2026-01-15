@@ -1,5 +1,5 @@
 /**
- * Search Logic - Búsqueda contextual de Spots y Paths
+ * Search Logic - Búsqueda contextual de Spots y Flows
  * Scope 10: Search Screen - Lógica de búsqueda
  * 
  * Funcionalidades:
@@ -9,14 +9,13 @@
  * - Ranking de resultados por relevancia
  */
 
+import { Flow, getFlowSpots } from '@/data/flows';
 import { Spot } from '@/data/spots';
-import { Path, getPathSpots } from '@/data/paths';
-import { UnifiedSpot } from '@/utils/worldSpotHelpers';
 
 export interface SearchResult {
-  type: 'spot' | 'path';
+  type: 'spot' | 'flow';
   spot?: Spot;
-  path?: Path;
+  flow?: Flow;
   relevanceScore: number;
   distance?: number; // En metros (opcional, para futuro geolocalización)
 }
@@ -37,9 +36,9 @@ function matchesText(text: string, searchQuery: string): boolean {
 
 /**
  * Calcular score de relevancia para un Spot
- * FASE 7: Acepta UnifiedSpot (UserSpot | WorldSpot)
+ * FASE 7: Acepta Spot
  */
-function calculateSpotRelevance(spot: UnifiedSpot, query: string): number {
+function calculateSpotRelevance(spot: Spot, query: string): number {
   let score = 0;
   const normalizedQuery = query.toLowerCase().trim();
   let hasMatch = false;
@@ -83,10 +82,10 @@ function calculateSpotRelevance(spot: UnifiedSpot, query: string): number {
 
 /**
  * Buscar Spots
- * FASE 7: Acepta UnifiedSpot[] (UserSpots + WorldSpots)
+ * FASE 7: Acepta Spot[]
  */
 export function searchSpots(
-  spots: UnifiedSpot[],
+  spots: Spot[],
   query: string,
   limit: number = 20
 ): SearchResult[] {
@@ -108,12 +107,12 @@ export function searchSpots(
 }
 
 /**
- * Buscar Paths que contienen Spots relacionados
- * FASE 7: Acepta UnifiedSpot[] (UserSpots + WorldSpots)
+ * Buscar Flows que contienen Spots relacionados
+ * FASE 7: Acepta Spot[]
  */
-export function searchPaths(
-  paths: Path[],
-  allSpots: UnifiedSpot[],
+export function searchFlows(
+  flows: Flow[],
+  allSpots: Spot[],
   query: string,
   limit: number = 10
 ): SearchResult[] {
@@ -121,25 +120,25 @@ export function searchPaths(
     return [];
   }
   
-  const results: SearchResult[] = paths
-    .map((path) => {
-      const pathSpots = getPathSpots(path, allSpots);
+  const results: SearchResult[] = flows
+    .map((flow) => {
+      const flowSpots = getFlowSpots(flow, allSpots);
       
       // Calcular score basado en cuántos spots del path coinciden
       let relevanceScore = 0;
       
-      // Coincidencia en título del path
-      if (matchesText(path.title, query)) {
+      // Coincidencia en título del flow
+      if (matchesText(flow.title, query)) {
         relevanceScore += 50;
       }
       
-      // Coincidencia en descripción del path
-      if (path.description && matchesText(path.description, query)) {
+      // Coincidencia en descripción del flow
+      if (flow.description && matchesText(flow.description, query)) {
         relevanceScore += 30;
       }
       
-      // Coincidencias en spots del path
-      const matchingSpots = pathSpots.filter((spot) => {
+      // Coincidencias en spots del flow
+      const matchingSpots = flowSpots.filter((spot) => {
         const spotScore = calculateSpotRelevance(spot, query);
         return spotScore > 0;
       });
@@ -147,14 +146,14 @@ export function searchPaths(
       // Bonus por cada spot que coincide
       relevanceScore += matchingSpots.length * 10;
       
-      // Bonus si el path tiene muchos spots que coinciden
-      if (matchingSpots.length === pathSpots.length) {
+      // Bonus si el flow tiene muchos spots que coinciden
+      if (matchingSpots.length === flowSpots.length && flowSpots.length > 0) {
         relevanceScore += 20; // Todos los spots coinciden
       }
       
       return {
-        type: 'path' as const,
-        path,
+        type: 'flow' as const,
+        flow,
         relevanceScore,
       };
     })
@@ -167,25 +166,25 @@ export function searchPaths(
 
 /**
  * Búsqueda completa (Spots + Paths)
- * FASE 7: Acepta UnifiedSpot[] (UserSpots + WorldSpots)
+ * FASE 7: Acepta Spot[]
  */
 export function searchAll(
-  spots: UnifiedSpot[],
-  paths: Path[],
+  spots: Spot[],
+  flows: Flow[],
   query: string,
   options: {
     spotLimit?: number;
-    pathLimit?: number;
+    flowLimit?: number;
   } = {}
 ): {
   spots: SearchResult[];
-  paths: SearchResult[];
+  flows: SearchResult[];
 } {
-  const { spotLimit = 20, pathLimit = 10 } = options;
+  const { spotLimit = 20, flowLimit = 10 } = options;
   
   return {
     spots: searchSpots(spots, query, spotLimit),
-    paths: searchPaths(paths, spots, query, pathLimit),
+    flows: searchFlows(flows, spots, query, flowLimit),
   };
 }
 
@@ -194,15 +193,15 @@ export function searchAll(
  */
 export function getSuggestions(
   spots: Spot[],
-  paths: Path[],
+  flows: Flow[],
   query: string,
   limit: number = 5
-): Array<{ type: 'spot' | 'path'; id: string; name: string }> {
+): Array<{ type: 'spot' | 'flow'; id: string; name: string }> {
   if (!query || query.trim().length < 2) {
     return [];
   }
   
-  const suggestions: Array<{ type: 'spot' | 'path'; id: string; name: string }> = [];
+  const suggestions: Array<{ type: 'spot' | 'flow'; id: string; name: string }> = [];
   
   // Sugerencias de Spots con nombres similares
   const spotSuggestions = spots
@@ -216,17 +215,17 @@ export function getSuggestions(
   
   suggestions.push(...spotSuggestions);
   
-  // Sugerencias de Paths con títulos similares
-  const pathSuggestions = paths
-    .filter((path) => matchesText(path.title, query))
+  // Sugerencias de Flows con títulos similares
+  const flowSuggestions = flows
+    .filter((flow) => matchesText(flow.title, query))
     .slice(0, limit - spotSuggestions.length)
-    .map((path) => ({
-      type: 'path' as const,
-      id: path.id,
-      name: path.title,
+    .map((flow) => ({
+      type: 'flow' as const,
+      id: flow.id,
+      name: flow.title,
     }));
   
-  suggestions.push(...pathSuggestions);
+  suggestions.push(...flowSuggestions);
   
   return suggestions.slice(0, limit);
 }

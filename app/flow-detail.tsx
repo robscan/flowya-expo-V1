@@ -155,7 +155,7 @@ export default function FlowDetailScreen() {
       });
       
       setIsEditMode(false);
-      Alert.alert('Success', 'Flow updated');
+      Alert.alert('Éxito', 'Flow actualizado');
     } else {
       // Flow de otro usuario: pedir nombre y guardar copia
       setShowSaveCopyModal(true);
@@ -179,7 +179,7 @@ export default function FlowDetailScreen() {
     
     setIsEditMode(false);
     setShowSaveCopyModal(false);
-    Alert.alert('Success', 'Flow copied and saved');
+    Alert.alert('Éxito', 'Flow copiado y guardado');
     
     // Navegar al nuevo flow
     router.replace(`/flow-detail?id=${copiedFlow.id}`);
@@ -220,7 +220,7 @@ export default function FlowDetailScreen() {
     if (!flow) return;
     try {
       const shareUrl = `flowya.app/flow-detail?id=${flow.id}`;
-      const shareMessage = `Check out "${flow.title}" on FLOWYA! ${shareUrl}`;
+      const shareMessage = `Mira "${flow.title}" en FLOWYA. ${shareUrl}`;
       
       await Share.share({
         message: shareMessage,
@@ -228,7 +228,7 @@ export default function FlowDetailScreen() {
       });
     } catch (error) {
       console.error('Error sharing:', error);
-      Alert.alert('Error', 'Couldn\'t share. Try again.');
+      Alert.alert('Error', 'No se pudo compartir. Intenta nuevamente.');
     }
   }, [flow]);
 
@@ -237,12 +237,12 @@ export default function FlowDetailScreen() {
     // Validar ubicación antes de iniciar flow
     if (!baseLocation) {
       Alert.alert(
-        'Location needed',
-        'Enable location for guided navigation. Flow works without it.',
+        'Ubicación necesaria',
+        'Activa la ubicación para navegación guiada. El flow funciona sin ella.',
         [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Continue without location', 
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Continuar sin ubicación',
             onPress: () => {
               startFlow(flow.id);
               router.back();
@@ -334,7 +334,7 @@ export default function FlowDetailScreen() {
         {/* Controles lado izquierdo (stack vertical) */}
         <View style={styles.leftControls}>
           {/* Botón + Add Spot (arriba) */}
-          <Tooltip text="Add spot">
+          <Tooltip text="Agregar spot">
             <Pressable
               style={({ pressed }) => [
                 styles.controlButton,
@@ -357,7 +357,7 @@ export default function FlowDetailScreen() {
 
           {/* Botón Current Location (abajo, solo si baseLocation existe) */}
           {baseLocation && (
-            <Tooltip text="Center on location">
+            <Tooltip text="Centrar en ubicación">
               <Pressable
                 style={({ pressed }) => [
                   styles.controlButton,
@@ -473,7 +473,7 @@ export default function FlowDetailScreen() {
           setIsEditMode(true);
         }
       },
-      tooltip: isEditMode ? 'Save changes' : 'Edit flow',
+      tooltip: isEditMode ? 'Guardar cambios' : 'Editar flow',
     },
   ];
 
@@ -522,7 +522,7 @@ export default function FlowDetailScreen() {
                 ]}
                 value={editedDescription}
                 onChangeText={setEditedDescription}
-                placeholder="Add a description..."
+                placeholder="Agrega una descripción..."
                 placeholderTextColor={colors.icon}
                 multiline
                 numberOfLines={4}
@@ -549,7 +549,7 @@ export default function FlowDetailScreen() {
                     },
                   ]}
                   onPress={handleCancelEdit}>
-                  <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
+                  <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancelar</Text>
                 </Pressable>
                 <Pressable
                   style={({ pressed }) => [
@@ -561,7 +561,7 @@ export default function FlowDetailScreen() {
                     },
                   ]}
                   onPress={handleSaveEdit}>
-                  <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save</Text>
+                  <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Guardar</Text>
                 </Pressable>
               </View>
             )}
@@ -600,12 +600,12 @@ export default function FlowDetailScreen() {
               disabled={!baseLocation}>
               <Icon name="play" size={24} color="#fff" />
               <Text style={[textStyles.bodyMedium, { color: '#fff', marginLeft: spacing.xs }]}>
-                Start Flow
+                Iniciar flow
               </Text>
             </Pressable>
             {!baseLocation && (
               <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs, textAlign: 'center' }]}>
-                Enable location for better experience
+                Activa la ubicación para una mejor experiencia
               </Text>
             )}
           </View>

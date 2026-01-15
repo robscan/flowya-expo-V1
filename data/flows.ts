@@ -15,6 +15,10 @@ import { Spot } from './spots';
 
 export type MovementMode = 'walking' | 'bike' | 'car';
 
+export type FlowRunStatus = 'idle' | 'active' | 'paused';
+
+export type NarrationBlock = 'anticipation' | 'presence' | 'transition';
+
 export interface FlowMetadata {
   inferredFrom?: string[]; // IDs de spots que generaron este flow
   suggestedAt?: Date;
@@ -33,6 +37,19 @@ export interface Flow {
   metadata?: FlowMetadata;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * FlowRun - Ejecucion viva de un Flow
+ */
+export interface FlowRun {
+  status: FlowRunStatus;
+  flowId: string | null;
+  currentSpotIndex: number;
+  currentNarrationBlock: NarrationBlock | null;
+  startedAt: Date | null;
+  pausedAt: Date | null;
+  isMinimized: boolean;
 }
 
 /**

@@ -113,7 +113,7 @@ export function useFlowSubtitle(): FlowSubtitle | null {
       return null;
     }
 
-    const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
+    const flow = flowState.flowId ? getFlowById(flowState.flowId) : null;
     if (!flow) {
       return lastValidSubtitleRef.current;
     }
@@ -258,7 +258,7 @@ export function useFlowSubtitle(): FlowSubtitle | null {
     currentEvent,
     currentEventData,
     flowState.status,
-    flowState.currentPathId,
+    flowState.flowId,
     flowState.currentSpotIndex,
     flowState.currentNarrationBlock,
     currentSpotId,

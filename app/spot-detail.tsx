@@ -20,13 +20,12 @@ import {
     StatusBar,
     StyleSheet,
     Text,
+    TouchableOpacity,
     UIManager,
     View
 } from 'react-native';
 
 import { FlowyaMapView, FlowyaMapViewRef } from '@/components/MapView';
-import { AIContentPreview } from '@/components/ui/AIContentPreview';
-import { AIGenerateButton } from '@/components/ui/AIGenerateButton';
 import { ContentHeader, ContentHeaderAction } from '@/components/ui/ContentHeader';
 import { FormField } from '@/components/ui/FormField';
 // FASE 4: FormIconSelector eliminado - campos avanzados eliminados
@@ -54,20 +53,20 @@ import { showAlert } from '@/utils/alertPolyfill';
 import { hasSeenPinModal, markPinModalSeen } from '@/utils/pinFirstTime';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useSpot } from '@/contexts/SpotContext';
-import { useWorldSpots, WorldSpot } from '@/contexts/WorldSpotContext';
 import { Spot } from '@/data/spots';
-import { isWorldSpot, UnifiedSpot } from '@/utils/worldSpotHelpers';
+import type { SpotReportReason } from '@/types/spotContributions';
 // FASE 4: SpotHours eliminado - campos avanzados eliminados
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
 import { useSpotForm } from '@/hooks/useSpotForm';
-import { isAIConfigured } from '@/utils/aiConfig';
 import { auditSpotEditorial } from '@/utils/spotEditorialAudit';
-import { getValidImage, hasValidImage } from '@/utils/imageHelpers';
+import { getPlaceholderImageSource, getSpotImageUrls, hasValidImage } from '@/utils/imageHelpers';
 import { mapMovementModeToNavigationMode, openNavigationApp } from '@/utils/navigationHelpers';
-import { canDeleteSpot } from '@/utils/permissions';
 import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
+import { normalizeSpotId } from '@/utils/normalizeSpotId';
+import { createSpotReport } from '@/utils/spotReportsService';
+import { createSpotContribution } from '@/utils/spotContributionsService';
 // FASE 4: formatHours, formatCost eliminados - campos avanzados eliminados
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -80,8 +79,7 @@ export default function SpotDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { getSpotById, updateSpot, deleteSpot, markSpotAsSeen, markSpotAsAvailable, getSpotLoadState, generateSpotContent, createSpot, spots } = useSpot();
-  const { getWorldSpotById, convertWorldSpotToUserSpot } = useWorldSpots();
+  const { getSpotById, markSpotAsSeen, markSpotAsAvailable } = useSpot();
   const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState, getPinData, updatePinNotes, addPinPhoto, removePinPhoto } = useSaved();
   const { createPath } = usePath();
   // SCOPE 9: Obtener flowState, currentSpotId y funciones de Flow
@@ -97,8 +95,6 @@ export default function SpotDetailScreen() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
-  const [showAIPreview, setShowAIPreview] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   
@@ -120,26 +116,7 @@ export default function SpotDetailScreen() {
   // const [editPlanInfoIconRestrictions, setEditPlanInfoIconRestrictions] = useState<IconName>('paw');
   // const [editPlanInfoIconAccessibility, setEditPlanInfoIconAccessibility] = useState<IconName>('accessibility');
 
-  // V1.3: Estado para rastrear si estamos esperando que un UserSpot esté disponible
-  const [pendingUserSpotId, setPendingUserSpotId] = useState<string | null>(null);
-  
-  // V1.3: useEffect para detectar cuando el UserSpot esté disponible y actualizar la URL
-  useEffect(() => {
-    if (pendingUserSpotId) {
-      const userSpot = getSpotById(pendingUserSpotId);
-      if (userSpot) {
-        // UserSpot está disponible, actualizar la URL
-        router.setParams({ id: pendingUserSpotId });
-        setPendingUserSpotId(null);
-      }
-    }
-  }, [pendingUserSpotId, getSpotById, router, spots]); // Incluir spots para detectar cuando se agrega
-  
-  // FASE 7: Get spot from context (UserSpot) or WorldSpot
-  const userSpot = id ? getSpotById(id) : null;
-  const worldSpot = id ? getWorldSpotById(id) : null;
-  const spot: UnifiedSpot | null = userSpot || worldSpot || null;
-  const isWorldSpotFlag = spot ? isWorldSpot(spot) : false;
+  const spot = id ? getSpotById(id) : null;
 
   // Debug: Log spot data para detectar problemas de carga
   useEffect(() => {
@@ -149,12 +126,11 @@ export default function SpotDetailScreen() {
         hasShortDescription: !!spot.shortDescription,
         shortDescriptionLength: spot.shortDescription?.length || 0,
         shortDescriptionPreview: spot.shortDescription?.substring(0, 50) || 'N/A',
-        isWorldSpot: isWorldSpotFlag,
         hasWhyItMatters: !!spot.whyItMatters,
         hasDescription: !!spot.description,
       });
     }
-  }, [spot?.id, isWorldSpotFlag]);
+  }, [spot?.id]);
 
   // Marcar Spot como 'seen' al montar (automáticamente)
   useEffect(() => {
@@ -211,7 +187,7 @@ export default function SpotDetailScreen() {
   }, []);
 
   // Inicializar notesText cuando cambia el pin o se abre el editor - DEBE estar antes del return temprano
-  // Usamos getPinData que maneja la conversión WorldSpot → UserSpot correctamente
+  // Usamos getPinData con ID normalizado
   useEffect(() => {
     if (!id) return;
     const currentPinData = getPinData(id);
@@ -252,46 +228,34 @@ export default function SpotDetailScreen() {
   }, [isFullscreen, spot?.id, isEditMode]);
 
   // Hook de gestión de estado del formulario (solo en modo edición)
-  // FASE 7: No permitir edición de WorldSpots
   const form = useSpotForm({
-    initialSpot: (spot && !isWorldSpotFlag) ? spot : null,
-    isEditMode: isEditMode && !isWorldSpotFlag,
-    onSave: (spotData) => {
-      if (!spot || isWorldSpotFlag) return;
-      const updates: Partial<Spot> = {
+    initialSpot: spot ?? null,
+    isEditMode,
+    onSave: async (spotData) => {
+      if (!spot) return;
+      if (!user?.id) {
+        Alert.alert('Iniciar sesión requerido', 'Debes iniciar sesión para sugerir cambios.');
+        return;
+      }
+      const payload = {
         name: spotData.name,
-        // FASE 4-5: Actualizar campos nuevos
-        shortDescription: spotData.shortDescription,
-        hasGeneratedContent: spotData.hasGeneratedContent,
-        image: spotData.image,
-        location: spotData.location,
-        // Legacy para compatibilidad temporal
-        description: spotData.description,
-        whyItMatters: spotData.whyItMatters,
-        culturalContext: spotData.culturalContext,
         type: spotData.type,
-        photos: spotData.photos,
-        // FASE 4: Campos eliminados - hours, cost, restrictions, accessibility, howToVisit
+        location: spotData.location,
+        short_description: spotData.shortDescription,
+        description: spotData.description,
+        image: spotData.image,
+        has_generated_content: spotData.hasGeneratedContent,
       };
-      if (spotData.photos && JSON.stringify(spotData.photos) !== JSON.stringify(spot.photos || [])) {
-        updates.photos = spotData.photos;
+      const result = await createSpotContribution(spot.id, payload, user.id);
+      if (result.error) {
+        Alert.alert('Error', 'No se pudo enviar la sugerencia. Intenta de nuevo.');
+        return;
       }
-      // FASE 4-5: Actualizar location (compatible con ambos formatos)
-      if (spotData.location && spot.location) {
-        const spotLoc: { lat?: number; lng?: number; latitude?: number; longitude?: number } = spot.location as any;
-        const dataLoc: { lat?: number; lng?: number; latitude?: number; longitude?: number } = spotData.location as any;
-        const spotLat = 'lat' in spotLoc && spotLoc.lat !== undefined ? spotLoc.lat : (spotLoc.latitude || 0);
-        const spotLng = 'lng' in spotLoc && spotLoc.lng !== undefined ? spotLoc.lng : (spotLoc.longitude || 0);
-        const dataLat = 'lat' in dataLoc && dataLoc.lat !== undefined ? dataLoc.lat : (dataLoc.latitude || 0);
-        const dataLng = 'lng' in dataLoc && dataLoc.lng !== undefined ? dataLoc.lng : (dataLoc.longitude || 0);
-        
-        if (dataLat !== spotLat || dataLng !== spotLng) {
-          updates.location = spotData.location;
-        }
-      }
-      updateSpot(spot.id, updates);
+      Alert.alert(
+        'Sugerencia enviada',
+        'Gracias. Tu contribución quedó pendiente de revisión.'
+      );
       setIsEditMode(false);
-      Alert.alert('Place updated', 'Changes saved');
     },
     onCancel: () => {
       setIsEditMode(false);
@@ -335,7 +299,7 @@ export default function SpotDetailScreen() {
               styles.backButton,
               pressed && { opacity: 0.7 },
             ]}>
-            <Text style={[textStyles.bodyMedium, { color: colors.tint }]}>Go back</Text>
+            <Text style={[textStyles.bodyMedium, { color: colors.tint }]}>Volver</Text>
           </Pressable>
         </View>
       </View>
@@ -344,7 +308,7 @@ export default function SpotDetailScreen() {
 
   const isPinned = isSpotPinned(spot.id);
   const pinState = getPinState(spot.id);
-  const pinData = getPinData(spot.id); // V1.3: Usar getPinData para manejar conversión WorldSpot → UserSpot
+  const pinData = getPinData(spot.id); // V1.3: Usar getPinData con ID normalizado
   const isVisitedPin = pinState === 'visited';
   const personalNotes = pinData?.notes || '';
   const personalPhotos = pinData?.personalPhotos || [];
@@ -370,27 +334,12 @@ export default function SpotDetailScreen() {
 
   // Handler para seleccionar estado en modal
   const handlePinStateSelect = (state: PinState) => {
-    // FASE 7: pinSpot retorna el ID del User Spot (puede ser convertido desde World Spot)
-    const userSpotId = pinSpot(spot.id, state);
+    pinSpot(spot.id, state);
     setShowPinModal(false);
     markPinModalSeen();
     setHasSeenFirstTime(true); // Actualizar estado local después de marcar
-    setToastMessage(state === 'visited' ? 'Pinned · Visited' : 'Pinned · To visit');
+    setToastMessage(state === 'visited' ? 'Pineado · Visitado' : 'Pineado · Por visitar');
     setShowToast(true);
-
-    // FASE 7: Si se convirtió a User Spot, esperar a que esté disponible
-    // V1.3: No redirigir inmediatamente, usar useEffect para detectar cuando el UserSpot esté disponible
-    if (userSpotId !== spot.id && isWorldSpotFlag) {
-      // Verificar inmediatamente si el UserSpot está disponible
-      const userSpotImmediately = getSpotById(userSpotId);
-      if (userSpotImmediately) {
-        // UserSpot ya está disponible, actualizar la URL inmediatamente
-        router.setParams({ id: userSpotId });
-      } else {
-        // UserSpot aún no está disponible, marcar como pendiente para que useEffect lo detecte
-        setPendingUserSpotId(userSpotId);
-      }
-    }
     
     // Animación de feedback visual
     Animated.sequence([
@@ -453,24 +402,9 @@ export default function SpotDetailScreen() {
       if (hasSeenFirstTime === null) {
         setHasSeenFirstTime(true);
       }
-      // FASE 7: pinSpot retorna el ID del User Spot (puede ser convertido desde World Spot)
-      const userSpotId = pinSpot(spot.id, 'to_visit');
-      setToastMessage('Pinned · To visit');
+      pinSpot(spot.id, 'to_visit');
+      setToastMessage('Pineado · Por visitar');
       setShowToast(true);
-
-      // FASE 7: Si se convirtió a User Spot, esperar a que esté disponible
-      // V1.3: No redirigir inmediatamente, usar useEffect para detectar cuando el UserSpot esté disponible
-      if (userSpotId !== spot.id && isWorldSpotFlag) {
-        // Verificar inmediatamente si el UserSpot está disponible
-        const userSpotImmediately = getSpotById(userSpotId);
-        if (userSpotImmediately) {
-          // UserSpot ya está disponible, actualizar la URL inmediatamente
-          router.setParams({ id: userSpotId });
-        } else {
-          // UserSpot aún no está disponible, marcar como pendiente para que useEffect lo detecte
-          setPendingUserSpotId(userSpotId);
-        }
-      }
       return;
     }
     
@@ -478,7 +412,7 @@ export default function SpotDetailScreen() {
     if (pinState === 'to_visit') {
       // Cambiar a visited
       changePinState(spot.id, 'visited');
-      setToastMessage('Changed to Visited');
+      setToastMessage('Cambiado a visitado');
       setShowToast(true);
     } else if (pinState === 'visited') {
       // Eliminar pin
@@ -491,18 +425,19 @@ export default function SpotDetailScreen() {
 
   const handleShare = async () => {
     try {
-      const shareUrl = `flowya.app/spot-detail?id=${spot.id}`;
-      const shareMessage = spot.name 
-        ? `Check out ${spot.name} on FLOWYA! ${shareUrl}`
-        : `Check out this spot on FLOWYA! ${shareUrl}`;
+      const shareSpotId = normalizeSpotId(spot.id) || spot.id;
+      const shareUrl = `flowya.app/spot-detail?id=${shareSpotId}`;
+      const shareMessage = spot.name
+        ? `Mira ${spot.name} en FLOWYA. ${shareUrl}`
+        : `Mira este spot en FLOWYA. ${shareUrl}`;
       
       await Share.share({
         message: shareMessage,
-        title: spot.name || 'FLOWYA Spot',
+        title: spot.name || 'Spot FLOWYA',
       });
     } catch (error) {
       console.error('Error sharing:', error);
-      Alert.alert('Error', 'Couldn\'t share. Try again.');
+      Alert.alert('Error', 'No se pudo compartir. Intenta nuevamente.');
     }
   };
 
@@ -567,55 +502,23 @@ export default function SpotDetailScreen() {
 
   const handleSuggestEdit = () => {
     if (!spot) return;
-    // FASE 7: No permitir edición de WorldSpots
-    if (isWorldSpotFlag) {
-      Alert.alert('No editable', 'Los lugares del mundo no se pueden editar. Puedes guardarlos o marcarlos como visitados.');
-      setIsMenuVisible(false);
+    if (!user?.id) {
+      Alert.alert('Iniciar sesión requerido', 'Debes iniciar sesión para sugerir cambios.');
       return;
     }
     setIsMenuVisible(false);
-    // FASE 4: setEditPlanInfoIconRestrictions y setEditPlanInfoIconAccessibility eliminados - campos avanzados eliminados
     setIsEditMode(true);
-    // form.howToVisit ya se inicializa desde initialSpot en useSpotForm
   };
 
-  const handleGenerateAI = async () => {
-    if (!spot) return;
-    const generatedContent = await form.generateContent();
-    if (generatedContent) {
-      setShowAIPreview(true);
-    }
-  };
-
-  // FASE 4: Actualizar handleAcceptAIContent para usar solo shortDescription
-  const handleAcceptAIContent = () => {
-    if (form.previewContent) {
-      // FASE 4: Aceptar solo shortDescription (IA solo genera shortDescription)
-      if (form.previewContent.shortDescription && !form.shortDescription) {
-        form.setShortDescription(form.previewContent.shortDescription);
-        // Legacy: también actualizar campos legacy para compatibilidad temporal
-        form.setDescription(form.previewContent.shortDescription);
-        form.setWhyItMatters(form.previewContent.shortDescription);
-      }
-      // FASE 4: Marcar que tiene contenido generado
-      form.setHasGeneratedContent(true);
-      
-      // Legacy: campos legacy (para compatibilidad temporal)
-      if (form.previewContent.planInfo) form.setPlanInfo(form.previewContent.planInfo);
-      if (form.previewContent.culturalContext) form.setCulturalContext(form.previewContent.culturalContext);
-    }
-    setShowAIPreview(false);
-    form.setPreviewContent(null);
-  };
-
-  const handleRejectAIContent = () => {
-    setShowAIPreview(false);
-    form.setPreviewContent(null);
+  const handleAskAi = () => {
+    Alert.alert(
+      'Sugerencia con IA',
+      'La IA solo sugiere. No ejecuta acciones ni modifica spots automaticamente.'
+    );
   };
 
   const handleSaveEdit = () => {
     if (!spot) return;
-    // FASE 4: Campos eliminados - howToVisit, hours, cost, restrictions, accessibility
     form.handleSave();
   };
 
@@ -637,73 +540,37 @@ export default function SpotDetailScreen() {
 
   const handleReport = () => {
     setIsMenuVisible(false);
-    // Reporte es visible para todos los usuarios
-    // Por ahora, mostrar modal con opciones de reporte
+    if (!spot) return;
+    if (!user?.id) {
+      Alert.alert('Inicia sesión', 'Debes iniciar sesión para reportar un spot.');
+      return;
+    }
+
+    const submitReport = async (reason: SpotReportReason) => {
+      const result = await createSpotReport({
+        spotId: normalizeSpotId(spot.id),
+        reporterId: user.id,
+        reason,
+      });
+      if (result.error) {
+        Alert.alert('Error', 'No se pudo enviar el reporte. Intenta de nuevo.');
+        return;
+      }
+      Alert.alert('Reporte enviado', 'Gracias. Revisaremos tu reporte.');
+    };
+
     Alert.alert(
-      'Report issue',
-      'Select the type of issue you want to report:',
+      'Reportar spot',
+      'Selecciona el motivo:',
       [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Incorrect content', 
-          onPress: () => {
-            Alert.alert('Report submitted', 'Thank you for your report. We will review it soon.');
-          }
-        },
-        { 
-          text: 'Place closed', 
-          onPress: () => {
-            Alert.alert('Report submitted', 'Thank you for your report. We will review it soon.');
-          }
-        },
-        { 
-          text: 'Spam or inappropriate', 
-          onPress: () => {
-            Alert.alert('Report submitted', 'Thank you for your report. We will review it soon.');
-          }
-        },
-        { 
-          text: 'Other', 
-          onPress: () => {
-            Alert.alert('Report submitted', 'Thank you for your report. We will review it soon.');
-          }
-        },
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Información incorrecta', onPress: () => submitReport('incorrecta') },
+        { text: 'No es del lugar', onPress: () => submitReport('no es del lugar') },
+        { text: 'Ofensiva', onPress: () => submitReport('ofensiva') },
+        { text: 'Spam', onPress: () => submitReport('spam') },
       ],
       { cancelable: true }
     );
-  };
-
-  const handlePlaceNoLongerExists = () => {
-    if (!spot) return;
-    
-    // Verificar autenticación
-    if (!isAuthenticated || !user) {
-      Alert.alert('Permission required', 'You must be logged in to delete spots.');
-      setIsMenuVisible(false);
-      return;
-    }
-
-    // Verificar permisos usando helper canónico
-    if (!canDeleteSpot(spot, user)) {
-      Alert.alert('Permission denied', 'You can only delete spots that you created.');
-      setIsMenuVisible(false);
-      return;
-    }
-    
-    setIsMenuVisible(false);
-    setIsDeleteConfirmVisible(true);
-  };
-
-  const handleConfirmDelete = () => {
-    if (!spot) return;
-    deleteSpot(spot.id);
-    setIsDeleteConfirmVisible(false);
-    // Redirigir a home después de eliminar
-    router.replace('/(tabs)/home');
-  };
-
-  const handleCancelDelete = () => {
-    setIsDeleteConfirmVisible(false);
   };
 
 
@@ -715,15 +582,15 @@ export default function SpotDetailScreen() {
     // Validar ubicación antes de iniciar flow
     if (!baseLocation) {
       Alert.alert(
-        'Location needed',
-        'Enable location to start flow from here. Go to Settings and allow location access.',
+        'Ubicación necesaria',
+        'Activa la ubicación para iniciar el flow desde aquí. Ve a Configuración y permite el acceso.',
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: 'Cancelar', style: 'cancel' },
           { 
-            text: 'Settings', 
+            text: 'Configuración',
             onPress: () => {
               // En web no podemos abrir configuración, solo mostrar mensaje
-              Alert.alert('Settings', 'Enable location in your browser settings.');
+              Alert.alert('Configuración', 'Activa la ubicación en la configuración del navegador.');
             }
           },
         ]
@@ -736,8 +603,8 @@ export default function SpotDetailScreen() {
     const tempPath = createPath(
       [spot.id],
       'walking',
-      spot.name ? `Flow from ${spot.name}` : 'New Flow',
-      'We\'ll build the path as you move.'
+      spot.name ? `Flow desde ${spot.name}` : 'Nuevo flow',
+      'Crearemos el recorrido a medida que te muevas.'
     );
     
     // Start the flow with this temporary path
@@ -774,8 +641,8 @@ export default function SpotDetailScreen() {
     
     if (!success) {
       Alert.alert(
-        'Navigation unavailable',
-        'Could not open navigation app. Please make sure you have a maps app installed.'
+        'Navegación no disponible',
+        'No se pudo abrir la app de navegación. Verifica que tengas una app de mapas instalada.'
       );
     }
   };
@@ -920,28 +787,25 @@ export default function SpotDetailScreen() {
         
         {/* ContentHeader with image hero */}
         {(() => {
-          // FASE 5: En modo edición: usar image.url del form; en modo visualización: usar image.url del spot (compatible con ambos formatos)
-          const displayImageUrl = isEditMode 
-            ? form.image?.url || (form.photos && form.photos.length > 0 ? form.photos[0] : '')
-            : (spot.image?.url || (spot.photos && spot.photos.length > 0 ? spot.photos[0] : ''));
-          const validImage = displayImageUrl && displayImageUrl.trim().length > 0 ? displayImageUrl : null;
-          const heroImage = validImage ? { uri: validImage } : null;
-          // Legacy: también mantener photos para ContentHeader (compatible temporalmente)
-          const displayPhotos = isEditMode 
-            ? (form.image?.url ? [form.image.url] : form.photos)
-            : (spot.image?.url ? [spot.image.url] : (spot.photos || []));
+          const spotForImages: Spot = {
+            ...spot,
+            image: isEditMode && form.image ? form.image : spot.image,
+            photos: isEditMode ? form.photos : spot.photos,
+          };
+          const validImages = getSpotImageUrls(spotForImages);
+          const heroImages = validImages.length > 1 ? validImages : [];
+          const heroImage = validImages.length === 1 ? { uri: validImages[0] } : getPlaceholderImageSource();
           
           // Left actions
           const leftActions: ContentHeaderAction[] = [
             {
               icon: isEditMode ? 'close' : 'back',
               onPress: handleBack,
-              tooltip: isEditMode ? 'Cancel edit' : undefined,
+              tooltip: isEditMode ? 'Cancelar edición' : undefined,
             },
           ];
           
-          // FASE 7: Right actions (solo si no está en modo edición)
-          // Para WorldSpots, solo mostrar pin y share (no menu con edición/eliminación)
+          // Right actions (solo si no está en modo edición)
           const rightActions: ContentHeaderAction[] = !isEditMode
             ? [
                 {
@@ -959,20 +823,18 @@ export default function SpotDetailScreen() {
                   icon: 'share',
                   onPress: handleShare,
                 },
-                // FASE 7: Menu solo para UserSpots (no WorldSpots)
-                ...(isWorldSpotFlag ? [] : [{
+                {
                   icon: 'menu' as const,
                   onPress: handleMenuPress,
-                }]),
+                },
               ]
             : [];
           
           return (
             <ContentHeader
               heroType="image"
-              heroImage={displayPhotos.length === 1 ? heroImage : null}
-              heroImages={displayPhotos.length > 1 ? displayPhotos : displayPhotos.length === 1 ? displayPhotos : []}
-              // FASE 5: displayPhotos mantiene compatibilidad temporal (fotos[] → image.url)
+              heroImage={heroImages.length === 0 ? heroImage : null}
+              heroImages={heroImages}
               heroHeight={IMAGE_HEIGHT}
               leftActions={leftActions}
               rightActions={rightActions}
@@ -1027,7 +889,7 @@ export default function SpotDetailScreen() {
                 <>
                   <Icon name="add" size={20} color={colors.tint} />
                   <Text style={[textStyles.caption, { color: colors.tint, marginLeft: spacing.xs }]}>
-                    Add photo
+                    Agregar foto
                   </Text>
                 </>
               )}
@@ -1039,11 +901,11 @@ export default function SpotDetailScreen() {
 
           {/* Title */}
           {isEditMode ? (
-            <FormField label="Name" style={{ marginTop: spacing.md }}>
+            <FormField label="Nombre" style={{ marginTop: spacing.md }}>
               <FormTextInput
                 value={form.name}
                 onChangeText={form.setName}
-                placeholder="Spot name"
+                placeholder="Nombre del spot"
               />
             </FormField>
           ) : (
@@ -1056,7 +918,7 @@ export default function SpotDetailScreen() {
 
           {/* Metadata Row: Chip | Distance | Rating */}
           {isEditMode ? (
-            <FormField label="Type" style={{ marginTop: spacing.sm, marginBottom: spacing.md }}>
+            <FormField label="Tipo" style={{ marginTop: spacing.sm, marginBottom: spacing.md }}>
               <FormTypeSelector
                 selectedType={form.type}
                 onSelectType={form.setType}
@@ -1094,38 +956,27 @@ export default function SpotDetailScreen() {
               })()}
               
               {/* SCOPE 7: Botón "Enrich with AI" justo arriba del FormField */}
-              {/* FASE 7: Solo mostrar para UserSpots (no WorldSpots en edición) */}
-              {!form.existingSpot && !isWorldSpotFlag && (
-                isAIConfigured() ? (
-                  <View style={{ marginTop: spacing.sm, marginBottom: spacing.xs }}>
-                    <AIGenerateButton
-                      onPress={handleGenerateAI}
-                      isGenerating={form.aiState === 'loading'}
-                      size="small"
-                    />
-                  </View>
-                ) : (
-                  <View style={{
-                    backgroundColor: colors.icon + '10',
-                    borderColor: colors.icon + '30',
-                    borderWidth: 1,
-                    borderRadius: 12,
-                    paddingHorizontal: spacing.sm,
-                    paddingVertical: spacing.xs,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginTop: spacing.sm,
-                    marginBottom: spacing.xs,
-                  }}>
-                    <Icon name="info" size={14} color={colors.icon} />
-                    <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
-                      IA no configurada
-                    </Text>
-                  </View>
-                )
+              {!form.existingSpot && (
+                <TouchableOpacity
+                  style={[
+                    styles.smallAIDisabledButton,
+                    {
+                      borderColor: colors.tint + '30',
+                      backgroundColor: colors.tint + '10',
+                      marginTop: spacing.sm,
+                      marginBottom: spacing.xs,
+                    },
+                  ]}
+                  onPress={handleAskAi}
+                  activeOpacity={0.7}>
+                  <Icon name="gems" size={14} color={colors.tint} />
+                  <Text style={[textStyles.caption, { color: colors.tint, marginLeft: spacing.xs }]}>
+                    Pedir sugerencia a IA
+                  </Text>
+                </TouchableOpacity>
               )}
               
-              <FormField label="Short Description" style={{ marginTop: spacing.sm }}>
+              <FormField label="Descripción corta" style={{ marginTop: spacing.sm }}>
                 <FormTextArea
                   value={form.shortDescription}
                   onChangeText={(text) => {
@@ -1134,7 +985,7 @@ export default function SpotDetailScreen() {
                     form.setWhyItMatters(text);
                     form.setDescription(text);
                   }}
-                  placeholder="A brief, evocative description (1-2 lines). e.g. A viewpoint with panoramic city views..."
+                  placeholder="Una descripción breve y evocadora (1-2 líneas). Ej. Un mirador con vista panorámica."
                   numberOfLines={2}
                 />
               </FormField>
@@ -1150,7 +1001,7 @@ export default function SpotDetailScreen() {
                 const isCurrentSpotInFlow = isFlowActive && spot?.id === currentSpotId;
                 const isNearbySpot = isFlowActive && 
                                      spot?.id !== currentSpotId && 
-                                     flowState.currentPathId !== null; // Simplificado - mejorar con lógica de proximidad
+                                     flowState.flowId !== null; // Simplificado - mejorar con lógica de proximidad
 
                 // SCOPE 9.1: Caso A - Este spot es el actual del Flow
                 if (isCurrentSpotInFlow) {
@@ -1168,7 +1019,7 @@ export default function SpotDetailScreen() {
                       ]}>
                       <Icon name="navigation" size={20} color={colors.tint} />
                       <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
-                        You&apos;re here
+                        Estás aquí
                       </Text>
                     </Pressable>
                   );
@@ -1193,7 +1044,7 @@ export default function SpotDetailScreen() {
                       ]}>
                       <Icon name="plus" size={20} color={colors.tint} />
                       <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
-                        Add to the flow
+                        Agregar al flow
                       </Text>
                     </Pressable>
                   );
@@ -1214,17 +1065,17 @@ export default function SpotDetailScreen() {
                       disabled={!baseLocation}>
                       <Icon name="play" size={20} color="#fff" />
                       <Text style={[textStyles.bodyMedium, { color: '#fff', marginLeft: spacing.xs }]}>
-                        Start from here
+                        Iniciar desde aquí
                       </Text>
                     </Pressable>
                     {!baseLocation && (
                       <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs / 2, marginBottom: spacing.md }]}>
-                        Enable location to start flow
+                        Activa la ubicación para iniciar el flow
                       </Text>
                     )}
                     {baseLocation && (
                       <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs, marginBottom: spacing.md }]}>
-                        We&apos;ll build the path as you move.
+                        Crearemos el recorrido a medida que te muevas.
                       </Text>
                     )}
                   </>
@@ -1237,12 +1088,12 @@ export default function SpotDetailScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[textStyles.heading3, { color: colors.text, marginBottom: spacing.sm }]}>
-                Why it matters
+                Por qué importa
               </Text>
             </View>
             {isEditMode ? (
               // En modo edición, mostrar campo editable
-              <FormField label="Why it matters" style={{ marginTop: spacing.sm }}>
+              <FormField label="Por qué importa" style={{ marginTop: spacing.sm }}>
                 <FormTextArea
                   value={form.shortDescription || form.whyItMatters || form.description}
                   onChangeText={(text) => {
@@ -1251,7 +1102,7 @@ export default function SpotDetailScreen() {
                     form.setWhyItMatters(text);
                     form.setDescription(text);
                   }}
-                  placeholder="A brief, evocative description (1-2 lines). e.g. A viewpoint with panoramic city views..."
+                  placeholder="Una descripción breve y evocadora (1-2 líneas). Ej. Un mirador con vista panorámica."
                   numberOfLines={3}
                 />
               </FormField>
@@ -1270,63 +1121,8 @@ export default function SpotDetailScreen() {
                     );
                   }
                   
-                  // Si no hay texto y es WorldSpot, mostrar mensaje informativo
-                  if (isWorldSpotFlag && __DEV__) {
-                    console.warn(`[SpotDetail] WorldSpot ${spot.id} no tiene shortDescription, whyItMatters ni description`);
-                  }
-                  
                   return null;
                 })()}
-                {/* FASE 7: Botón para generar contenido con IA bajo demanda para WorldSpots */}
-                {isWorldSpotFlag && !spot.hasGeneratedContent && (!spot.shortDescription || spot.shortDescription.trim().length === 0) ? (
-                  <View style={{ marginTop: spacing.sm }}>
-                    {isAIConfigured() ? (
-                      <AIGenerateButton
-                        onPress={async () => {
-                          if (!spot) return;
-                          try {
-                            // FASE 7: Convertir WorldSpot a UserSpot antes de generar contenido
-                            if (!user?.id) {
-                              Alert.alert('Error', 'Debes estar autenticado para generar contenido');
-                              return;
-                            }
-                            const userSpot = convertWorldSpotToUserSpot(spot.id, user.id);
-                            // V1.3: Pasar el ID del UserSpot para que createSpot lo use
-                            const { id: userSpotId, createdAt, updatedAt, ...userSpotData } = userSpot;
-                            createSpot(userSpotData, { id: userSpotId });
-                            // Generar contenido para el UserSpot convertido
-                            await generateSpotContent(userSpot.id);
-                            setToastMessage('Contenido generado');
-                            setShowToast(true);
-                            // Recargar para mostrar el contenido generado
-                            router.replace(`/spot-detail?id=${userSpot.id}`);
-                          } catch (error) {
-                            console.error('Error generating content:', error);
-                            Alert.alert('Error', 'No se pudo generar contenido. Intenta de nuevo.');
-                          }
-                        }}
-                        isGenerating={false}
-                        size="small"
-                      />
-                    ) : (
-                      <View style={{
-                        backgroundColor: colors.icon + '10',
-                        borderColor: colors.icon + '30',
-                        borderWidth: 1,
-                        borderRadius: 12,
-                        paddingHorizontal: spacing.sm,
-                        paddingVertical: spacing.xs,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                      }}>
-                        <Icon name="info" size={14} color={colors.icon} />
-                        <Text style={[textStyles.caption, { color: colors.icon, marginLeft: spacing.xs }]}>
-                          IA no configurada
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                ) : null}
               </View>
             )}
           </View>
@@ -1336,10 +1132,10 @@ export default function SpotDetailScreen() {
           {/* Location on map section */}
           <View style={styles.section}>
             <Text style={[textStyles.heading3, { color: colors.text, marginBottom: spacing.sm }]}>
-              Location
+              Ubicación
             </Text>
             {isEditMode ? (
-              <FormField label="Location" required error={form.errors.location}>
+              <FormField label="Ubicación" required error={form.errors.location}>
                 <LocationSelectorWeb
                   location={form.location}
                   onLocationChange={(loc) => {
@@ -1459,11 +1255,11 @@ export default function SpotDetailScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-                <Text style={[textStyles.heading3, { color: colors.text }]}>Diary</Text>
+                <Text style={[textStyles.heading3, { color: colors.text }]}>Diario</Text>
                 {isPinned && !isVisitedPin && (
                   <View style={[styles.visitedBadge, { backgroundColor: colors.icon + '20' }]}>
                     <Text style={[textStyles.caption, { color: colors.icon }]}>
-                      Mark as visited
+                      Marcar como visitado
                     </Text>
                   </View>
                 )}
@@ -1477,7 +1273,7 @@ export default function SpotDetailScreen() {
                   ]}>
                   <Icon name={personalNotes ? 'edit' : 'add'} size={18} color={colors.tint} />
                   <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs / 2 }]}>
-                    {personalNotes ? 'Edit' : 'Add Notes'}
+                    {personalNotes ? 'Editar' : 'Agregar notas'}
                   </Text>
                 </Pressable>
               )}
@@ -1486,7 +1282,7 @@ export default function SpotDetailScreen() {
             {/* Metadata temporal: visitedAt */}
             {isPinned && isVisitedPin && pinData?.visitedAt && (
               <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.sm }]}>
-                Visited on {new Date(pinData.visitedAt).toLocaleDateString('en-US', { 
+                Visitado el {new Date(pinData.visitedAt).toLocaleDateString('es-ES', { 
                   year: 'numeric', 
                   month: 'long', 
                   day: 'numeric' 
@@ -1499,7 +1295,7 @@ export default function SpotDetailScreen() {
                 <FormTextArea
                   value={notesText}
                   onChangeText={setNotesText}
-                  placeholder="Add your personal notes about this place..."
+                  placeholder="Agrega tus notas personales sobre este lugar..."
                   numberOfLines={6}
                   style={{ marginBottom: spacing.sm }}
                 />
@@ -1514,7 +1310,7 @@ export default function SpotDetailScreen() {
                         opacity: pressed ? 0.7 : 1,
                       },
                     ]}>
-                    <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
+                    <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancelar</Text>
                   </Pressable>
                   <Pressable
                     onPress={handleSaveNotes}
@@ -1526,7 +1322,7 @@ export default function SpotDetailScreen() {
                         opacity: pressed ? 0.7 : 1,
                       },
                     ]}>
-                    <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save</Text>
+                    <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Guardar</Text>
                   </Pressable>
                 </View>
               </View>
@@ -1542,7 +1338,7 @@ export default function SpotDetailScreen() {
           {/* V1.3: Personal Photos Section (siempre visible, solo funcional si visited) */}
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={[textStyles.heading3, { color: colors.text }]}>Personal Photos</Text>
+              <Text style={[textStyles.heading3, { color: colors.text }]}>Fotos personales</Text>
               <Pressable
                 onPress={handleAddPhoto}
                 style={({ pressed }) => [
@@ -1560,7 +1356,7 @@ export default function SpotDetailScreen() {
                       color: isVisitedPin ? colors.tint : colors.icon, 
                       marginLeft: spacing.xs / 2 
                     }]}>
-                      Add Photo
+                      Agregar foto
                     </Text>
                   </>
                 )}
@@ -1569,7 +1365,7 @@ export default function SpotDetailScreen() {
             
             {!isVisitedPin && (
               <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.sm, fontStyle: 'italic' }]}>
-                Mark as visited to add photos
+                Marca como visitado para agregar fotos
               </Text>
             )}
             
@@ -1593,7 +1389,7 @@ export default function SpotDetailScreen() {
             
             {isVisitedPin && personalPhotos.length === 0 && (
               <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, fontStyle: 'italic' }]}>
-                No photos yet. Add your personal photos from this visit.
+                Aún no hay fotos. Agrega tus fotos personales de esta visita.
               </Text>
             )}
           </View>
@@ -1617,7 +1413,7 @@ export default function SpotDetailScreen() {
               }
             ]}
             onPress={handleCancelEdit}>
-            <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
+            <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancelar</Text>
           </Pressable>
           <Pressable
             style={({ pressed }) => [
@@ -1629,7 +1425,7 @@ export default function SpotDetailScreen() {
               }
             ]}
             onPress={handleSaveEdit}>
-            <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Save</Text>
+            <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Guardar</Text>
           </Pressable>
         </View>
       )}
@@ -1652,9 +1448,9 @@ export default function SpotDetailScreen() {
               ]}
               onPress={handleSuggestEdit}>
               <Icon name="edit" size={20} color={colors.text} />
-              <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
-                Suggest an edit
-              </Text>
+            <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
+              Sugerir edición
+            </Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [
@@ -1663,74 +1459,10 @@ export default function SpotDetailScreen() {
               ]}
               onPress={handleReport}>
               <Icon name="report" size={20} color={colors.text} />
-              <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
-                Report
-              </Text>
+            <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
+              Reportar
+            </Text>
             </Pressable>
-            {/* Visible para el creador del spot o administrador */}
-            {/* FASE 7: No permitir eliminación de WorldSpots */}
-            {spot && user && !isWorldSpotFlag && canDeleteSpot(spot, user) && (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.menuItem,
-                  pressed && { opacity: 0.7 },
-                ]}
-                onPress={handlePlaceNoLongerExists}>
-                <Icon name="delete" size={20} color={colors.text} />
-                <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
-                  This place no longer exists
-                </Text>
-              </Pressable>
-            )}
-          </GlassView>
-        </Pressable>
-      </Modal>
-
-      {/* Delete Confirmation Modal */}
-      <Modal
-        visible={isDeleteConfirmVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={handleCancelDelete}>
-        <Pressable style={styles.menuOverlay} onPress={handleCancelDelete}>
-          <GlassView
-            style={styles.deleteConfirmModal}
-            intensity="medium"
-            opacity="strong"
-            shadowLevel="medium"
-            enableGlow={true}>
-            <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.sm }]}>
-              Delete this spot?
-            </Text>
-            <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
-              This action cannot be undone. The spot will be permanently deleted.
-            </Text>
-            <View style={styles.deleteConfirmButtons}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.deleteConfirmButton, 
-                  styles.deleteConfirmButtonCancel, 
-                  { 
-                    borderColor: colors.icon + '30',
-                    opacity: pressed ? 0.7 : 1,
-                  }
-                ]}
-                onPress={handleCancelDelete}>
-                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.deleteConfirmButton, 
-                  styles.deleteConfirmButtonDelete, 
-                  { 
-                    backgroundColor: '#FF6B6B',
-                    opacity: pressed ? 0.7 : 1,
-                  }
-                ]}
-                onPress={handleConfirmDelete}>
-                <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Delete</Text>
-              </Pressable>
-            </View>
           </GlassView>
         </Pressable>
       </Modal>
@@ -1753,20 +1485,6 @@ export default function SpotDetailScreen() {
         onHide={() => setShowToast(false)}
       />
 
-      {/* AI Content Preview */}
-      {form.previewContent && (
-        <AIContentPreview
-          content={form.previewContent}
-          visible={showAIPreview}
-          onAccept={handleAcceptAIContent}
-          onReject={handleRejectAIContent}
-          onEdit={() => {
-            handleAcceptAIContent();
-          }}
-          title="Generated Content"
-        />
-      )}
-
       {/* Cancel Confirmation Modal */}
       <Modal
         visible={showCancelConfirm}
@@ -1781,10 +1499,10 @@ export default function SpotDetailScreen() {
             shadowLevel="medium"
             enableGlow={true}>
             <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.sm }]}>
-              Discard changes?
+              ¿Descartar cambios?
             </Text>
             <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
-              You have unsaved changes. Are you sure you want to discard them?
+              Tienes cambios sin guardar. ¿Seguro que quieres descartarlos?
             </Text>
             <View style={styles.deleteConfirmButtons}>
               <Pressable
@@ -1797,7 +1515,7 @@ export default function SpotDetailScreen() {
                   }
                 ]}
                 onPress={() => setShowCancelConfirm(false)}>
-                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Keep editing</Text>
+                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Seguir editando</Text>
               </Pressable>
               <Pressable
                 style={({ pressed }) => [
@@ -1808,7 +1526,7 @@ export default function SpotDetailScreen() {
                   }
                 ]}
                 onPress={handleConfirmCancel}>
-                <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Discard</Text>
+                <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Descartar</Text>
               </Pressable>
             </View>
           </GlassView>
@@ -2179,9 +1897,6 @@ const styles = StyleSheet.create({
   },
   deleteConfirmButtonCancel: {
     borderWidth: 1,
-  },
-  deleteConfirmButtonDelete: {
-    // backgroundColor se aplica dinámicamente
   },
   imageEditSection: {
     paddingHorizontal: spacing.md,

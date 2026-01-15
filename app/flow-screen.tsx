@@ -62,12 +62,15 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Helper function to detect if flow was started from a spot
 function isFlowStartedFromSpot(flow: Flow): boolean {
-  // Criterio principal: Título contiene "Flow from" (indica origen desde spot)
-  if (/^Flow from/i.test(flow.title)) {
+  // Criterio principal: Título contiene "Flow from" o "Flow desde" (indica origen desde spot)
+  if (/^Flow (from|desde)/i.test(flow.title)) {
     return true;
   }
   // Criterio secundario: Descripción contiene texto característico
-  if (flow.description?.includes("We'll build the path as you move")) {
+  if (
+    flow.description?.includes("We'll build the path as you move") ||
+    flow.description?.includes('Crearemos el recorrido a medida que te muevas')
+  ) {
     return true;
   }
   // Criterio terciario: Metadata indica origen desde spot
@@ -112,7 +115,7 @@ export default function FlowScreenPage() {
 
   // P0-05: Código de test de Web Speech API eliminado - audio ya no se usa
 
-  const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
+  const flow = flowState.flowId ? getFlowById(flowState.flowId) : null;
   
   // CANONICAL: Get saved Flow version for comparison (to detect changes)
   // If flow is saved, get the saved version from PathContext to compare
@@ -153,8 +156,8 @@ export default function FlowScreenPage() {
   // SELF GUARD: Immediately redirect if no active flow
   // This prevents zombie FlowScreen from rendering
   useEffect(() => {
-    // Check if there's no active flow (no flow object OR status is idle OR no currentPathId)
-    const hasNoActiveFlow = !flow || flowState.status === 'idle' || !flowState.currentPathId;
+    // Check if there's no active flow (no flow object OR status is idle OR no flowId)
+    const hasNoActiveFlow = !flow || flowState.status === 'idle' || !flowState.flowId;
     
     if (hasNoActiveFlow) {
       // Immediately redirect away from FlowScreen
@@ -170,7 +173,7 @@ export default function FlowScreenPage() {
         router.replace('/(tabs)/home');
       }
     }
-  }, [flow, flowState.status, flowState.currentPathId, router]);
+  }, [flow, flowState.status, flowState.flowId, router]);
 
   // Detectar si el flow se inició desde un spot
   const isFromSpot = useMemo(() => {
@@ -287,8 +290,8 @@ export default function FlowScreenPage() {
   const handleOpenNavigation = useCallback(async () => {
     if (!baseLocation) {
       Alert.alert(
-        'Location needed',
-        'Enable location to get directions. Go to Settings and allow location access.'
+        'Ubicación necesaria',
+        'Activa la ubicación para obtener indicaciones. Ve a Configuración y permite el acceso.'
       );
       return;
     }
@@ -298,14 +301,14 @@ export default function FlowScreenPage() {
     
     if (!targetSpot) {
       Alert.alert(
-        'No destination',
-        'Add at least one spot to the flow to get directions.'
+        'Sin destino',
+        'Agrega al menos un spot al flow para obtener indicaciones.'
       );
       return;
     }
 
     if (!flow) {
-      Alert.alert('Error', 'Flow information is missing.');
+      Alert.alert('Error', 'Falta información del flow.');
       return;
     }
 
@@ -324,15 +327,15 @@ export default function FlowScreenPage() {
 
       if (!success) {
         Alert.alert(
-          'Navigation unavailable',
-          'Could not open navigation app. Please try again.'
+          'Navegación no disponible',
+          'No se pudo abrir la app de navegación. Intenta nuevamente.'
         );
       }
     } catch (error) {
       console.error('Error opening navigation:', error);
       Alert.alert(
         'Error',
-        'An error occurred while opening navigation. Please try again.'
+        'Ocurrió un error al abrir la navegación. Intenta nuevamente.'
       );
     }
   }, [baseLocation, currentSpot, flowSpots, flow]);
@@ -340,7 +343,7 @@ export default function FlowScreenPage() {
   // SELF GUARD: Render nothing if no active flow
   // This is a secondary guard in case navigation hasn't completed yet
   // Prevents any UI from rendering without an active flow
-  const hasNoActiveFlow = !flow || flowState.status === 'idle' || !flowState.currentPathId;
+  const hasNoActiveFlow = !flow || flowState.status === 'idle' || !flowState.flowId;
   if (hasNoActiveFlow) {
     return null;
   }
@@ -390,7 +393,7 @@ export default function FlowScreenPage() {
     // Toast duration is 3000ms (3 seconds) - user can see it while navigating
     // Determine if this is an update or create based on previous state
     const wasSavedBefore = isFlowSavedState;
-    showToast(wasSavedBefore ? 'Flow updated' : 'Flow saved', 'success', 'check');
+    showToast(wasSavedBefore ? 'Flow actualizado' : 'Flow guardado', 'success', 'check');
     
     // Step 5: Close flow after a short delay to ensure toast is visible
     // Delay allows user to see the confirmation before navigation
@@ -773,7 +776,7 @@ export default function FlowScreenPage() {
         {
           icon: 'close',
           onPress: handleClose,
-          tooltip: 'Close',
+          tooltip: 'Cerrar',
         },
       ];
 

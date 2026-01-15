@@ -11,8 +11,8 @@
  */
 
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { FlowCard } from '@/components/FlowCard';
 import { SpotGrid } from '@/components/SpotGrid';
@@ -26,14 +26,14 @@ import { fontFamilyMedium, textStyles } from '@/constants/typography';
 import { useFlow } from '@/contexts/FlowContext';
 import { usePath } from '@/contexts/PathContext';
 import { useSpot } from '@/contexts/SpotContext';
-import { useWorldSpots } from '@/contexts/WorldSpotContext';
 import { Spot, SpotType } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { getSpotDistance } from '@/hooks/useSpotDistance';
 import { anyLoading, shouldShowSkeleton } from '@/utils/loadingHelpers';
+import { forwardGeocode, GeocodeResult } from '@/utils/geocoding';
 import { searchAll } from '@/utils/searchLogic';
-import { combineSpots, UnifiedSpot } from '@/utils/worldSpotHelpers';
+import { isMapboxConfigured } from '@/utils/mapsConfig';
 
 
 export default function SearchScreen() {
@@ -42,27 +42,54 @@ export default function SearchScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchType, setSearchType] = useState<'all' | 'spots' | 'flows' | 'places'>('all');
+  const [geocodeResults, setGeocodeResults] = useState<GeocodeResult[]>([]);
+  const [isGeocoding, setIsGeocoding] = useState(false);
 
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
 
   const { spots, isLoading: isLoadingSpots } = useSpot();
-  const { worldSpots, isLoading: isLoadingWorldSpots } = useWorldSpots();
-  const { paths, isLoading: isLoadingPaths } = usePath();
+  const { paths: flows, isLoading: isLoadingPaths } = usePath();
   const { startFlow } = useFlow();
-
-  // FASE 7: Combinar UserSpots y WorldSpots
-  const allSpots: UnifiedSpot[] = combineSpots(spots, worldSpots);
   
   // Combinar estados de carga para sugerencias iniciales
-  const isLoading = anyLoading(isLoadingSpots, isLoadingWorldSpots, isLoadingPaths);
+  const isLoading = anyLoading(isLoadingSpots, isLoadingPaths);
 
 
+
+  const { resolvedQuery, resolvedType } = useMemo(() => {
+    const trimmed = searchQuery.trim();
+    const lower = trimmed.toLowerCase();
+    const prefixes: Array<{ prefix: string; type: 'spots' | 'flows' | 'places' }> = [
+      { prefix: 'spot:', type: 'spots' },
+      { prefix: 'spots:', type: 'spots' },
+      { prefix: 'flow:', type: 'flows' },
+      { prefix: 'flows:', type: 'flows' },
+      { prefix: 'ruta:', type: 'flows' },
+      { prefix: 'lugar:', type: 'places' },
+      { prefix: 'lugares:', type: 'places' },
+      { prefix: 'direccion:', type: 'places' },
+      { prefix: 'address:', type: 'places' },
+      { prefix: 'place:', type: 'places' },
+    ];
+
+    for (const item of prefixes) {
+      if (lower.startsWith(item.prefix)) {
+        return {
+          resolvedQuery: trimmed.slice(item.prefix.length).trim(),
+          resolvedType: item.type,
+        };
+      }
+    }
+
+    return { resolvedQuery: trimmed, resolvedType: searchType };
+  }, [searchQuery, searchType]);
 
   // CANONICAL: Suggested/Nearby spots when input is empty (same layout as results)
   const suggestedSpotsWithDistance = useMemo(() => {
     // Show suggested spots when query is empty
-    if (searchQuery.trim().length > 0) {
+    if (resolvedQuery.length > 0 || resolvedType !== 'all') {
       return [];
     }
     
@@ -101,9 +128,8 @@ export default function SearchScreen() {
       }
     } else {
       // No location: show varied spots
-      // FASE 7: Usar allSpots (UserSpots + WorldSpots)
       const usedTypes = new Set<SpotType>();
-      for (const spot of allSpots) {
+      for (const spot of spots) {
         if (suggested.length >= 6) break;
         if (!usedTypes.has(spot.type) || suggested.length < 3) {
           suggested.push({ spot, distance: undefined });
@@ -113,7 +139,7 @@ export default function SearchScreen() {
     }
     
     return suggested;
-  }, [allSpots, baseLocation, searchQuery]);
+  }, [spots, baseLocation, resolvedQuery, resolvedType]);
   
   const suggestedSpots = useMemo(() => {
     return suggestedSpotsWithDistance.map(item => item.spot);
@@ -121,14 +147,21 @@ export default function SearchScreen() {
 
   // CANONICAL: Search results (only when query has 2+ characters)
   const searchResults = useMemo(() => {
-    if (searchQuery.trim().length < 2) {
-      return { spots: [], paths: [] };
+    if (resolvedQuery.length < 2 || resolvedType === 'places') {
+      return { spots: [], flows: [] };
     }
     
-    const results = searchAll(spots, paths, searchQuery, {
+    const results = searchAll(spots, flows, resolvedQuery, {
       spotLimit: 20,
-      pathLimit: 10,
+      flowLimit: 10,
     });
+
+    if (resolvedType === 'spots') {
+      results.flows = [];
+    }
+    if (resolvedType === 'flows') {
+      results.spots = [];
+    }
     
     // Add distance and sort by relevance + proximity
     if (baseLocation) {
@@ -155,13 +188,43 @@ export default function SearchScreen() {
     }
     
     return results;
-  }, [searchQuery, allSpots, paths, baseLocation]);
+  }, [resolvedQuery, resolvedType, spots, flows, baseLocation]);
+
+  useEffect(() => {
+    let isActive = true;
+    const shouldGeocode = resolvedType === 'places' || resolvedType === 'all';
+    const canGeocode = resolvedQuery.length >= 2 && shouldGeocode;
+
+    if (!canGeocode) {
+      setGeocodeResults([]);
+      setIsGeocoding(false);
+      return;
+    }
+
+    setIsGeocoding(true);
+    const timeout = setTimeout(async () => {
+      const results = await forwardGeocode(resolvedQuery, 6);
+      if (!isActive) return;
+      setGeocodeResults(results);
+      setIsGeocoding(false);
+    }, 400);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeout);
+    };
+  }, [resolvedQuery, resolvedType]);
 
   // CANONICAL: Determine what to show
   const hasQuery = searchQuery.trim().length >= 2;
-  const hasResults = searchResults.spots.length > 0 || searchResults.paths.length > 0;
+  const hasResults = searchResults.spots.length > 0 || searchResults.flows.length > 0;
   const showResults = hasQuery && hasResults;
-  const showNoResults = hasQuery && !hasResults;
+  const showNoResults = hasQuery
+    && !hasResults
+    && !isGeocoding
+    && (resolvedType === 'spots' || resolvedType === 'flows'
+      ? true
+      : geocodeResults.length === 0 && isMapboxConfigured());
   const showSuggested = !hasQuery && suggestedSpots.length > 0;
 
 
@@ -171,9 +234,8 @@ export default function SearchScreen() {
     router.push(`/spot-detail?id=${spotId}`);
   };
 
-  // Manejar selección de Path desde resultados
-  const handlePathPress = (pathId: string) => {
-    startFlow(pathId);
+  const handleFlowPress = (flowId: string) => {
+    startFlow(flowId);
   };
 
   // CANONICAL: Handle search input
@@ -189,6 +251,17 @@ export default function SearchScreen() {
         longitude: -77.0428,
     };
     router.push(`/create-spot?lat=${location.latitude}&lng=${location.longitude}`);
+  };
+
+  const handleSelectGeocode = (result: GeocodeResult) => {
+    router.push(`/create-spot?lat=${result.center.latitude}&lng=${result.center.longitude}`);
+  };
+
+  const handleAskAi = () => {
+    Alert.alert(
+      'Sugerencia con IA',
+      'La IA solo sugiere opciones. No ejecuta acciones ni crea spots automaticamente.'
+    );
   };
 
   return (
@@ -211,19 +284,47 @@ export default function SearchScreen() {
             variant="search"
             searchValue={searchQuery}
             onSearchChange={handleSearchChange}
-            searchPlaceholder="Search spots and flows"
+            searchPlaceholder="Buscar spots y flows"
             autoFocus={true}
           />
+
+          <View style={styles.typeFilters}>
+            {[
+              { key: 'all', label: 'Todo' },
+              { key: 'spots', label: 'Spots' },
+              { key: 'flows', label: 'Flows' },
+              { key: 'places', label: 'Lugares' },
+            ].map((option) => {
+              const isActive = resolvedType === option.key;
+              return (
+                <TouchableOpacity
+                  key={option.key}
+                  style={[
+                    styles.typeFilterButton,
+                    {
+                      borderColor: isActive ? colors.tint : colors.icon + '30',
+                      backgroundColor: isActive ? colors.tint + '15' : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setSearchType(option.key as 'all' | 'spots' | 'flows' | 'places')}
+                  activeOpacity={0.7}>
+                  <Text style={[textStyles.caption, { color: isActive ? colors.tint : colors.text }]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
           
           {/* CANONICAL: Search results header with count */}
           {showResults && (
             <View style={styles.searchResultsHeader}>
               <Text style={[textStyles.caption, { color: colors.icon, flex: 1, marginRight: spacing.sm }]}>
-                {`Search results for "${searchQuery.trim()}"`}
+                {`Resultados para "${resolvedQuery}"`}
               </Text>
               <View style={[styles.resultsBadge, { backgroundColor: colors.tint + '20' }]}>
                 <Text style={[textStyles.caption, { color: colors.tint, fontFamily: fontFamilyMedium }]}>
-                  {searchResults.spots.length + searchResults.paths.length} {searchResults.spots.length + searchResults.paths.length === 1 ? 'result' : 'results'}
+                  {searchResults.spots.length + searchResults.flows.length} {searchResults.spots.length + searchResults.flows.length === 1 ? 'resultado' : 'resultados'}
                 </Text>
               </View>
             </View>
@@ -249,25 +350,25 @@ export default function SearchScreen() {
               )}
 
               {/* Flows - Single column list */}
-              {searchResults.paths.length > 0 && (
+              {searchResults.flows.length > 0 && (
                 <View style={styles.section}>
                   <SectionHeader title="Flows" variant="large" />
                   <View style={styles.pathsList}>
-                    {searchResults.paths.map((result) => {
-                      if (!result.path) return null;
-                      const pathSpots = result.path.spots
+                    {searchResults.flows.map((result) => {
+                      if (!result.flow) return null;
+                      const flowSpots = result.flow.spots
                         .map((spotId) => spots.find((s) => s.id === spotId))
                         .filter((s): s is Spot => s !== undefined);
-                      const distance = pathSpots.length > 0
-                        ? getSpotDistance(pathSpots[0], baseLocation)
+                      const distance = flowSpots.length > 0
+                        ? getSpotDistance(flowSpots[0], baseLocation)
                         : undefined;
                       return (
                         <FlowCard.Display
-                          key={`path-${result.path.id}`}
-                          flow={result.path}
+                          key={`flow-${result.flow.id}`}
+                          flow={result.flow}
                           spots={spots}
                           distance={distance}
-                          onPress={() => handlePathPress(result.path!.id)}
+                          onPress={() => handleFlowPress(result.flow!.id)}
                         />
                       );
                     })}
@@ -283,11 +384,68 @@ export default function SearchScreen() {
                   activeOpacity={0.7}>
                   <View style={styles.addSpotButtonContent}>
                     <Icon name="add-location" size={18} color={colors.text} />
-                    <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.xs }]}>Add a new spot</Text>
+                    <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.xs }]}>Agregar nuevo spot</Text>
                   </View>
                 </TouchableOpacity>
               </View>
             </>
+          )}
+
+          {/* CANONICAL: Geocoding results */}
+          {hasQuery && (resolvedType === 'places' || resolvedType === 'all') && (
+            <View style={styles.section}>
+              <SectionHeader title="Lugares" variant="large" />
+              {!isMapboxConfigured() && (
+                <Text style={[textStyles.body, { color: colors.icon, paddingHorizontal: spacing.md }]}>
+                  Geocoding no configurado. Agrega EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN.
+                </Text>
+              )}
+              {isGeocoding && (
+                <Text style={[textStyles.body, { color: colors.icon, paddingHorizontal: spacing.md }]}>
+                  Buscando lugares...
+                </Text>
+              )}
+              {!isGeocoding && geocodeResults.length === 0 && (
+                <Text style={[textStyles.body, { color: colors.icon, paddingHorizontal: spacing.md }]}>
+                  No se encontraron lugares con ese texto.
+                </Text>
+              )}
+              {geocodeResults.map((result) => (
+                <TouchableOpacity
+                  key={result.id}
+                  style={[styles.geocodeItem, { borderColor: colors.icon + '20' }]}
+                  onPress={() => handleSelectGeocode(result)}
+                  activeOpacity={0.7}>
+                  <View style={styles.geocodeItemText}>
+                    <Text style={[textStyles.bodyMedium, { color: colors.text }]} numberOfLines={1}>
+                      {result.name}
+                    </Text>
+                    <Text style={[textStyles.caption, { color: colors.icon }]} numberOfLines={1}>
+                      {result.description}
+                    </Text>
+                  </View>
+                  <Text style={[textStyles.caption, { color: colors.tint }]}>Crear spot</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* CTA IA (solo sugerencias, no ejecuta) */}
+          {hasQuery && (
+            <View style={styles.aiCtaContainer}>
+              <TouchableOpacity
+                style={[styles.aiCtaButton, { borderColor: colors.tint }]}
+                onPress={handleAskAi}
+                activeOpacity={0.7}>
+                <Icon name="gems" size={18} color={colors.tint} />
+                <Text style={[textStyles.bodyMedium, { color: colors.tint, marginLeft: spacing.xs }]}>
+                  Pedir sugerencia a IA
+                </Text>
+              </TouchableOpacity>
+              <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
+                La IA solo sugiere. No ejecuta acciones ni crea spots.
+              </Text>
+            </View>
           )}
 
           {/* CANONICAL: No results */}
@@ -295,10 +453,10 @@ export default function SearchScreen() {
             <View style={styles.noResultsContainer}>
               <Icon name="search" size={48} color={colors.icon + '60'} />
               <Text style={[textStyles.heading3, { color: colors.text, marginTop: spacing.md, marginBottom: spacing.xs }]}>
-                Nothing found
+                No se encontraron resultados
               </Text>
               <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg, textAlign: 'center' }]}>
-                No places or flows match &quot;{searchQuery}&quot;
+                Ningún spot o flow coincide con &quot;{resolvedQuery}&quot;
               </Text>
               <TouchableOpacity
                 style={[styles.addSpotButton, { borderColor: colors.icon + '30', marginTop: spacing.md }]}
@@ -306,7 +464,7 @@ export default function SearchScreen() {
                 activeOpacity={0.7}>
                 <View style={styles.addSpotButtonContent}>
                   <Icon name="add-location" size={18} color={colors.text} />
-                  <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.xs }]}>Add a new spot</Text>
+                  <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.xs }]}>Agregar nuevo spot</Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -341,7 +499,7 @@ export default function SearchScreen() {
                 activeOpacity={0.7}>
                 <View style={styles.addSpotButtonContent}>
                   <Icon name="add-location" size={18} color={colors.text} />
-                  <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.xs }]}>Add a new spot</Text>
+                  <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.xs }]}>Agregar nuevo spot</Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -394,6 +552,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
+  typeFilters: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  typeFilterButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
   noResultsContainer: {
     flex: 1,
     alignItems: 'center',
@@ -421,5 +592,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  geocodeItem: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  geocodeItemText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  aiCtaContainer: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  aiCtaButton: {
+    width: '100%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
 });

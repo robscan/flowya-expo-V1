@@ -1,3 +1,63 @@
+import { MAPBOX_ACCESS_TOKEN, isMapboxConfigured } from '@/utils/mapsConfig';
+
+export interface GeocodeResult {
+  id: string;
+  name: string;
+  description: string;
+  center: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+export async function forwardGeocode(query: string, limit: number = 5): Promise<GeocodeResult[]> {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery || !isMapboxConfigured()) {
+    return [];
+  }
+
+  const encodedQuery = encodeURIComponent(trimmedQuery);
+  const url =
+    `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedQuery}.json` +
+    `?access_token=${MAPBOX_ACCESS_TOKEN}` +
+    `&limit=${limit}` +
+    `&language=es` +
+    `&types=address,place,locality,neighborhood,poi`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = await response.json();
+    const features = Array.isArray(payload?.features) ? payload.features : [];
+
+    return features
+      .map((feature: any) => {
+        const center = feature?.center;
+        if (!Array.isArray(center) || center.length < 2) {
+          return null;
+        }
+
+        return {
+          id: feature.id || `${feature.place_name}-${center[0]}-${center[1]}`,
+          name: feature.text || feature.place_name || trimmedQuery,
+          description: feature.place_name || '',
+          center: {
+            longitude: center[0],
+            latitude: center[1],
+          },
+        } as GeocodeResult;
+      })
+      .filter((item: GeocodeResult | null): item is GeocodeResult => item !== null);
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('Geocoding error:', error);
+    }
+    return [];
+  }
+}
 /**
  * Geocoding Utility - Ciudades Predefinidas
  * Funciones para trabajar con ciudades predefinidas de Riviera Maya

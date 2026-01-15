@@ -34,6 +34,7 @@ import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { showAlert } from '@/utils/alertPolyfill';
 import { hasSeenPinModal, markPinModalSeen } from '@/utils/pinFirstTime';
+import { getSpotImageSource } from '@/utils/imageHelpers';
 import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
 
 interface SpotMediaCardProps {
@@ -57,9 +58,7 @@ export const SpotMediaCard = memo(function SpotMediaCard({
   const { markSpotAsSeen } = useSpot();
   const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState } = useSaved();
   const { isAuthenticated } = useAuth();
-  // FASE 5: Usar image.url en lugar de photos[0] (compatible con ambos formatos)
-  const imageUrl = spot.image?.url || (spot.photos && spot.photos.length > 0 ? spot.photos[0] : '');
-  const hasImage = imageUrl && imageUrl.trim().length > 0;
+  const imageSource = useMemo(() => getSpotImageSource(spot), [spot]);
   const spotTypeLabel = getSpotTypeLabel(spot.type);
   const isPinned = isSpotPinned(spot.id);
   const pinState = getPinState(spot.id);
@@ -83,20 +82,13 @@ export const SpotMediaCard = memo(function SpotMediaCard({
   }, [spot.id, markSpotAsSeen]);
 
   // FASE 5: Memoizar source usando image.url (compatible con ambos formatos)
-  const imageSource = useMemo(() => {
-    if (!hasImage || !imageUrl) {
-      return null;
-    }
-    return { uri: imageUrl };
-  }, [hasImage, imageUrl]); // Solo cambiar cuando cambia la URI de la imagen
-
   // Handler para seleccionar estado en modal
   const handlePinStateSelect = useCallback((state: PinState) => {
     pinSpot(spot.id, state);
     setShowPinModal(false);
     markPinModalSeen();
     setHasSeenFirstTime(true); // Actualizar estado local después de marcar
-    setToastMessage(state === 'visited' ? 'Pinned · Visited' : 'Pinned · To visit');
+    setToastMessage(state === 'visited' ? 'Pineado · Visitado' : 'Pineado · Por visitar');
     setShowToast(true);
   }, [spot.id, pinSpot]);
 
@@ -136,7 +128,7 @@ export const SpotMediaCard = memo(function SpotMediaCard({
         setHasSeenFirstTime(true);
       }
       pinSpot(spot.id, 'to_visit');
-      setToastMessage('Pinned · To visit');
+      setToastMessage('Pineado · Por visitar');
       setShowToast(true);
       return;
     }
@@ -145,7 +137,7 @@ export const SpotMediaCard = memo(function SpotMediaCard({
     if (pinState === 'to_visit') {
       // Cambiar a visited
       changePinState(spot.id, 'visited');
-      setToastMessage('Changed to Visited');
+      setToastMessage('Cambiado a visitado');
       setShowToast(true);
     } else if (pinState === 'visited') {
       // Eliminar pin
@@ -228,7 +220,7 @@ export const SpotMediaCard = memo(function SpotMediaCard({
           style={[styles.smallTitle, { color: colors.text }]} 
           numberOfLines={2}
         >
-          {spot.name || 'Unnamed spot'}
+          {spot.name || 'Spot sin nombre'}
         </Text>
 
         {/* InfoMeta debajo del título */}
@@ -327,7 +319,7 @@ export const SpotMediaCard = memo(function SpotMediaCard({
         <View style={styles.content}>
           <View style={styles.spotInfo}>
             <Text style={[styles.spotName, { color: colors.text }]} numberOfLines={1}>
-              {spot.name || 'Unnamed spot'}
+              {spot.name || 'Spot sin nombre'}
             </Text>
             {spot.description && (
               <Text style={[styles.spotDescription, { color: colors.icon }]} numberOfLines={2}>

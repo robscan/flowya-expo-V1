@@ -69,7 +69,7 @@ import { usePath } from '@/contexts/PathContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { calculateDistanceToSpot } from '@/utils/distance';
-import { getValidImage, hasValidImage } from '@/utils/imageHelpers';
+import { getSpotImageSource } from '@/utils/imageHelpers';
 
 interface FlowMiniPlayerProps {
   /** Callback cuando se expande el player (toca el player o bot?n expand) */
@@ -113,7 +113,7 @@ export function FlowMiniPlayer({ onExpand, userLocation: propUserLocation }: Flo
 
   // Determinar visibilidad: solo visible cuando flow est? activo o pausado
   const isVisible = flowState.status === 'active' || flowState.status === 'paused';
-  const flow = flowState.currentPathId ? getFlowById(flowState.currentPathId) : null;
+  const flow = flowState.flowId ? getFlowById(flowState.flowId) : null;
   const currentSpot = currentSpotId ? getSpotById(currentSpotId) : null;
 
   // Ocultar cuando FlowScreen est? abierta
@@ -137,10 +137,7 @@ export function FlowMiniPlayer({ onExpand, userLocation: propUserLocation }: Flo
   const distance = propUserLocation ? calculateDistanceToSpot(propUserLocation, currentSpot.location) : null;
   const distanceText = formatDistance(distance || undefined, useMiles);
 
-  // FASE 5: Usar image.url en lugar de photos[0] (compatible con ambos formatos)
-  const spotImageUrl = currentSpot.image?.url || (currentSpot.photos && currentSpot.photos.length > 0 ? currentSpot.photos[0] : '');
-  const hasImage = hasValidImage(currentSpot.photos, spotImageUrl);
-  const imageUrl = getValidImage(currentSpot.photos, spotImageUrl);
+  const imageSource = getSpotImageSource(currentSpot);
 
   const handleDistancePress = (e: any) => {
     e.stopPropagation();
@@ -174,22 +171,16 @@ export function FlowMiniPlayer({ onExpand, userLocation: propUserLocation }: Flo
       >
         <View style={staticStyles.content}>
           {/* Imagen del spot */}
-          {hasImage && imageUrl ? (
-            <Image 
-              source={{ uri: imageUrl }} 
-              style={staticStyles.spotImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[staticStyles.spotImagePlaceholder, { backgroundColor: colors.icon + '20' }]}>
-              <Icon name="upload" size={16} color={colors.icon} />
-            </View>
-          )}
+          <Image
+            source={imageSource}
+            style={staticStyles.spotImage}
+            resizeMode="cover"
+          />
 
           {/* Informaci?n: Nombre y distancia */}
           <View style={staticStyles.info}>
             <Text style={[staticStyles.spotName, { color: colors.text }]} numberOfLines={1}>
-              {currentSpot.name || 'Current spot'}
+              {currentSpot.name || 'Spot actual'}
             </Text>
             {distanceText && (
               <TouchableOpacity 

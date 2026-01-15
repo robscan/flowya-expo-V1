@@ -521,7 +521,7 @@ export function FormLocationSelector({
                   }
                   handleSearch(text);
                 }}
-                placeholder="Search by address"
+                placeholder="Buscar por dirección"
                 onSubmitEditing={() => {
                   if (searchResults.length > 0) {
                     handleSelectResult(searchResults[0]);
@@ -581,7 +581,7 @@ export function FormLocationSelector({
         {/* Instrucciones */}
         {!disabled && (
           <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
-            Click on the map to select location
+            Haz clic en el mapa para seleccionar la ubicación
           </Text>
         )}
       </View>
@@ -604,7 +604,7 @@ export function FormLocationSelector({
             }
             handleSearch(text);
           }}
-          placeholder="Search by address"
+          placeholder="Buscar por dirección"
           onSubmitEditing={() => {
             if (searchResults.length > 0) {
               handleSelectResult(searchResults[0]);

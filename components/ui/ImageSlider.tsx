@@ -13,6 +13,7 @@ import { Dimensions, FlatList, Image, StyleSheet, View } from 'react-native';
 import { OptimizedImage } from '@/components/ui/OptimizedImage';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getPlaceholderImageSource } from '@/utils/imageHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -37,7 +38,15 @@ export function ImageSlider({
   // Si no hay imágenes, mostrar placeholder
   if (images.length === 0 && showFallback) {
     return (
-      <View style={[styles.container, { height, backgroundColor: colors.icon + '10' }]} />
+      <View style={[styles.container, { height }]}>
+        <OptimizedImage
+          source={getPlaceholderImageSource()}
+          width="100%"
+          height={height}
+          showFallback={false}
+          resizeMode="cover"
+        />
+      </View>
     );
   }
 

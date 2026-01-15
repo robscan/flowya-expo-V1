@@ -164,7 +164,7 @@ export function SpotInlineCard({
           {/* Contenido principal */}
           <View style={styles.spotInfo}>
             <Text style={[styles.spotName, { color: colors.text }]} numberOfLines={1}>
-              {spot.name || 'Unnamed spot'}
+              {spot.name || 'Spot sin nombre'}
             </Text>
             {spot.description && spot.description.trim().length > 0 && (
               <Text style={[styles.spotDescription, { color: colors.icon }]} numberOfLines={2}>

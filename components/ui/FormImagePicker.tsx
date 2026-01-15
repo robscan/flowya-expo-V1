@@ -132,7 +132,7 @@ export function FormImagePicker({
           activeOpacity={0.7}>
           <Icon name="add" size={32} color={colors.icon} />
           <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
-            Add photo
+            Agregar foto
           </Text>
         </TouchableOpacity>
       )}

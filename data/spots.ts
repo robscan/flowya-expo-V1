@@ -4,9 +4,7 @@
  * 
  * Defines the Spot type and related interfaces for the application.
  * 
- * The system uses two types of spots:
- * - World Spots: Global spots loaded from seedSpots.v1.2.json
- * - User Spots: Spots created by users, persisted in AsyncStorage
+ * The system uses a single Spot entity (canónico V2.0).
  */
 
 import { LocationRegion } from '@/types/locationRegion';
@@ -71,9 +69,6 @@ export interface Spot {
   image: SpotImage; // Changed from photos[] array to single image object (Phase 5)
   hasGeneratedContent: boolean; // New - replaces aiGenerated (true if content was AI-generated)
   
-  // Phase 7: World Spot → User Spot linking
-  originWorldSpotId?: string; // ID of the World Spot from which this User Spot was derived (if applicable)
-  
   // Legacy fields for temporary compatibility (will be removed in Phase 6)
   // These fields are maintained for backward compatibility during migration
   photos?: string[]; // Legacy - kept temporarily for compatibility (Phase 5)
@@ -130,11 +125,9 @@ export interface SpotV1_2 {
 /**
  * User Spots - Spots created by users
  * 
- * NOTE: User spots are created dynamically and persisted in AsyncStorage.
- * World Spots (global spots) are loaded from seedSpots.v1.2.json.
+ * NOTE: Spots are created dinámicamente y persistidos en AsyncStorage.
  * 
- * This array is empty by design - spots are created when users interact
- * with World Spots or create new spots.
+ * This array is empty by design - spots are created by users.
  */
 export const mockSpots: Spot[] = [];
 

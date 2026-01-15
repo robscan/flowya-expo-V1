@@ -32,7 +32,7 @@ interface SearchBarProps {
 export function SearchBar({
   value,
   onChangeText,
-  placeholder = 'Search places...',
+  placeholder = 'Buscar lugares...',
   onFocus,
   onBlur,
   onSubmitEditing,

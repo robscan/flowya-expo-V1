@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Flow, MovementMode, calculateEstimatedDuration } from '@/data/flows';
 import { mockFlows } from '@/data/flows';
+import { normalizeSpotIds } from '@/utils/normalizeSpotId';
 
 const STORAGE_KEY = '@flowya_flows';
 
@@ -79,11 +80,15 @@ export function PathProvider({ children }: { children: ReactNode }) {
           metadata: flow.metadata
             ? {
                 ...flow.metadata,
+                inferredFrom: flow.metadata.inferredFrom
+                  ? normalizeSpotIds(flow.metadata.inferredFrom)
+                  : undefined,
                 suggestedAt: flow.metadata.suggestedAt ? new Date(flow.metadata.suggestedAt) : undefined,
                 acceptedAt: flow.metadata.acceptedAt ? new Date(flow.metadata.acceptedAt) : undefined,
                 editedAt: flow.metadata.editedAt ? new Date(flow.metadata.editedAt) : undefined,
               }
             : undefined,
+          spots: normalizeSpotIds(flow.spots),
         }));
         setFlows(flowsWithDates);
       } else {
@@ -122,16 +127,17 @@ export function PathProvider({ children }: { children: ReactNode }) {
     title?: string,
     description?: string
   ): Flow => {
+    const normalizedSpotIds = normalizeSpotIds(spotIds);
     const now = new Date();
-    const estimatedDuration = calculateEstimatedDuration(spotIds.length, movementMode);
+    const estimatedDuration = calculateEstimatedDuration(normalizedSpotIds.length, movementMode);
 
     const newFlow: Flow = {
       id: `flow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: title || `Flow with ${spotIds.length} spots`,
+      title: title || `Flow with ${normalizedSpotIds.length} spots`,
       description,
       estimatedDuration,
       movementMode,
-      spots: spotIds,
+      spots: normalizedSpotIds,
       createdAt: now,
       updatedAt: now,
     };
@@ -141,10 +147,13 @@ export function PathProvider({ children }: { children: ReactNode }) {
   };
 
   const updateFlow = (id: string, updates: Partial<Flow>) => {
+    const normalizedUpdates = updates.spots
+      ? { ...updates, spots: normalizeSpotIds(updates.spots) }
+      : updates;
     setFlows((prev) =>
       prev.map((flow) =>
         flow.id === id
-          ? { ...flow, ...updates, updatedAt: new Date() }
+          ? { ...flow, ...normalizedUpdates, updatedAt: new Date() }
           : flow
       )
     );
@@ -156,22 +165,23 @@ export function PathProvider({ children }: { children: ReactNode }) {
 
   // Generar Flow sugerido desde array de Spot IDs
   const suggestFlowFromSpots = (spotIds: string[]): Flow | null => {
-    if (spotIds.length < 2) {
+    const normalizedSpotIds = normalizeSpotIds(spotIds);
+    if (normalizedSpotIds.length < 2) {
       return null; // Necesitamos al menos 2 spots para un flow
     }
 
     const now = new Date();
-    const estimatedDuration = calculateEstimatedDuration(spotIds.length, 'walking');
+    const estimatedDuration = calculateEstimatedDuration(normalizedSpotIds.length, 'walking');
 
     const suggestedFlow: Flow = {
       id: `flow-suggested-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: `Suggested flow with ${spotIds.length} spots`,
-      description: `A flow connecting ${spotIds.length} spots`,
+      title: `Suggested flow with ${normalizedSpotIds.length} spots`,
+      description: `A flow connecting ${normalizedSpotIds.length} spots`,
       estimatedDuration,
       movementMode: 'walking',
-      spots: spotIds,
+      spots: normalizedSpotIds,
       metadata: {
-        inferredFrom: spotIds,
+        inferredFrom: normalizedSpotIds,
         suggestedAt: now,
       },
       createdAt: now,

@@ -3,8 +3,7 @@
  * Scope 3.1: Estado de Spots y funciones de gestión
  * 
  * Funciones:
- * - crearSpot
- * - actualizarSpot
+ * - createSpot (deshabilitado en V2.0: usar SpotContribution + applier)
  * - obtenerSpots
  * - Manejo de Spots incompletos (por diseño, los spots pueden ser incompletos)
  */
@@ -13,15 +12,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
 
 import { migrateSpotsRegions } from '@/core/region';
-import { mockSpots, Spot } from '@/data/spots';
-import { generateSpotContent as generateAIContent, GenerateContentOptions } from '@/utils/aiContentGenerator';
-import { removeImageState } from '@/utils/imageCache';
-import { migrateSpotImageToUnsplash, migrateSpotsImagesToUnsplash } from '@/utils/imageMigration';
+import { Spot } from '@/data/spots';
+import { migrateSpotsImagesToUnsplash } from '@/utils/imageMigration';
 import { migrateOwnersLegacy } from '@/utils/ownerMigration';
 import { canMigrateSpot, isValidSpotV1_2, migrateSpotToV1_2 } from '@/utils/spotMigration';
 import { normalizeAllSpots } from '@/utils/spotNormalizer';
 import { auditAllSpots, logAuditReport, fixSpots as fixAllSpots } from '@/utils/spotAudit';
-import { useAuth } from './AuthContext';
+import { normalizeSpotId } from '@/utils/normalizeSpotId';
+import { supabase } from '@/utils/supabase';
 
 const STORAGE_KEY = '@flowya_spots';
 const REGION_REMIGRATION_KEY = '@flowya_region_remigration_done';
@@ -49,9 +47,6 @@ interface SpotContextType {
   getSpotById: (id: string) => Spot | undefined;
   getSpotsByType: (type: Spot['type']) => Spot[];
   createSpot: (spot: Omit<Spot, 'id' | 'createdAt' | 'updatedAt'>, options?: { id?: string }) => Spot;
-  updateSpot: (id: string, updates: Partial<Spot>) => void;
-  deleteSpot: (id: string) => void;
-  generateSpotContent: (spotId: string, options?: GenerateContentOptions) => Promise<void>;
   refreshSpots: () => Promise<void>;
   // Funciones de cache
   getSpotLoadState: (spotId: string) => SpotLoadState;
@@ -66,7 +61,6 @@ const SpotContext = createContext<SpotContextType | undefined>(undefined);
 export function SpotProvider({ children }: { children: ReactNode }) {
   const [spots, setSpots] = useState<Spot[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { user } = useAuth();
 
   // Ref para prevenir guardado durante carga inicial
   const isInitialLoadRef = React.useRef(true);
@@ -108,20 +102,23 @@ export function SpotProvider({ children }: { children: ReactNode }) {
   // ============================================================================
 
   const getSpotLoadState = React.useCallback((spotId: string): SpotLoadState => {
-    return spotCacheRef.current.get(spotId) || 'not_seen';
+    const normalizedSpotId = normalizeSpotId(spotId);
+    return spotCacheRef.current.get(normalizedSpotId) || 'not_seen';
   }, []);
 
   const markSpotAsSeen = React.useCallback((spotId: string) => {
-    const currentState = spotCacheRef.current.get(spotId);
+    const normalizedSpotId = normalizeSpotId(spotId);
+    const currentState = spotCacheRef.current.get(normalizedSpotId);
     // Si ya está como 'available', mantener 'available'
     // Si está como 'not_seen' o no existe, cambiar a 'seen'
     if (currentState !== 'available') {
-      spotCacheRef.current.set(spotId, 'seen');
+      spotCacheRef.current.set(normalizedSpotId, 'seen');
     }
   }, []);
 
   const markSpotAsAvailable = React.useCallback((spotId: string) => {
-    spotCacheRef.current.set(spotId, 'available');
+    const normalizedSpotId = normalizeSpotId(spotId);
+    spotCacheRef.current.set(normalizedSpotId, 'available');
   }, []);
 
   const isSpotAvailable = React.useCallback((spotId: string): boolean => {
@@ -139,10 +136,131 @@ export function SpotProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const parseSpotDate = (value: any): Date => {
+    if (!value) return new Date();
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
+
+  const mapSupabaseSpotToModel = (row: Record<string, any>): Spot | null => {
+    const rawId = typeof row.id === 'string' ? row.id : '';
+    const id = normalizeSpotId(rawId);
+    if (!id) return null;
+
+    const locationPayload = row.location && typeof row.location === 'object' ? row.location : null;
+    const latCandidate =
+      row.location_lat ??
+      row.locationLatitude ??
+      locationPayload?.lat ??
+      locationPayload?.latitude;
+    const lngCandidate =
+      row.location_lng ??
+      row.locationLongitude ??
+      locationPayload?.lng ??
+      locationPayload?.longitude;
+
+    const lat = typeof latCandidate === 'number' ? latCandidate : Number(latCandidate);
+    const lng = typeof lngCandidate === 'number' ? lngCandidate : Number(lngCandidate);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      if (__DEV__) {
+        console.warn(`[SpotContext] Spot sin coordenadas válidas: ${id}`);
+      }
+      return null;
+    }
+
+    const locationCity =
+      locationPayload?.city ??
+      row.location_city ??
+      row.city ??
+      undefined;
+    const locationCountry =
+      locationPayload?.country ??
+      row.location_country ??
+      row.country ??
+      undefined;
+
+    const imagePayload = row.image && typeof row.image === 'object' ? row.image : null;
+    const imageUrl = typeof imagePayload?.url === 'string' ? imagePayload.url : '';
+
+    const rawType = typeof row.type === 'string' ? row.type : 'other';
+    const allowedTypes = new Set([
+      'beach',
+      'cafe',
+      'viewpoint',
+      'museum',
+      'restaurant',
+      'park',
+      'monument',
+      'market',
+      'other',
+    ]);
+    const normalizedType = allowedTypes.has(rawType) ? rawType : 'other';
+
+    const shortDescription =
+      typeof row.short_description === 'string'
+        ? row.short_description
+        : typeof row.shortDescription === 'string'
+          ? row.shortDescription
+          : undefined;
+
+    const hasGeneratedContent = Boolean(
+      row.has_generated_content ?? row.hasGeneratedContent ?? false
+    );
+
+    const createdAt = parseSpotDate(row.created_at ?? row.createdAt);
+    const updatedAt = parseSpotDate(row.updated_at ?? row.updatedAt);
+
+    return {
+      id,
+      name: typeof row.name === 'string' ? row.name : '',
+      type: normalizedType as Spot['type'],
+      location: {
+        lat,
+        lng,
+        city: typeof locationCity === 'string' ? locationCity : undefined,
+        country: typeof locationCountry === 'string' ? locationCountry : undefined,
+      },
+      shortDescription,
+      image: {
+        url: imageUrl,
+        source: typeof imagePayload?.source === 'string' ? imagePayload.source : undefined,
+        license: typeof imagePayload?.license === 'string' ? imagePayload.license : undefined,
+      },
+      hasGeneratedContent,
+      createdBy: typeof row.created_by === 'string' ? row.created_by : undefined,
+      createdAt,
+      updatedAt,
+    };
+  };
+
+  const fetchSupabaseSpots = React.useCallback(async (): Promise<Spot[] | null> => {
+    if (!supabase) return null;
+
+    const { data, error } = await supabase.from('spots').select('*');
+    if (error) {
+      console.error('[SpotContext] Error fetching spots from Supabase:', error.message);
+      return null;
+    }
+
+    const mapped = (data || [])
+      .map((row) => mapSupabaseSpotToModel(row))
+      .filter((spot): spot is Spot => Boolean(spot));
+
+    return normalizeAllSpots(mapped);
+  }, []);
+
   // Función para cargar spots (debe estar definida antes de los useEffect)
   const loadSpots = React.useCallback(async () => {
     try {
       setIsLoading(true);
+      const supabaseSpots = await fetchSupabaseSpots();
+      if (supabaseSpots) {
+        initializeSpotCache(supabaseSpots);
+        setSpots(supabaseSpots);
+        await saveSpots(supabaseSpots);
+        return;
+      }
+
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       let loadedSpots: Spot[];
       
@@ -166,21 +284,6 @@ export function SpotProvider({ children }: { children: ReactNode }) {
         });
         if (hasOwnerChanges) {
           await saveSpots(loadedSpots);
-        }
-        
-        // Detectar nuevos spots en mockSpots que no están en el storage
-        const storedIds = new Set(loadedSpots.map((s: Spot) => s.id));
-        const newSpotsFromMock = mockSpots.filter(spot => !storedIds.has(spot.id));
-        
-        // Migrar owners de nuevos spots desde mockSpots (también se ejecuta una sola vez)
-        if (newSpotsFromMock.length > 0) {
-          const newSpotsMigrated = await migrateOwnersLegacy(newSpotsFromMock);
-          loadedSpots = [...loadedSpots, ...newSpotsMigrated];
-          // Guardar los nuevos spots con owners asignados
-          await saveSpots(loadedSpots);
-          if (__DEV__) {
-            console.log(`✅ ${newSpotsMigrated.length} nuevos spots agregados con owners migrados`);
-          }
         }
         
         // CANONICAL: Migrar spots para poblar locationRegion (idempotente)
@@ -375,118 +478,8 @@ export function SpotProvider({ children }: { children: ReactNode }) {
           }
         }
       } else {
-        // Usar mock data si no hay datos guardados
-        // CANONICAL: Migrar owners legacy (UNA SOLA VEZ, no dinámico)
-        loadedSpots = await migrateOwnersLegacy(mockSpots);
-        
-        // CANONICAL: Migrar spots para poblar locationRegion (idempotente)
-        loadedSpots = await migrateSpotsRegions(loadedSpots);
-        
-        // SCOPE 6.2: Normalizar spots legacy al cargar
-        loadedSpots = normalizeAllSpots(loadedSpots);
-        
-        // FASE 6A: Migración V1.2 - Migrar spots legacy al modelo V1.2 (UNA SOLA VEZ)
-        const shouldMigrateToV1_2 = async (): Promise<boolean> => {
-          try {
-            const done = await AsyncStorage.getItem(V1_2_MIGRATION_KEY);
-            return done !== 'true';
-          } catch {
-            return false;
-          }
-        };
-        
-        if (await shouldMigrateToV1_2()) {
-          const migratedSpots: Spot[] = [];
-          const migrationErrors: { spotId: string; error: string }[] = [];
-          
-          for (const spot of loadedSpots) {
-            try {
-              // Verificar si el spot necesita migración
-              const needsMigration = 
-                !isValidSpotV1_2(spot) ||
-                ('latitude' in spot.location && 'longitude' in spot.location) ||
-                (spot.photos && spot.photos.length > 0 && !spot.image?.url) ||
-                (!spot.shortDescription && (spot.description || spot.whyItMatters)) ||
-                (spot.hasGeneratedContent === undefined && spot.aiGenerated !== undefined);
-              
-              if (needsMigration && canMigrateSpot(spot)) {
-                const migrated = migrateSpotToV1_2(spot);
-                
-                if (isValidSpotV1_2(migrated)) {
-                  const migratedSpot: Spot = {
-                    ...migrated,
-                    photos: spot.photos,
-                    description: spot.description,
-                    whyItMatters: spot.whyItMatters,
-                    culturalContext: spot.culturalContext,
-                    planInfo: spot.planInfo,
-                    hours: spot.hours,
-                    cost: spot.cost,
-                    restrictions: spot.restrictions,
-                    accessibility: spot.accessibility,
-                    aiGenerated: spot.aiGenerated,
-                    isLegacySpot: spot.isLegacySpot,
-                    createdBy: spot.createdBy,
-                    locationRegion: spot.locationRegion,
-                    locationLatitude: spot.locationLatitude,
-                    locationLongitude: spot.locationLongitude,
-                    createdAt: spot.createdAt,
-                    updatedAt: new Date(),
-                  };
-                  migratedSpots.push(migratedSpot);
-                } else {
-                  migrationErrors.push({
-                    spotId: spot.id,
-                    error: 'Spot migrado no es válido según modelo V1.2',
-                  });
-                  migratedSpots.push(spot);
-                }
-              } else {
-                migratedSpots.push(spot);
-              }
-            } catch (error: any) {
-              migrationErrors.push({
-                spotId: spot.id,
-                error: `Error al migrar: ${error.message || String(error)}`,
-              });
-              migratedSpots.push(spot);
-            }
-          }
-          
-          loadedSpots = migratedSpots;
-          await saveSpots(loadedSpots);
-          await AsyncStorage.setItem(V1_2_MIGRATION_KEY, 'true');
-          
-          if (__DEV__) {
-            const migratedCount = loadedSpots.length - migrationErrors.length;
-            console.log(`[FASE 6A] Migrated ${migratedCount} spots to V1.2 model`);
-            if (migrationErrors.length > 0) {
-              console.warn(`[FASE 6A] ${migrationErrors.length} spots had migration errors:`, migrationErrors);
-            }
-          }
-        }
-        
-        // SCOPE 6.3: Marcar spots existentes como legacy (una sola vez)
-        const shouldMarkLegacy = async (): Promise<boolean> => {
-          try {
-            const done = await AsyncStorage.getItem(LEGACY_MARKED_KEY);
-            return done !== 'true';
-          } catch {
-            return false;
-          }
-        };
-        
-        if (await shouldMarkLegacy()) {
-          loadedSpots = loadedSpots.map(spot => ({
-            ...spot,
-            isLegacySpot: true, // SCOPE 6.3: Marcar como legacy
-          }));
-          // Marcar como ejecutado para futuras cargas
-          await AsyncStorage.setItem(LEGACY_MARKED_KEY, 'true');
-        }
-        
-        // Guardar los spots iniciales con owners, regiones, normalización, migración V1.2 y legacy flag asignados
-        await saveSpots(loadedSpots);
+        // V2.0: No seed/stock en runtime; iniciar vacío si no hay storage.
+        loadedSpots = [];
       }
       
       // Inicializar cache marcando todos los Spots como 'available'
@@ -504,89 +497,12 @@ export function SpotProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Error loading spots:', error);
-      // Fallback a mock data con migraciones aplicadas
-      // CANONICAL: Migrar owners legacy (UNA SOLA VEZ)
-      let fallbackSpots = await migrateOwnersLegacy(mockSpots);
-      
-      // CANONICAL: Migrar spots para poblar locationRegion (idempotente)
-      fallbackSpots = await migrateSpotsRegions(fallbackSpots);
-      
-      // SCOPE 6.2: Normalizar spots legacy al cargar
-      fallbackSpots = normalizeAllSpots(fallbackSpots);
-      
-      // FASE 6A: Migración V1.2 - Migrar spots legacy al modelo V1.2 (UNA SOLA VEZ)
-      const shouldMigrateToV1_2 = async (): Promise<boolean> => {
-        try {
-          const done = await AsyncStorage.getItem(V1_2_MIGRATION_KEY);
-          return done !== 'true';
-        } catch {
-          return false;
-        }
-      };
-      
-      if (await shouldMigrateToV1_2()) {
-        const migratedSpots: Spot[] = [];
-        
-        for (const spot of fallbackSpots) {
-          try {
-            const needsMigration = 
-              !isValidSpotV1_2(spot) ||
-              ('latitude' in spot.location && 'longitude' in spot.location) ||
-              (spot.photos && spot.photos.length > 0 && !spot.image?.url) ||
-              (!spot.shortDescription && (spot.description || spot.whyItMatters)) ||
-              (spot.hasGeneratedContent === undefined && spot.aiGenerated !== undefined);
-            
-            if (needsMigration && canMigrateSpot(spot)) {
-              const migrated = migrateSpotToV1_2(spot);
-              
-              if (isValidSpotV1_2(migrated)) {
-                const migratedSpot: Spot = {
-                  ...migrated,
-                  photos: spot.photos,
-                  description: spot.description,
-                  whyItMatters: spot.whyItMatters,
-                  culturalContext: spot.culturalContext,
-                  planInfo: spot.planInfo,
-                  hours: spot.hours,
-                  cost: spot.cost,
-                  restrictions: spot.restrictions,
-                  accessibility: spot.accessibility,
-                  aiGenerated: spot.aiGenerated,
-                  isLegacySpot: spot.isLegacySpot,
-                  createdBy: spot.createdBy,
-                  locationRegion: spot.locationRegion,
-                  locationLatitude: spot.locationLatitude,
-                  locationLongitude: spot.locationLongitude,
-                  createdAt: spot.createdAt,
-                  updatedAt: new Date(),
-                };
-                migratedSpots.push(migratedSpot);
-              } else {
-                migratedSpots.push(spot);
-              }
-            } else {
-              migratedSpots.push(spot);
-            }
-          } catch {
-            migratedSpots.push(spot);
-          }
-        }
-        
-        fallbackSpots = migratedSpots;
-        await saveSpots(fallbackSpots);
-        await AsyncStorage.setItem(V1_2_MIGRATION_KEY, 'true');
-        
-        if (__DEV__) {
-          console.log(`[FASE 6A] Migrated ${fallbackSpots.length} fallback spots to V1.2 model`);
-        }
-      }
-      
-      initializeSpotCache(fallbackSpots);
-      setSpots(fallbackSpots);
+      initializeSpotCache([]);
+      setSpots([]);
     } finally {
       setIsLoading(false);
     }
-  }, [initializeSpotCache]);
+  }, [fetchSupabaseSpots, initializeSpotCache, saveSpots, shouldForceRegionRemigration]);
 
   // Cargar spots desde AsyncStorage
   useEffect(() => {
@@ -616,7 +532,8 @@ export function SpotProvider({ children }: { children: ReactNode }) {
   };
 
   const getSpotById = (id: string): Spot | undefined => {
-    const found = spots.find((spot) => spot.id === id);
+    const normalizedSpotId = normalizeSpotId(id);
+    const found = spots.find((spot) => spot.id === normalizedSpotId);
     return found;
   };
 
@@ -625,151 +542,7 @@ export function SpotProvider({ children }: { children: ReactNode }) {
   };
 
   const createSpot = (spotData: Omit<Spot, 'id' | 'createdAt' | 'updatedAt'>, options?: { id?: string }): Spot => {
-    // Validar que el usuario esté autenticado antes de crear
-    if (!user?.id) {
-      throw new Error('User must be authenticated to create spots');
-    }
-
-    const now = new Date();
-    // V1.3: Usar ID proporcionado si existe, sino generar uno nuevo
-    const spotId = options?.id || `spot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    const tempSpot: Spot = {
-      ...spotData,
-      id: spotId,
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    // V1.3: Migrar imagen a Unsplash si no lo es
-    const spotWithMigratedImage = migrateSpotImageToUnsplash(tempSpot);
-    
-    const newSpot: Spot = {
-      ...spotData,
-      image: spotWithMigratedImage.image, // Usar imagen migrada
-      id: spotId, // V1.3: Usar ID proporcionado o generado
-      createdBy: user.id, // Guardar ID del usuario que crea el spot
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    // P0-02: Invalidar caché de imágenes del spot (forzar recarga)
-    if (newSpot.photos && newSpot.photos.length > 0) {
-      newSpot.photos.forEach((photoUri) => {
-        removeImageState(photoUri);
-      });
-    }
-
-    // Agregar al cache como 'available' (nuevo Spot, ya está en memoria)
-    markSpotAsAvailable(newSpot.id);
-    setSpots((prev) => {
-      const newSpots = [...prev, newSpot];
-      return newSpots;
-    });
-    return newSpot;
-  };
-
-  const updateSpot = (id: string, updates: Partial<Spot>) => {
-    setSpots((prev) =>
-      prev.map((spot) => {
-        if (spot.id === id) {
-          // V1.3: Si se actualiza la imagen, migrar a Unsplash si no lo es
-          let finalUpdates = { ...updates };
-          if (updates.image?.url) {
-            const tempSpot = { ...spot, ...updates } as Spot;
-            const migrated = migrateSpotImageToUnsplash(tempSpot);
-            if (migrated.image.url !== updates.image.url) {
-              finalUpdates.image = migrated.image;
-            }
-          }
-          
-          // P0-02: Invalidar caché de imágenes si se actualizan las fotos
-          if (updates.photos) {
-            // Invalidar URIs antiguas
-            if (spot.photos && spot.photos.length > 0) {
-              spot.photos.forEach((photoUri) => {
-                removeImageState(photoUri);
-              });
-            }
-            // Invalidar URIs nuevas (para forzar recarga)
-            updates.photos.forEach((photoUri) => {
-              removeImageState(photoUri);
-            });
-          }
-
-          return { ...spot, ...finalUpdates, updatedAt: new Date() };
-        }
-        return spot;
-      })
-    );
-  };
-
-  const deleteSpot = (id: string) => {
-    // Eliminar del cache también
-    spotCacheRef.current.delete(id);
-    setSpots((prev) => prev.filter((spot) => spot.id !== id));
-  };
-
-  /**
-   * Generar contenido para un spot - FLOWYA V1.2 (Bajo demanda)
-   * 
-   * FASE 2: Solo se ejecuta cuando:
-   * - hasGeneratedContent === false (o aiGenerated === undefined en modelo actual)
-   * - Usuario explícitamente lo solicita (en Spot Detail)
-   * 
-   * NO se ejecuta automáticamente al crear o editar un Spot.
-   * Solo genera shortDescription (texto evocativo de 1-2 líneas).
-   */
-  const generateSpotContent = async (spotId: string, options?: GenerateContentOptions): Promise<void> => {
-    const spot = getSpotById(spotId);
-    if (!spot) {
-      throw new Error(`Spot with id ${spotId} not found`);
-    }
-
-    // FASE 2: Verificar que el spot no tenga contenido generado previamente
-    // Usar aiGenerated como indicador en modelo actual (se migrará a hasGeneratedContent en fase 6)
-    const hasGeneratedContent = spot.aiGenerated !== undefined && spot.aiGenerated !== null;
-    
-    if (hasGeneratedContent && !options?.forceRegenerate) {
-      console.log('[AI V1.2] Spot already has generated content, skipping generation. Use forceRegenerate to override.');
-      throw new Error('Spot already has generated content. Use forceRegenerate option to override.');
-    }
-
-    // FASE 2: Verificar si ya tiene shortDescription (o description/whyItMatters) sin forceRegenerate
-    const hasDescription = spot.shortDescription || spot.description || spot.whyItMatters;
-    if (hasDescription && hasDescription.trim().length > 0 && !options?.forceRegenerate) {
-      console.log('[AI V1.2] Spot already has description, skipping generation. Use forceRegenerate to override.');
-      throw new Error('Spot already has description. Use forceRegenerate option to override.');
-    }
-
-    try {
-      console.log('[AI V1.2] Generating content on demand for spot:', { spotId, spotName: spot.name });
-      const generatedContent = await generateAIContent(spot, options);
-      
-      // FASE 2: Actualizar spot SOLO con shortDescription generado
-      // Mantener campos legacy para compatibilidad temporal durante migración
-      updateSpot(spotId, {
-        // Nuevo campo (para spots que ya migraron)
-        shortDescription: generatedContent.shortDescription || spot.shortDescription,
-        // Campos legacy para compatibilidad temporal (se eliminarán en fase 4)
-        description: generatedContent.spotDescription || generatedContent.shortDescription || spot.description,
-        whyItMatters: generatedContent.whyItMatters || generatedContent.shortDescription || spot.whyItMatters,
-        // Metadatos de generación (marcar que tiene contenido generado)
-        aiGenerated: generatedContent.aiGenerated || {
-          generatedAt: new Date(),
-          model: 'gpt-4',
-          source: 'ai',
-        },
-      });
-      
-      console.log('[AI V1.2] Content generated and saved successfully:', {
-        spotId,
-        shortDescriptionLength: generatedContent.shortDescription?.length || 0,
-      });
-    } catch (error) {
-      console.error('[AI V1.2] Error generating spot content:', error);
-      throw error;
-    }
+    throw new Error('createSpot deshabilitado en V2.0: usar SpotContribution + applier.');
   };
 
   const value: SpotContextType = {
@@ -778,9 +551,6 @@ export function SpotProvider({ children }: { children: ReactNode }) {
     getSpotById,
     getSpotsByType,
     createSpot,
-    updateSpot,
-    deleteSpot,
-    generateSpotContent,
     refreshSpots,
     // Funciones de cache
     getSpotLoadState,

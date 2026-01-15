@@ -102,31 +102,44 @@ export default function TabLayout() {
           <Tabs.Screen
           name="home"
           options={{
-            title: 'Home',
+            title: 'Inicio',
             tabBarIcon: ({ color }) => <Icon name="home" size={28} color={color} />,
           }}
         />
         <Tabs.Screen
           name="map"
             options={{
-            title: 'Map',
+            title: 'Mapa',
             tabBarIcon: ({ color }) => <Icon name="map" size={28} color={color} />,
             }}
           />
-          <Tabs.Screen
-            name="saved"
-            options={{
-              title: 'Saved',
-            tabBarIcon: ({ color }) => <Icon name="saved" size={28} color={color} />,
+        <Tabs.Screen
+          name="pinned"
+          options={{
+            title: 'Pines',
+            tabBarIcon: ({ color }) => <Icon name="pin" size={28} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="flows"
+          options={{
+            title: 'Flows',
+            tabBarIcon: ({ color }) => <Icon name="explore" size={28} color={color} />,
           }}
         />
         <Tabs.Screen
           name="search"
           options={{
-            title: 'Search',
+            title: 'Buscar',
             tabBarIcon: ({ color }) => <Icon name="search" size={28} color={color} />,
             }}
           />
+        <Tabs.Screen
+          name="saved"
+          options={{
+            href: null,
+          }}
+        />
           <Tabs.Screen
             name="profile"
             options={{
