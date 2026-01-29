@@ -32,9 +32,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotForm } from '@/hooks/useSpotForm';
+import { createSpotAsAdmin } from '@/utils/adminModerationService';
 import { createSpotContribution, fetchUserContributions } from '@/utils/spotContributionsService';
+import { createSpotMediaPublic } from '@/utils/spotMediaService';
 import { isAdminUser } from '@/utils/permissions';
 import { getTrustPermissions, getTrustTier, getTrustTierLabel, TrustPermissions, TrustTier } from '@/utils/trustScore';
+import { isPublicStorageUrl, uploadImageToStorage } from '@/utils/storageUpload';
 
 export default function CreateSpotScreen() {
   const router = useRouter();
@@ -48,6 +51,10 @@ export default function CreateSpotScreen() {
   const { baseLocation } = useBaseLocation();
   
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [successCopy, setSuccessCopy] = useState({
+    title: 'Thanks for sharing',
+    body: 'Your spot is being reviewed and will be available soon.',
+  });
   const [trustTier, setTrustTier] = useState<TrustTier>('nuevo');
   const [trustPermissions, setTrustPermissions] = useState<TrustPermissions | null>(null);
   const [isTrustEnforced, setIsTrustEnforced] = useState(false);
@@ -69,20 +76,82 @@ export default function CreateSpotScreen() {
         );
         return;
       }
+      let imageUrl = spotData.image?.url || '';
+      if (imageUrl && !isPublicStorageUrl(imageUrl)) {
+        const uploadResult = await uploadImageToStorage({
+          uri: imageUrl,
+          pathPrefix: `spots/${user.id}`,
+        });
+        if (uploadResult.error || !uploadResult.publicUrl) {
+          Alert.alert('Error', uploadResult.error || 'No se pudo subir la imagen.');
+          return;
+        }
+        imageUrl = uploadResult.publicUrl;
+      }
+
       const payload = {
         name: spotData.name,
         type: spotData.type,
         location: spotData.location,
         short_description: spotData.shortDescription,
         description: spotData.description,
-        image: spotData.image,
+        image: imageUrl ? { ...spotData.image, url: imageUrl } : spotData.image,
         has_generated_content: spotData.hasGeneratedContent,
       };
+      if (isAdmin) {
+        const createResult = await createSpotAsAdmin({
+          payload: {
+            name: spotData.name,
+            type: spotData.type,
+            location: spotData.location,
+            shortDescription: spotData.shortDescription,
+            description: spotData.description,
+            hasGeneratedContent: spotData.hasGeneratedContent,
+          },
+          userId: user.id,
+        });
+        if (createResult.error || !createResult.data?.id) {
+          Alert.alert('Error', createResult.error || 'No se pudo crear el spot.');
+          return;
+        }
+        if (imageUrl) {
+          await createSpotMediaPublic({
+            spotId: createResult.data.id,
+            url: imageUrl,
+            source: spotData.image?.source,
+            license: spotData.image?.license,
+            createdBy: user.id,
+          });
+        }
+        setSuccessCopy({
+          title: 'Spot publicado',
+          body: 'El spot ya está visible en el mapa.',
+        });
+        setShowSuccessMessage(true);
+        setTimeout(() => {
+          router.replace(`/spot-detail?id=${createResult.data?.id}`);
+        }, 1500);
+        return;
+      }
+
       const result = await createSpotContribution(null, payload, user.id);
       if (result.error) {
         Alert.alert('Error', 'No se pudo enviar la contribución. Intenta de nuevo.');
         return;
       }
+      if (imageUrl && result.data?.spot_id) {
+        await createSpotMediaPublic({
+          spotId: result.data.spot_id,
+          url: imageUrl,
+          source: spotData.image?.source,
+          license: spotData.image?.license,
+          createdBy: user.id,
+        });
+      }
+      setSuccessCopy({
+        title: 'Thanks for sharing',
+        body: 'Your spot is being reviewed and will be available soon.',
+      });
       setShowSuccessMessage(true);
       setTimeout(() => {
         router.replace('/(tabs)/home');
@@ -258,10 +327,10 @@ export default function CreateSpotScreen() {
           >
             <Icon name="like" size={48} color={colors.tint} />
             <Text style={[textStyles.heading4, { color: colors.text, marginTop: spacing.md, textAlign: 'center' }]}>
-              Thanks for sharing
+              {successCopy.title}
             </Text>
             <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm, textAlign: 'center' }]}>
-              Your spot is being reviewed and will be available soon.
+              {successCopy.body}
             </Text>
           </GlassView>
         </View>

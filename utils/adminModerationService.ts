@@ -8,6 +8,8 @@ import type {
 import type { Spot } from '@/data/spots';
 import type { AdminAuditRecord } from '@/types/adminAudit';
 
+let spotColumnsCache: string[] | null = null;
+
 async function logAdminAction(params: {
   action: string;
   entityType: string;
@@ -21,6 +23,112 @@ async function logAdminAction(params: {
     entity_id: params.entityId ?? null,
     payload: params.payload ?? null,
   });
+}
+
+async function getCurrentUserId(): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getUser();
+  if (error) {
+    return null;
+  }
+  return data.user?.id ?? null;
+}
+
+const generateSpotId = () =>
+  `spot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const getSpotColumns = async (): Promise<Set<string> | null> => {
+  if (!supabase) return null;
+  if (spotColumnsCache) return new Set(spotColumnsCache);
+  const { data, error } = await supabase.from('spots').select('*').limit(1);
+  if (error) {
+    return null;
+  }
+  const columns = data?.[0] ? Object.keys(data[0]) : [];
+  spotColumnsCache = columns;
+  return new Set(columns);
+};
+
+export type AdminSpotCreatePayload = {
+  name: string;
+  type: Spot['type'];
+  location: {
+    lat?: number;
+    lng?: number;
+    latitude?: number;
+    longitude?: number;
+    city?: string;
+    country?: string;
+  };
+  shortDescription?: string;
+  description?: string;
+  hasGeneratedContent?: boolean;
+};
+
+export async function createSpotAsAdmin(params: {
+  payload: AdminSpotCreatePayload;
+  userId: string;
+  spotId?: string;
+}): Promise<{ data?: { id: string }; error?: string }> {
+  if (!supabase) {
+    return { error: 'Supabase not configured' };
+  }
+
+  const columnSet = await getSpotColumns();
+  if (!columnSet) {
+    return { error: 'No se pudieron cargar columnas de spots' };
+  }
+
+  const spotId = params.spotId ?? generateSpotId();
+  const nowIso = new Date().toISOString();
+  const loc = params.payload.location ?? {};
+  const lat = loc.lat ?? loc.latitude ?? null;
+  const lng = loc.lng ?? loc.longitude ?? null;
+
+  const baseRow: Record<string, unknown> = {
+    id: spotId,
+    name: params.payload.name,
+    type: params.payload.type,
+    location: params.payload.location,
+    lat,
+    lng,
+    latitude: lat,
+    longitude: lng,
+    location_lat: lat,
+    location_lng: lng,
+    location_city: loc.city ?? null,
+    location_country: loc.country ?? null,
+    short_description: params.payload.shortDescription ?? null,
+    shortDescription: params.payload.shortDescription ?? null,
+    description: params.payload.description ?? params.payload.shortDescription ?? null,
+    has_generated_content: params.payload.hasGeneratedContent ?? false,
+    spot_type: null,
+    needs_review: false,
+    created_by: params.userId,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  const row: Record<string, unknown> = {};
+  Object.keys(baseRow).forEach((key) => {
+    if (columnSet.has(key)) {
+      row[key] = baseRow[key];
+    }
+  });
+
+  const { error } = await supabase.from('spots').insert(row);
+  if (error) {
+    return { error: error.message };
+  }
+
+  await logAdminAction({
+    action: 'create_spot_admin',
+    entityType: 'spot',
+    entityId: spotId,
+    payload: { name: params.payload.name, type: params.payload.type },
+  });
+
+  return { data: { id: spotId } };
 }
 
 export async function fetchPendingContributions(): Promise<{
@@ -42,6 +150,95 @@ export async function fetchPendingContributions(): Promise<{
   }
 
   return { data: (data || []) as SpotContributionRecord[] };
+}
+
+export async function fetchRecentContributionsForUsers(): Promise<{
+  data: Array<{ author_id: string; status: string; created_at: string }>;
+  error?: string;
+}> {
+  if (!supabase) {
+    return { data: [], error: 'Supabase not configured' };
+  }
+
+  const { data, error } = await supabase
+    .from('spot_contributions')
+    .select('author_id,status,created_at')
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (error) {
+    return { data: [], error: error.message };
+  }
+
+  return { data: (data || []) as Array<{ author_id: string; status: string; created_at: string }> };
+}
+
+export async function fetchUserRole(userId: string): Promise<{ role: string | null; error?: string }> {
+  if (!supabase) {
+    return { role: null, error: 'Supabase not configured' };
+  }
+
+  const { data, error } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    return { role: null, error: error.message };
+  }
+
+  return { role: (data?.role as string) || null };
+}
+
+export async function fetchUserRoles(limit = 50): Promise<{
+  data: Array<{ user_id: string; role: string; updated_at: string }>;
+  error?: string;
+}> {
+  if (!supabase) {
+    return { data: [], error: 'Supabase not configured' };
+  }
+
+  const { data, error } = await supabase
+    .from('user_roles')
+    .select('user_id,role,updated_at')
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    return { data: [], error: error.message };
+  }
+
+  return { data: (data || []) as Array<{ user_id: string; role: string; updated_at: string }> };
+}
+
+export async function upsertUserRole(params: {
+  userId: string;
+  role: 'admin' | 'curator' | 'support' | 'analyst';
+}): Promise<{ error?: string }> {
+  if (!supabase) {
+    return { error: 'Supabase not configured' };
+  }
+
+  const { error } = await supabase
+    .from('user_roles')
+    .upsert({
+      user_id: params.userId,
+      role: params.role,
+    });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  await logAdminAction({
+    action: 'assign_user_role',
+    entityType: 'user_role',
+    entityId: params.userId,
+    payload: { role: params.role },
+  });
+
+  return {};
 }
 
 export async function fetchSpotById(spotId: string): Promise<{
@@ -150,6 +347,40 @@ export async function applyContribution(contributionId: string): Promise<{ error
   return {};
 }
 
+export async function updateContributionPayload(params: {
+  contributionId: string;
+  payload: Record<string, unknown>;
+}): Promise<{ error?: string }> {
+  if (!supabase) {
+    return { error: 'Supabase not configured' };
+  }
+
+  const { data, error } = await supabase
+    .from('spot_contributions')
+    .update({
+      payload: params.payload,
+    })
+    .select('id,status')
+    .eq('id', params.contributionId)
+    .eq('status', 'pending');
+
+  if (error) {
+    return { error: error.message };
+  }
+  if (!data || data.length === 0) {
+    return { error: 'Contribution already processed' };
+  }
+
+  await logAdminAction({
+    action: 'edit_contribution_payload',
+    entityType: 'spot_contribution',
+    entityId: params.contributionId,
+    payload: { updated_fields: Object.keys(params.payload) },
+  });
+
+  return {};
+}
+
 export async function rejectContribution(
   contributionId: string,
   reviewReason?: string
@@ -158,18 +389,24 @@ export async function rejectContribution(
     return { error: 'Supabase not configured' };
   }
 
+  const reviewerId = await getCurrentUserId();
   const { data, error } = await supabase
     .from('spot_contributions')
     .update({
       status: 'rejected',
       rejected_at: new Date().toISOString(),
       review_reason: reviewReason ?? null,
+      reviewed_by: reviewerId,
     })
     .select('id,status')
-    .eq('id', contributionId);
+    .eq('id', contributionId)
+    .eq('status', 'pending');
 
   if (error) {
     return { error: error.message };
+  }
+  if (!data || data.length === 0) {
+    return { error: 'Contribution already processed' };
   }
 
   await logAdminAction({
@@ -386,7 +623,9 @@ export async function fetchNeedsReviewCount(): Promise<{
   return { count: count || 0 };
 }
 
-export async function fetchContributionCountByStatus(status: 'applied' | 'rejected'): Promise<{
+export async function fetchContributionCountByStatus(
+  status: 'pending' | 'applied' | 'rejected'
+): Promise<{
   count: number;
   error?: string;
 }> {
