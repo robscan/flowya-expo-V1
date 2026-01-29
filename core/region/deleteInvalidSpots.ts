@@ -30,6 +30,7 @@
 
 import { Spot } from '@/data/spots';
 import { LocationRegion } from '@/types/locationRegion';
+import { isCanonicalRegionId } from './regionIdGenerator';
 
 /**
  * Validar si un spot tiene locationRegion canónico válido
@@ -38,7 +39,7 @@ import { LocationRegion } from '@/types/locationRegion';
  * Un spot es válido si y solo si:
  * - Tiene locationRegion
  * - locationRegion es un objeto (no string legacy)
- * - locationRegion tiene regionId (campo canónico obligatorio)
+ * - locationRegion tiene regionId canónico (formato country.type.place)
  * - locationRegion tiene label (campo canónico obligatorio)
  * - locationRegion tiene type (campo canónico obligatorio)
  * - locationRegion tiene countryCode (campo canónico obligatorio)
@@ -65,8 +66,11 @@ function isValidSpot(spot: Spot): boolean {
   // Validar que tiene todos los campos canónicos requeridos
   const region = spot.locationRegion as LocationRegion;
   
-  // regionId es OBLIGATORIO
+  // regionId es OBLIGATORIO y debe ser canónico
   if (!region.regionId || typeof region.regionId !== 'string' || region.regionId.trim() === '') {
+    return false;
+  }
+  if (!isCanonicalRegionId(region.regionId)) {
     return false;
   }
 
@@ -75,8 +79,8 @@ function isValidSpot(spot: Spot): boolean {
     return false;
   }
 
-  // type es OBLIGATORIO
-  if (!region.type || !['city', 'locality', 'region'].includes(region.type)) {
+  // type es OBLIGATORIO (solo city/region son válidos)
+  if (!region.type || !['city', 'region'].includes(region.type)) {
     return false;
   }
 

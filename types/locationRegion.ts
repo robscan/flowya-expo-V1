@@ -12,10 +12,9 @@
 /**
  * Tipo de región derivado de Mapbox
  * - city: Ciudad principal (ej: "Playa del Carmen")
- * - locality: Localidad/barrio (ej: "Hotel Zone")
  * - region: Región administrativa (ej: "Quintana Roo")
  */
-export type RegionType = 'city' | 'locality' | 'region';
+export type RegionType = 'city' | 'region';
 
 /**
  * Región canónica normalizada
@@ -29,8 +28,8 @@ export interface LocationRegion {
    * ID único y estable de la región (derivado de Mapbox)
    * CANONICAL: Usado para comparaciones, nunca usar label
    * 
-   * Formato: derivado del ID de feature de Mapbox o short_code
-   * Ejemplos: "place.12345", "locality.67890", "MX-QROO"
+   * Formato: country.type.place (estable)
+   * Ejemplos: "mx.city.playa-del-carmen", "mx.region.quintana-roo"
    */
   regionId: string;
 
@@ -43,7 +42,7 @@ export interface LocationRegion {
   label: string;
 
   /**
-   * Tipo de región (city, locality, region)
+   * Tipo de región (city, region)
    * CANONICAL: Determina la prioridad/precisión de la región
    */
   type: RegionType;

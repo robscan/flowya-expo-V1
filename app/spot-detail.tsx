@@ -5,7 +5,7 @@
  */
 
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -20,6 +20,7 @@ import {
     StatusBar,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     UIManager,
     View
@@ -60,6 +61,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
 import { useSpotForm } from '@/hooks/useSpotForm';
+import { useImagePreloader } from '@/hooks/useImagePreloader';
+import { useEntityTranslations } from '@/hooks/useEntityTranslations';
 import { auditSpotEditorial } from '@/utils/spotEditorialAudit';
 import { getPlaceholderImageSource, getSpotImageUrls, hasValidImage } from '@/utils/imageHelpers';
 import { mapMovementModeToNavigationMode, openNavigationApp } from '@/utils/navigationHelpers';
@@ -67,10 +70,21 @@ import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
 import { normalizeSpotId } from '@/utils/normalizeSpotId';
 import { createSpotReport } from '@/utils/spotReportsService';
 import { createSpotContribution } from '@/utils/spotContributionsService';
+import { fetchUserContributions } from '@/utils/spotContributionsService';
+import { deleteSpotAsAdmin } from '@/utils/adminModerationService';
+import { isAdminUser } from '@/utils/permissions';
+import { getTrustPermissions, getTrustTier, getTrustTierLabel, TrustPermissions, TrustTier } from '@/utils/trustScore';
+import { createSpotMediaPublic } from '@/utils/spotMediaService';
+import { getPrivateStorageBucketName, isPublicStorageUrl, uploadImageToStorage } from '@/utils/storageUpload';
+import { supabase } from '@/utils/supabase';
+import { resolveTranslatedField } from '@/utils/translationsService';
 // FASE 4: formatHours, formatCost eliminados - campos avanzados eliminados
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const IMAGE_HEIGHT = SCREEN_HEIGHT * 0.4; // 40% of screen height
+
+/** Referencia estable para array vacío; evita bucle en useEffect que resuelve signed URLs. */
+const EMPTY_PHOTOS: string[] = [];
 
 // Helpers moved to utils/spotFormHelpers.ts - using shared utilities
 
@@ -79,12 +93,13 @@ export default function SpotDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { getSpotById, markSpotAsSeen, markSpotAsAvailable } = useSpot();
+  const { getSpotById, markSpotAsSeen, markSpotAsAvailable, refreshSpots } = useSpot();
   const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState, getPinData, updatePinNotes, addPinPhoto, removePinPhoto } = useSaved();
   const { createPath } = usePath();
   // SCOPE 9: Obtener flowState, currentSpotId y funciones de Flow
   const { flowState, currentSpotId, expandFlow, addSpotToFlow, startFlow } = useFlow();
   const { user, isAuthenticated } = useAuth();
+  const isAdmin = isAdminUser(user);
   const { setIsTabBarVisible } = useOverlay();
   
   // Ubicación base estable
@@ -97,6 +112,15 @@ export default function SpotDetailScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [trustTier, setTrustTier] = useState<TrustTier>('nuevo');
+  const [trustPermissions, setTrustPermissions] = useState<TrustPermissions | null>(null);
+  const [isTrustEnforced, setIsTrustEnforced] = useState(false);
+  const [isLoadingTrust, setIsLoadingTrust] = useState(false);
+  const [isMediaModalVisible, setIsMediaModalVisible] = useState(false);
+  const [mediaUrlInput, setMediaUrlInput] = useState('');
+  const [isSubmittingMedia, setIsSubmittingMedia] = useState(false);
+  const [isUploadingPinPhoto, setIsUploadingPinPhoto] = useState(false);
+  const [isReportModalVisible, setIsReportModalVisible] = useState(false);
   
   // Animaciones para feedback visual
   const [pinButtonScale] = useState(() => new Animated.Value(1));
@@ -117,6 +141,30 @@ export default function SpotDetailScreen() {
   // const [editPlanInfoIconAccessibility, setEditPlanInfoIconAccessibility] = useState<IconName>('accessibility');
 
   const spot = id ? getSpotById(id) : null;
+  const detailPreloadSpots = useMemo(() => (spot ? [spot] : []), [spot?.id]);
+  const { translations } = useEntityTranslations({ entityType: 'spot', entityId: spot?.id ?? null });
+  const translatedName = resolveTranslatedField({
+    translations,
+    field: 'name',
+    fallback: spot?.name || '',
+  });
+  const displayName = translatedName || spot?.name || '';
+  const hasDisplayName = typeof displayName === 'string' && displayName.trim().length > 0;
+  const translatedShortDescription = resolveTranslatedField({
+    translations,
+    field: 'shortDescription',
+    fallback: spot?.shortDescription || spot?.whyItMatters || spot?.description || '',
+  });
+  const translatedDescription = resolveTranslatedField({
+    translations,
+    field: 'description',
+    fallback: spot?.description || spot?.shortDescription || spot?.whyItMatters || '',
+  });
+
+  useImagePreloader({
+    spots: detailPreloadSpots,
+    count: 6,
+  });
 
   // Debug: Log spot data para detectar problemas de carga
   useEffect(() => {
@@ -186,6 +234,33 @@ export default function SpotDetailScreen() {
     });
   }, []);
 
+  useEffect(() => {
+    const loadTrust = async () => {
+      if (!isAuthenticated || !user?.id) {
+        setTrustTier('invitado');
+        setTrustPermissions(getTrustPermissions('invitado', false));
+        setIsTrustEnforced(false);
+        return;
+      }
+      setIsLoadingTrust(true);
+      const result = await fetchUserContributions(user.id);
+      if (result.error) {
+        setTrustTier(getTrustTier([], true));
+        setTrustPermissions(getTrustPermissions(getTrustTier([], true), true));
+        setIsTrustEnforced(false);
+        setIsLoadingTrust(false);
+        return;
+      }
+      const tier = getTrustTier(result.data, true);
+      setTrustTier(tier);
+      setTrustPermissions(getTrustPermissions(tier, true));
+      setIsTrustEnforced(true);
+      setIsLoadingTrust(false);
+    };
+
+    loadTrust();
+  }, [isAuthenticated, user?.id]);
+
   // Inicializar notesText cuando cambia el pin o se abre el editor - DEBE estar antes del return temprano
   // Usamos getPinData con ID normalizado
   useEffect(() => {
@@ -237,18 +312,31 @@ export default function SpotDetailScreen() {
         Alert.alert('Iniciar sesión requerido', 'Debes iniciar sesión para sugerir cambios.');
         return;
       }
+      let imageUrl = spotData.image?.url || '';
+      if (imageUrl && !isPublicStorageUrl(imageUrl)) {
+        const normalizedSpotId = normalizeSpotId(spot.id) || spot.id;
+        const uploadResult = await uploadImageToStorage({
+          uri: imageUrl,
+          pathPrefix: `spots/${normalizedSpotId}`,
+        });
+        if (uploadResult.error || !uploadResult.publicUrl) {
+          Alert.alert('Error', uploadResult.error || 'No se pudo subir la imagen.');
+          return;
+        }
+        imageUrl = uploadResult.publicUrl;
+      }
       const payload = {
         name: spotData.name,
         type: spotData.type,
         location: spotData.location,
         short_description: spotData.shortDescription,
         description: spotData.description,
-        image: spotData.image,
+        image: imageUrl ? { ...spotData.image, url: imageUrl } : spotData.image,
         has_generated_content: spotData.hasGeneratedContent,
       };
       const result = await createSpotContribution(spot.id, payload, user.id);
       if (result.error) {
-        Alert.alert('Error', 'No se pudo enviar la sugerencia. Intenta de nuevo.');
+        Alert.alert('Error', result.error);
         return;
       }
       Alert.alert(
@@ -261,6 +349,8 @@ export default function SpotDetailScreen() {
       setIsEditMode(false);
     },
   });
+  const hasEditImage =
+    typeof form.image?.url === 'string' && form.image.url.trim().length > 0;
 
 
   // FASE 4: howToVisit eliminado - campos avanzados eliminados
@@ -269,17 +359,77 @@ export default function SpotDetailScreen() {
   // Calcular distancia usando hook canónico - DEBE estar antes del return temprano
   const distance = useSpotDistance(id || null, baseLocation);
 
+  // Fotos personales: resolución de URLs firmadas (hooks antes del return temprano)
+  const pinDataForPhotos = id ? getPinData(id) : null;
+  const personalPhotos = pinDataForPhotos?.personalPhotos ?? EMPTY_PHOTOS;
+  const [resolvedPersonalPhotos, setResolvedPersonalPhotos] = useState<string[]>([]);
+  useEffect(() => {
+    if (!personalPhotos.length) {
+      setResolvedPersonalPhotos(EMPTY_PHOTOS);
+      return;
+    }
+    const bucket = getPrivateStorageBucketName();
+    let isCancelled = false;
+    const resolve = async () => {
+      const resolved = await Promise.all(
+        personalPhotos.map(async (url) => {
+          if (!url || !url.includes(bucket) || url.includes('token=')) {
+            return url;
+          }
+          const marker = '/storage/v1/object/';
+          const markerIndex = url.indexOf(marker);
+          if (markerIndex === -1) return url;
+          const after = url.slice(markerIndex + marker.length);
+          const prefix = `${bucket}/`;
+          const publicPrefix = `public/${bucket}/`;
+          const path = after.startsWith(publicPrefix)
+            ? after.slice(publicPrefix.length)
+            : after.startsWith(prefix)
+              ? after.slice(prefix.length)
+              : null;
+          if (!path) return url;
+          const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24 * 7);
+          if (error || !data?.signedUrl) {
+            return url;
+          }
+          return data.signedUrl;
+        })
+      );
+      if (isCancelled) return;
+      setResolvedPersonalPhotos(resolved.filter(Boolean));
+    };
+    resolve();
+    return () => {
+      isCancelled = true;
+    };
+  }, [personalPhotos]);
+
   // V1.2: Hook para selección de imágenes (para fotos personales) - DEBE estar antes del return temprano
   const imageUploadHook = useImageUpload({
     allowsEditing: true,
     aspect: [4, 3],
     quality: 75,
     onOptimized: (uri) => {
-      if (id) {
-        addPinPhoto(id, uri);
-        setToastMessage('Foto agregada');
-        setShowToast(true);
-      }
+      if (!id || !user?.id) return;
+      setIsUploadingPinPhoto(true);
+      const normalizedSpotId = normalizeSpotId(id) || id;
+      uploadImageToStorage({
+        uri,
+        pathPrefix: `pins/${user.id}/${normalizedSpotId}`,
+        bucket: getPrivateStorageBucketName(),
+      })
+        .then((result) => {
+          if (result.error || !result.publicUrl) {
+            Alert.alert('Error', result.error || 'No se pudo subir la foto.');
+            return;
+          }
+          addPinPhoto(id, result.publicUrl);
+          setToastMessage('Foto agregada');
+          setShowToast(true);
+        })
+        .finally(() => {
+          setIsUploadingPinPhoto(false);
+        });
     },
     onError: (error) => {
       console.error('Error adding photo:', error);
@@ -311,8 +461,7 @@ export default function SpotDetailScreen() {
   const pinData = getPinData(spot.id); // V1.3: Usar getPinData con ID normalizado
   const isVisitedPin = pinState === 'visited';
   const personalNotes = pinData?.notes || '';
-  const personalPhotos = pinData?.personalPhotos || [];
-  
+
   // FASE 4: hours y cost eliminados - campos avanzados eliminados
 
   const handleBack = () => {
@@ -427,13 +576,14 @@ export default function SpotDetailScreen() {
     try {
       const shareSpotId = normalizeSpotId(spot.id) || spot.id;
       const shareUrl = `flowya.app/spot-detail?id=${shareSpotId}`;
-      const shareMessage = spot.name
-        ? `Mira ${spot.name} en FLOWYA. ${shareUrl}`
+      const shareName = translatedName || spot.name;
+      const shareMessage = shareName
+        ? `Mira ${shareName} en FLOWYA. ${shareUrl}`
         : `Mira este spot en FLOWYA. ${shareUrl}`;
       
       await Share.share({
         message: shareMessage,
-        title: spot.name || 'Spot FLOWYA',
+        title: shareName || 'Spot FLOWYA',
       });
     } catch (error) {
       console.error('Error sharing:', error);
@@ -443,6 +593,26 @@ export default function SpotDetailScreen() {
 
   const handleMenuPress = () => {
     setIsMenuVisible(!isMenuVisible);
+  };
+
+  const handleDeleteSpot = () => {
+    if (!spot) return;
+    showAlert('Eliminar spot', '¿Eliminar este spot? No se puede deshacer.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          const result = await deleteSpotAsAdmin(spot.id);
+          if (result.error) {
+            showAlert('Error', result.error);
+            return;
+          }
+          await refreshSpots();
+          router.replace('/(tabs)/home');
+        },
+      },
+    ]);
   };
 
   const handleMenuClose = () => {
@@ -506,15 +676,36 @@ export default function SpotDetailScreen() {
       Alert.alert('Iniciar sesión requerido', 'Debes iniciar sesión para sugerir cambios.');
       return;
     }
+    if (isLoadingTrust) {
+      Alert.alert('Espera un momento', 'Estamos calculando tu nivel de confianza.');
+      return;
+    }
+    if (isTrustEnforced && trustPermissions && !trustPermissions.canSuggestEdits && !isAdmin) {
+      Alert.alert(
+        'Nivel de confianza insuficiente',
+        `Aun no tienes permiso para sugerir ediciones. Tu nivel actual es ${getTrustTierLabel(trustTier)}.`
+      );
+      return;
+    }
     setIsMenuVisible(false);
     setIsEditMode(true);
   };
 
   const handleAskAi = () => {
-    Alert.alert(
-      'Sugerencia con IA',
-      'La IA solo sugiere. No ejecuta acciones ni modifica spots automaticamente.'
-    );
+    if (form.aiState === 'loading') {
+      Alert.alert('IA en progreso', 'Estamos generando una sugerencia.');
+      return;
+    }
+    form.generateContent(['shortDescription']).then((result) => {
+      if (!result) {
+        Alert.alert(
+          'No fue posible generar',
+          form.aiError || 'La IA no pudo generar sugerencias. Intenta de nuevo.'
+        );
+        return;
+      }
+      Alert.alert('Sugerencia lista', 'Se aplico una sugerencia a la descripcion corta.');
+    });
   };
 
   const handleSaveEdit = () => {
@@ -542,35 +733,96 @@ export default function SpotDetailScreen() {
     setIsMenuVisible(false);
     if (!spot) return;
     if (!user?.id) {
-      Alert.alert('Inicia sesión', 'Debes iniciar sesión para reportar un spot.');
+      showAlert('Inicia sesión', 'Debes iniciar sesión para reportar un spot.');
       return;
     }
+    if (isLoadingTrust) {
+      showAlert('Espera un momento', 'Estamos calculando tu nivel de confianza.');
+      return;
+    }
+    if (isTrustEnforced && trustPermissions && !trustPermissions.canReport && !isAdmin) {
+      showAlert(
+        'Nivel de confianza insuficiente',
+        `Aun no tienes permiso para reportar. Tu nivel actual es ${getTrustTierLabel(trustTier)}.`
+      );
+      return;
+    }
+    if (Platform.OS === 'web') {
+      setIsReportModalVisible(true);
+    } else {
+      showAlert(
+        'Reportar spot',
+        'Selecciona el motivo:',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Información incorrecta', onPress: () => void handleSubmitReport('incorrecta') },
+          { text: 'No es del lugar', onPress: () => void handleSubmitReport('no es del lugar') },
+          { text: 'Ofensiva', onPress: () => void handleSubmitReport('ofensiva') },
+          { text: 'Spam', onPress: () => void handleSubmitReport('spam') },
+        ],
+        { cancelable: true }
+      );
+    }
+  };
 
-    const submitReport = async (reason: SpotReportReason) => {
-      const result = await createSpotReport({
-        spotId: normalizeSpotId(spot.id),
-        reporterId: user.id,
-        reason,
-      });
-      if (result.error) {
-        Alert.alert('Error', 'No se pudo enviar el reporte. Intenta de nuevo.');
-        return;
-      }
-      Alert.alert('Reporte enviado', 'Gracias. Revisaremos tu reporte.');
-    };
+  const handleSubmitReport = async (reason: SpotReportReason) => {
+    if (!spot || !user?.id) return;
+    const result = await createSpotReport({
+      spotId: normalizeSpotId(spot.id),
+      reporterId: user.id,
+      reason,
+    });
+    if (result.error) {
+      showAlert('Error', 'No se pudo enviar el reporte. Intenta de nuevo.');
+      return;
+    }
+    showAlert('Reporte enviado', 'Gracias. Revisaremos tu reporte.');
+    setIsReportModalVisible(false);
+  };
 
-    Alert.alert(
-      'Reportar spot',
-      'Selecciona el motivo:',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Información incorrecta', onPress: () => submitReport('incorrecta') },
-        { text: 'No es del lugar', onPress: () => submitReport('no es del lugar') },
-        { text: 'Ofensiva', onPress: () => submitReport('ofensiva') },
-        { text: 'Spam', onPress: () => submitReport('spam') },
-      ],
-      { cancelable: true }
-    );
+  const handleAddPublicMedia = () => {
+    setIsMenuVisible(false);
+    if (!spot) return;
+    if (!user?.id) {
+      Alert.alert('Inicia sesión', 'Debes iniciar sesión para agregar media pública.');
+      return;
+    }
+    if (isLoadingTrust) {
+      Alert.alert('Espera un momento', 'Estamos calculando tu nivel de confianza.');
+      return;
+    }
+    if (isTrustEnforced && trustPermissions && !trustPermissions.canAttachMedia && !isAdmin) {
+      Alert.alert(
+        'Nivel de confianza insuficiente',
+        `Aun no tienes permiso para adjuntar media pública. Tu nivel actual es ${getTrustTierLabel(trustTier)}.`
+      );
+      return;
+    }
+    setMediaUrlInput('');
+    setIsMediaModalVisible(true);
+  };
+
+  const handleSubmitMedia = async () => {
+    if (!spot || !user?.id) return;
+    const trimmedUrl = mediaUrlInput.trim();
+    if (!trimmedUrl) {
+      Alert.alert('URL requerida', 'Agrega una URL pública del storage.');
+      return;
+    }
+    setIsSubmittingMedia(true);
+    const result = await createSpotMediaPublic({
+      spotId: spot.id,
+      url: trimmedUrl,
+      createdBy: user.id,
+    });
+    setIsSubmittingMedia(false);
+    if (result.error) {
+      Alert.alert('Error', result.error);
+      return;
+    }
+    setIsMediaModalVisible(false);
+    setMediaUrlInput('');
+    Alert.alert('Gracias', 'Tu media pública quedó registrada.');
   };
 
 
@@ -823,6 +1075,15 @@ export default function SpotDetailScreen() {
                   icon: 'share',
                   onPress: handleShare,
                 },
+                ...(isAdmin
+                  ? [
+                      {
+                        icon: 'delete' as const,
+                        onPress: handleDeleteSpot,
+                        tooltip: 'Eliminar spot',
+                      },
+                    ]
+                  : []),
                 {
                   icon: 'menu' as const,
                   onPress: handleMenuPress,
@@ -852,7 +1113,7 @@ export default function SpotDetailScreen() {
             </Text>
             
             {/* FASE 5: Imagen única (no grid) */}
-            {form.image?.url && form.image.url.trim().length > 0 && (
+            {hasEditImage && (
               <View style={styles.imageEditItem}>
                 <Image source={{ uri: form.image.url }} style={styles.imageEditThumbnail} resizeMode="cover" />
                 <Pressable
@@ -909,10 +1170,10 @@ export default function SpotDetailScreen() {
               />
             </FormField>
           ) : (
-            spot.name && (
-            <Text style={[textStyles.heading, { color: colors.text, marginTop: spacing.md }]}>
-              {spot.name}
-            </Text>
+            hasDisplayName && (
+              <Text style={[textStyles.heading, { color: colors.text, marginTop: spacing.md }]}>
+                {displayName}
+              </Text>
             )
           )}
 
@@ -1111,7 +1372,7 @@ export default function SpotDetailScreen() {
               <View>
                 {(() => {
                   // Prioridad: shortDescription > whyItMatters > description
-                  const displayText = spot.shortDescription || spot.whyItMatters || spot.description;
+                  const displayText = translatedShortDescription || translatedDescription || spot.whyItMatters || '';
                   
                   if (displayText && displayText.trim().length > 0) {
                     return (
@@ -1343,11 +1604,11 @@ export default function SpotDetailScreen() {
                 onPress={handleAddPhoto}
                 style={({ pressed }) => [
                   styles.editButton,
-                  (!isVisitedPin || imageUploadHook.isOptimizing) && styles.disabledButton,
+                  (!isVisitedPin || imageUploadHook.isOptimizing || isUploadingPinPhoto) && styles.disabledButton,
                   pressed && { opacity: 0.7 },
                 ]}
-                disabled={!isVisitedPin || imageUploadHook.isOptimizing}>
-                {imageUploadHook.isOptimizing ? (
+                disabled={!isVisitedPin || imageUploadHook.isOptimizing || isUploadingPinPhoto}>
+                {imageUploadHook.isOptimizing || isUploadingPinPhoto ? (
                   <ActivityIndicator size="small" color={colors.tint} />
                 ) : (
                   <>
@@ -1371,9 +1632,14 @@ export default function SpotDetailScreen() {
             
             {isVisitedPin && personalPhotos.length > 0 && (
               <View style={styles.photosGrid}>
-                {personalPhotos.map((photoUrl, index) => (
+                {(resolvedPersonalPhotos.length > 0 ? resolvedPersonalPhotos : personalPhotos).map((photoUrl, index) => (
                   <View key={`${photoUrl}-${index}`} style={styles.photoItem}>
-                    <Image source={{ uri: photoUrl }} style={styles.photoThumbnail} resizeMode="cover" />
+                    <Image
+                      source={{ uri: photoUrl }}
+                      style={styles.photoThumbnail}
+                      resizeMode="cover"
+                      onError={() => {}}
+                    />
                     <Pressable
                       style={({ pressed }) => [
                         styles.photoRemoveButton,
@@ -1463,6 +1729,108 @@ export default function SpotDetailScreen() {
               Reportar
             </Text>
             </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.menuItem,
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={handleAddPublicMedia}>
+              <Icon name="camera" size={20} color={colors.text} />
+            <Text style={[textStyles.bodyMedium, { color: colors.text, marginLeft: spacing.sm }]}>
+              Agregar media publica
+            </Text>
+            </Pressable>
+          </GlassView>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={isReportModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsReportModalVisible(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setIsReportModalVisible(false)}>
+          <GlassView style={styles.menuContainer} shadowLevel="medium" enableGlow={true}>
+            <Text style={[textStyles.bodyMedium, { color: colors.text, marginBottom: spacing.sm }]}>
+              Reportar spot
+            </Text>
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && { opacity: 0.7 }]}
+              onPress={() => void handleSubmitReport('incorrecta')}>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>
+                Información incorrecta
+              </Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && { opacity: 0.7 }]}
+              onPress={() => void handleSubmitReport('no es del lugar')}>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>
+                No es del lugar
+              </Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && { opacity: 0.7 }]}
+              onPress={() => void handleSubmitReport('ofensiva')}>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>
+                Ofensiva
+              </Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && { opacity: 0.7 }]}
+              onPress={() => void handleSubmitReport('spam')}>
+              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>
+                Spam
+              </Text>
+            </Pressable>
+          </GlassView>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={isMediaModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsMediaModalVisible(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setIsMediaModalVisible(false)}>
+          <GlassView
+            style={styles.mediaModal}
+            intensity="medium"
+            opacity="strong"
+            shadowLevel="medium"
+            enableGlow={true}>
+            <Text style={[textStyles.heading4, { color: colors.text, marginBottom: spacing.sm }]}>
+              Agregar media publica
+            </Text>
+            <Text style={[textStyles.caption, { color: colors.icon, marginBottom: spacing.sm }]}>
+              Ingresa una URL publica de Storage (formato /storage/v1/object/public/).
+            </Text>
+            <TextInput
+              style={[styles.mediaInput, { color: colors.text, borderColor: colors.icon + '40' }]}
+              value={mediaUrlInput}
+              onChangeText={setMediaUrlInput}
+              placeholder="https://.../storage/v1/object/public/..."
+              placeholderTextColor={colors.icon}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.mediaActions}>
+              <TouchableOpacity
+                style={[styles.mediaButton, { backgroundColor: colors.icon + '20' }]}
+                onPress={() => setIsMediaModalVisible(false)}
+                activeOpacity={0.7}
+                disabled={isSubmittingMedia}>
+                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mediaButton, { backgroundColor: colors.tint }]}
+                onPress={handleSubmitMedia}
+                activeOpacity={0.7}
+                disabled={isSubmittingMedia}>
+                <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>
+                  {isSubmittingMedia ? 'Enviando...' : 'Enviar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </GlassView>
         </Pressable>
       </Modal>
@@ -1746,6 +2114,29 @@ const styles = StyleSheet.create({
     borderRadius: borderTokens.card,
     paddingVertical: spacing.xs,
     minWidth: 200,
+  },
+  mediaModal: {
+    width: '90%',
+    maxWidth: 420,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+  },
+  mediaInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: spacing.sm,
+    minHeight: 44,
+  },
+  mediaActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  mediaButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 12,
   },
   menuItem: {
     flexDirection: 'row',

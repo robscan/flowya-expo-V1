@@ -9,88 +9,15 @@
  * - Ordenadas alfabéticamente
  * - Con label listo para UI
  * 
- * FASE 7: Genera regiones desde location.city/country cuando no hay locationRegion
- * - Mantiene compatibilidad con spots que ya tienen locationRegion canónico
- * 
  * IMPORTANTE:
  * - Esta función NO calcula regiones en runtime
  * - Solo lee locationRegion canónico de spots existentes
- * - Para spots sin locationRegion, genera locationRegion desde city/country
  * - Home debe usar esta función, nunca calcular regiones al vuelo
  */
 
 import { Spot } from '@/data/spots';
 import { LocationRegion } from '@/types/locationRegion';
-import { generateCanonicalRegionId } from './regionIdGenerator';
-
-/**
- * Mapeo de nombres de países a códigos ISO 3166-1 alpha-2
- * FASE 7: Para generar regionId canónicos desde spots sin locationRegion
- */
-const COUNTRY_TO_ISO_CODE: Record<string, string> = {
-  'Argentina': 'AR',
-  'Austria': 'AT',
-  'Belgium': 'BE',
-  'Belize': 'BZ',
-  'Bolivia': 'BO',
-  'Brazil': 'BR',
-  'Canada': 'CA',
-  'Chile': 'CL',
-  'Colombia': 'CO',
-  'Costa Rica': 'CR',
-  'Czech Republic': 'CZ',
-  'Denmark': 'DK',
-  'Ecuador': 'EC',
-  'Finland': 'FI',
-  'France': 'FR',
-  'Germany': 'DE',
-  'Greece': 'GR',
-  'Guatemala': 'GT',
-  'Hungary': 'HU',
-  'Ireland': 'IE',
-  'Italy': 'IT',
-  'Mexico': 'MX',
-  'Netherlands': 'NL',
-  'Norway': 'NO',
-  'Panama': 'PA',
-  'Peru': 'PE',
-  'Poland': 'PL',
-  'Portugal': 'PT',
-  'Puerto Rico': 'PR',
-  'Spain': 'ES',
-  'Sweden': 'SE',
-  'Switzerland': 'CH',
-  'Turkey': 'TR',
-  'United Kingdom': 'GB',
-  'United States': 'US',
-};
-
-/**
- * Convertir nombre de país a código ISO 3166-1 alpha-2
- * FASE 7: Helper para generar regionId canónicos desde spots sin locationRegion
- */
-function getCountryCode(countryName: string | undefined): string | null {
-  if (!countryName || typeof countryName !== 'string') {
-    return null;
-  }
-
-  const normalizedName = countryName.trim();
-  const code = COUNTRY_TO_ISO_CODE[normalizedName];
-  
-  if (code) {
-    return code;
-  }
-
-  // Fallback: intentar mapear por nombre común (case-insensitive)
-  const normalizedNameLower = normalizedName.toLowerCase();
-  for (const [key, value] of Object.entries(COUNTRY_TO_ISO_CODE)) {
-    if (key.toLowerCase() === normalizedNameLower) {
-      return value;
-    }
-  }
-
-  return null;
-}
+import { isCanonicalRegionId } from './regionIdGenerator';
 
 /**
  * Estructura de región para UI (label + regionId)
@@ -107,14 +34,9 @@ export interface RegionOption {
  * Obtener lista de regiones disponibles desde spots existentes
  * CANONICAL: Usa regionId para deduplicar, retorna labels para UI
  * 
- * FASE 7: Soporta spots con o sin locationRegion
- * - Procesa spots con locationRegion canónico
- * - Genera regiones desde location.city/country para spots sin locationRegion
- * 
  * Esta función:
  * - Consulta spots existentes (NO calcula regiones)
  * - Extrae regionIds únicos de spots con locationRegion canónico
- * - Para spots sin locationRegion, genera LocationRegion desde city/country
  * - DEDUPLICA por regionId (no por label) - un regionId = una opción
  * - Retorna labels para mostrar en UI
  * - Ordena por label alfabéticamente
@@ -142,36 +64,12 @@ export function getAvailableRegionsFromSpots(spots: Spot[]): RegionOption[] {
     if (spot.locationRegion && 
         typeof spot.locationRegion === 'object' && 
         'regionId' in spot.locationRegion) {
-      region = spot.locationRegion as LocationRegion;
-    }
-    // Caso 2: Spot sin locationRegion pero con city/country
-    else if (spot.location?.city && spot.location?.country) {
-      const city = spot.location.city.trim();
-      const countryName = spot.location.country.trim();
-      const countryCode = getCountryCode(countryName);
-
-      // Solo generar región si tenemos código de país válido
-      if (countryCode && city) {
-        try {
-          // Generar regionId canónico
-          const regionId = generateCanonicalRegionId(countryCode, city, 'city');
-          
-          // Crear LocationRegion temporal
-          region = {
-            regionId,
-            label: city,
-            type: 'city',
-            countryCode,
-          };
-        } catch (error) {
-          // Si hay error generando regionId, saltar este spot
-          if (__DEV__) {
-            console.warn(`Failed to generate regionId for ${city}, ${countryName}:`, error);
-          }
-          return;
-        }
+      const candidate = spot.locationRegion as LocationRegion;
+      if (isCanonicalRegionId(candidate.regionId)) {
+        region = candidate;
       }
     }
+    // Caso 2: Spot sin locationRegion -> se excluye (sin fallback legacy)
 
     // Validar que la región tenga datos válidos (no vacía)
     if (region &&
@@ -207,15 +105,10 @@ export function getAvailableRegionsFromSpots(spots: Spot[]): RegionOption[] {
  * Filtrar spots por región usando regionId canónico
  * CANONICAL: Compara por regionId (nunca por strings libres)
  * 
- * FASE 7: Soporta spots con o sin locationRegion
- * - Filtra spots con locationRegion canónico
- * - Genera regionId desde city/country para spots sin locationRegion
- * 
  * Esta función:
  * - Filtra spots que tienen locationRegion canónico
- * - Para spots sin locationRegion, genera regionId desde city/country
  * - Compara por regionId (nunca por label o texto libre)
- * - Excluye spots sin región canónica (o sin city/country)
+ * - Excluye spots sin región canónica
  * 
  * @param spots - Array de spots a filtrar
  * @param regionId - regionId de la región objetivo (null = todas las regiones)
@@ -224,6 +117,9 @@ export function getAvailableRegionsFromSpots(spots: Spot[]): RegionOption[] {
 export function getSpotsByRegion(spots: Spot[], regionId: string | null): Spot[] {
   if (!regionId) {
     return spots; // null = todas las regiones
+  }
+  if (!isCanonicalRegionId(regionId)) {
+    return [];
   }
   
   // Comparar por regionId (canónico) - NUNCA comparar por strings libres
@@ -235,24 +131,11 @@ export function getSpotsByRegion(spots: Spot[], regionId: string | null): Spot[]
         typeof spot.locationRegion === 'object' && 
         'regionId' in spot.locationRegion) {
       const region = spot.locationRegion as LocationRegion;
-      spotRegionId = region.regionId;
-    }
-    // Caso 2: Spot sin locationRegion pero con city/country
-    else if (spot.location?.city && spot.location?.country) {
-      const city = spot.location.city.trim();
-      const countryName = spot.location.country.trim();
-      const countryCode = getCountryCode(countryName);
-
-      // Solo generar regionId si tenemos código de país válido
-      if (countryCode && city) {
-        try {
-          spotRegionId = generateCanonicalRegionId(countryCode, city, 'city');
-        } catch (error) {
-          // Si hay error generando regionId, excluir este spot
-          return false;
-        }
+      if (isCanonicalRegionId(region.regionId)) {
+        spotRegionId = region.regionId;
       }
     }
+    // Caso 2: Spot sin locationRegion -> se excluye (sin fallback legacy)
 
     // Comparar regionId generado/obtenido con el regionId objetivo
     return spotRegionId === regionId;

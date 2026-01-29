@@ -30,6 +30,7 @@ import { Spot, SpotType } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { getSpotDistance } from '@/hooks/useSpotDistance';
+import { useImagePreloader } from '@/hooks/useImagePreloader';
 import { anyLoading, shouldShowSkeleton } from '@/utils/loadingHelpers';
 import { forwardGeocode, GeocodeResult } from '@/utils/geocoding';
 import { searchAll } from '@/utils/searchLogic';
@@ -45,6 +46,7 @@ export default function SearchScreen() {
   const [searchType, setSearchType] = useState<'all' | 'spots' | 'flows' | 'places'>('all');
   const [geocodeResults, setGeocodeResults] = useState<GeocodeResult[]>([]);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const mapboxConfigured = isMapboxConfigured();
 
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
@@ -88,8 +90,8 @@ export default function SearchScreen() {
 
   // CANONICAL: Suggested/Nearby spots when input is empty (same layout as results)
   const suggestedSpotsWithDistance = useMemo(() => {
-    // Show suggested spots when query is empty
-    if (resolvedQuery.length > 0 || resolvedType !== 'all') {
+    // Show suggested spots when query is empty (all or spots filter)
+    if (resolvedQuery.length > 0 || (resolvedType !== 'all' && resolvedType !== 'spots')) {
       return [];
     }
     
@@ -144,6 +146,12 @@ export default function SearchScreen() {
   const suggestedSpots = useMemo(() => {
     return suggestedSpotsWithDistance.map(item => item.spot);
   }, [suggestedSpotsWithDistance]);
+  const suggestedFlows = useMemo(() => {
+    if (resolvedQuery.length > 0 || (resolvedType !== 'all' && resolvedType !== 'flows')) {
+      return [];
+    }
+    return flows.slice(0, 6);
+  }, [resolvedQuery, resolvedType, flows]);
 
   // CANONICAL: Search results (only when query has 2+ characters)
   const searchResults = useMemo(() => {
@@ -225,7 +233,25 @@ export default function SearchScreen() {
     && (resolvedType === 'spots' || resolvedType === 'flows'
       ? true
       : geocodeResults.length === 0 && isMapboxConfigured());
-  const showSuggested = !hasQuery && suggestedSpots.length > 0;
+  const showSuggested = !hasQuery && (suggestedSpots.length > 0 || suggestedFlows.length > 0);
+
+  const criticalSpots = useMemo(() => {
+    if (showResults) {
+      return searchResults.spots
+        .map((result) => result.spot)
+        .filter((spot): spot is Spot => !!spot)
+        .slice(0, 6);
+    }
+    if (showSuggested) {
+      return suggestedSpots.slice(0, 6);
+    }
+    return [];
+  }, [showResults, showSuggested, searchResults.spots, suggestedSpots]);
+
+  useImagePreloader({
+    spots: criticalSpots,
+    count: 6,
+  });
 
 
   // Manejar selección de Spot desde resultados o mapa
@@ -293,7 +319,6 @@ export default function SearchScreen() {
               { key: 'all', label: 'Todo' },
               { key: 'spots', label: 'Spots' },
               { key: 'flows', label: 'Flows' },
-              { key: 'places', label: 'Lugares' },
             ].map((option) => {
               const isActive = resolvedType === option.key;
               return (
@@ -388,6 +413,47 @@ export default function SearchScreen() {
                   </View>
                 </TouchableOpacity>
               </View>
+            </>
+          )}
+          {/* Suggested content */}
+          {!hasQuery && (
+            <>
+              {suggestedSpots.length > 0 && (
+                <View style={styles.section}>
+                  <SectionHeader title="Spots sugeridos" variant="large" />
+                  <SpotGrid
+                    spots={suggestedSpotsWithDistance.map((item) => ({
+                      spot: item.spot,
+                      distance: item.distance,
+                    }))}
+                    onSpotPress={handleSpotPress}
+                  />
+                </View>
+              )}
+              {suggestedFlows.length > 0 && (
+                <View style={styles.section}>
+                  <SectionHeader title="Flows sugeridos" variant="large" />
+                  <View style={styles.pathsList}>
+                    {suggestedFlows.map((flow) => {
+                      const flowSpots = flow.spots
+                        .map((spotId) => spots.find((s) => s.id === spotId))
+                        .filter((s): s is Spot => s !== undefined);
+                      const distance = flowSpots.length > 0
+                        ? getSpotDistance(flowSpots[0], baseLocation)
+                        : undefined;
+                      return (
+                        <FlowCard.Display
+                          key={`suggested-flow-${flow.id}`}
+                          flow={flow}
+                          spots={spots}
+                          distance={distance}
+                          onPress={() => handleFlowPress(flow.id)}
+                        />
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
             </>
           )}
 

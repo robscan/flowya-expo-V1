@@ -12,20 +12,29 @@
  * - States: active (indicator), next (number), default
  */
 
-import { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import { GlassView } from '@/components/ui/GlassView';
 import { Icon } from '@/components/ui/Icon';
 import { InfoMeta } from '@/components/ui/InfoMeta';
+import { PinStateModal } from '@/components/ui/PinStateModal';
+import { Toast } from '@/components/ui/Toast';
 import { borderRadius } from '@/constants/borders';
 import { spacing } from '@/constants/spacing';
 import { Colors } from '@/constants/theme';
 import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
+import { useAuth } from '@/contexts/AuthContext';
+import { PinState, useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useEntityTranslations } from '@/hooks/useEntityTranslations';
+import { showAlert } from '@/utils/alertPolyfill';
+import { hasSeenPinModal, markPinModalSeen } from '@/utils/pinFirstTime';
 import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
+import { resolveTranslatedField } from '@/utils/translationsService';
 
 interface SpotInlineCardProps {
   spot: Spot;
@@ -40,6 +49,7 @@ interface SpotInlineCardProps {
   isEditMode?: boolean; // Modo edición
   isFirst?: boolean; // Para desactivar flecha arriba
   isLast?: boolean; // Para desactivar flecha abajo
+  showPinAction?: boolean; // Mostrar acción de pin
 }
 
 export function SpotInlineCard({ 
@@ -55,16 +65,45 @@ export function SpotInlineCard({
   isEditMode = false,
   isFirst = false,
   isLast = false,
+  showPinAction = false,
 }: SpotInlineCardProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const router = useRouter();
   const { markSpotAsSeen } = useSpot();
+  const { pinSpot, unpinSpot, changePinState, isSpotPinned, getPinState } = useSaved();
+  const { isAuthenticated } = useAuth();
   const spotTypeLabel = getSpotTypeLabel(spot.type);
+  const descriptionText = spot.shortDescription || spot.description || spot.whyItMatters;
+  const { translations } = useEntityTranslations({ entityType: 'spot', entityId: spot.id });
+  const nameText = resolveTranslatedField({
+    translations,
+    field: 'name',
+    fallback: spot.name || 'Spot sin nombre',
+  });
+  const descriptionTranslated = resolveTranslatedField({
+    translations,
+    field: 'shortDescription',
+    fallback: descriptionText || '',
+  });
+  const isPinned = isSpotPinned(spot.id);
+  const pinState = getPinState(spot.id);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [hasSeenFirstTime, setHasSeenFirstTime] = useState<boolean | null>(null);
 
   // Marcar Spot como 'seen' al montar (automáticamente)
   useEffect(() => {
     markSpotAsSeen(spot.id);
   }, [spot.id, markSpotAsSeen]);
+
+  useEffect(() => {
+    if (!showPinAction) return;
+    hasSeenPinModal().then((seen) => {
+      setHasSeenFirstTime(seen);
+    });
+  }, [showPinAction]);
 
   const handleRemovePress = (e: any) => {
     e.stopPropagation();
@@ -87,6 +126,59 @@ export function SpotInlineCard({
     e.stopPropagation();
     if (!isLast) {
       onMoveDown?.();
+    }
+  };
+
+  const handlePinStateSelect = (state: PinState) => {
+    pinSpot(spot.id, state);
+    setShowPinModal(false);
+    markPinModalSeen();
+    setHasSeenFirstTime(true);
+    setToastMessage(state === 'visited' ? 'Pineado · Visitado' : 'Pineado · Por visitar');
+    setShowToast(true);
+  };
+
+  const handlePinPress = async (e: any) => {
+    e.stopPropagation();
+    if (!isAuthenticated) {
+      showAlert(
+        'Iniciar sesión requerido',
+        'Debes iniciar sesión para guardar pines.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Iniciar sesión',
+            onPress: () => router.push('/(tabs)/login'),
+          },
+        ]
+      );
+      return;
+    }
+
+    if (!isPinned) {
+      const seen = await hasSeenPinModal();
+      if (!seen) {
+        setHasSeenFirstTime(false);
+        setShowPinModal(true);
+        return;
+      }
+      if (hasSeenFirstTime === null) {
+        setHasSeenFirstTime(true);
+      }
+      pinSpot(spot.id, 'to_visit');
+      setToastMessage('Pineado · Por visitar');
+      setShowToast(true);
+      return;
+    }
+
+    if (pinState === 'to_visit') {
+      changePinState(spot.id, 'visited');
+      setToastMessage('Cambiado a visitado');
+      setShowToast(true);
+    } else if (pinState === 'visited') {
+      unpinSpot(spot.id);
+      setToastMessage('Pin removido');
+      setShowToast(true);
     }
   };
 
@@ -148,27 +240,35 @@ export function SpotInlineCard({
   };
 
   return (
-    <Pressable onPress={onPress} style={styles.cardContainer}>
-      <GlassView
-        style={styles.card}
-        intensity="light"
-        opacity="medium"
-        shadowLevel="subtle"
-        enableGlow={true}
-        useGrayBackground={true}
-      >
-        <View style={styles.content}>
+    <>
+      <Pressable onPress={onPress} style={styles.cardContainer}>
+        <GlassView
+          style={styles.card}
+          intensity="light"
+          opacity="medium"
+          shadowLevel="subtle"
+          enableGlow={true}
+          useGrayBackground={true}
+        >
+          <View style={styles.content}>
           {/* Slot izquierdo (contenedor circular) - solo si no es default */}
           {state !== 'default' && renderLeftSlot()}
 
           {/* Contenido principal */}
           <View style={styles.spotInfo}>
-            <Text style={[styles.spotName, { color: colors.text }]} numberOfLines={1}>
-              {spot.name || 'Spot sin nombre'}
-            </Text>
-            {spot.description && spot.description.trim().length > 0 && (
+            <View style={styles.spotNameRow}>
+              <Text style={[styles.spotName, { color: colors.text }]} numberOfLines={1}>
+                {nameText}
+              </Text>
+              {spot.isAiGenerated && (
+                <View style={styles.aiBadge}>
+                  <Text style={styles.aiBadgeText}>IA</Text>
+                </View>
+              )}
+            </View>
+            {descriptionTranslated && descriptionTranslated.trim().length > 0 && (
               <Text style={[styles.spotDescription, { color: colors.icon }]} numberOfLines={2}>
-                {spot.description}
+                {descriptionTranslated}
               </Text>
             )}
             {/* InfoMeta debajo del título (chip, distancia, rating) */}
@@ -180,6 +280,22 @@ export function SpotInlineCard({
               />
             )}
           </View>
+
+          {showPinAction && !isEditMode && (
+            <Pressable
+              onPress={handlePinPress}
+              style={({ pressed }) => [
+                styles.pinButton,
+                { backgroundColor: colors.background + '80' },
+                pressed && { opacity: 0.7 },
+              ]}>
+              <Icon
+                name={isPinned && pinState === 'visited' ? 'check-circle' : 'pin'}
+                size={20}
+                color={isPinned ? (pinState === 'visited' ? '#4CAF50' : '#2196F3') : colors.text}
+              />
+            </Pressable>
+          )}
 
           {/* Metadata: Controles de edición (solo para estado 'next' en modo edición) */}
           {isEditMode && state === 'next' && (
@@ -216,9 +332,32 @@ export function SpotInlineCard({
               </Pressable>
             </View>
           )}
-        </View>
-      </GlassView>
-    </Pressable>
+          </View>
+        </GlassView>
+      </Pressable>
+      {showPinAction && (
+        <>
+          <PinStateModal
+            visible={showPinModal}
+            onSelect={handlePinStateSelect}
+            onCancel={() => setShowPinModal(false)}
+          />
+          <Modal
+            visible={showToast}
+            transparent
+            animationType="none"
+            onRequestClose={() => setShowToast(false)}
+            statusBarTranslucent>
+            <Toast
+              message={toastMessage}
+              visible={showToast}
+              onHide={() => setShowToast(false)}
+              type="success"
+            />
+          </Modal>
+        </>
+      )}
+    </>
   );
 }
 
@@ -282,6 +421,22 @@ const styles = StyleSheet.create({
     lineHeight: lineHeight.base,
     fontWeight: '500',
   },
+  spotNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  aiBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'rgba(148, 97, 255, 0.15)',
+  },
+  aiBadgeText: {
+    fontFamily,
+    fontSize: fontSize.xs,
+    color: '#9461FF',
+  },
   spotDescription: {
     fontFamily,
     fontSize: fontSize.sm,
@@ -304,5 +459,12 @@ const styles = StyleSheet.create({
   },
   editButtonDisabled: {
     opacity: 0.4,
+  },
+  pinButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

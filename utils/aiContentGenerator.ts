@@ -16,6 +16,7 @@ import { aiConfig, isAIConfigured, getAIConfigError, canMakeRequest } from './ai
 
 export interface GenerateContentOptions {
   forceRegenerate?: boolean; // Forzar regeneración incluso si hay contenido
+  fields?: string[]; // Campos solicitados (actualmente ignorado)
 }
 
 /**
@@ -74,7 +75,14 @@ function getSpotTypePrompt(type: SpotType): string {
  */
 function createPrompt(spot: Spot): string {
   const spotType = getSpotTypePrompt(spot.type);
-  const location = spot.location ? `located at ${spot.location.latitude}, ${spot.location.longitude}` : '';
+  const latitude =
+    spot.location && 'lat' in spot.location ? spot.location.lat : spot.location?.latitude;
+  const longitude =
+    spot.location && 'lng' in spot.location ? spot.location.lng : spot.location?.longitude;
+  const location =
+    typeof latitude === 'number' && typeof longitude === 'number'
+      ? `located at ${latitude}, ${longitude}`
+      : '';
   const name = spot.name || 'this place';
   const existingDescription = spot.description || spot.whyItMatters || spot.shortDescription || '';
 

@@ -798,7 +798,7 @@ export default function FlowScreenPage() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             onScroll={handleScroll} // SCOPE 2: Detectar scroll para ocultar/mostrar player
-            scrollEventThrottle={16}> {/* SCOPE 2: Throttle para mejor rendimiento */}
+            scrollEventThrottle={16}>
             {/* ContentHeader con mapa hero */}
             <ContentHeader
               heroType="map"

@@ -174,9 +174,14 @@ export function useImageUpload(options: ImageUploadOptions = {}): ImageUploadRes
         return null;
       }
 
+      const mediaTypes =
+        ImagePicker.MediaType?.Images ??
+        ImagePicker.MediaTypeOptions?.Images ??
+        ImagePicker.MediaTypeOptions?.All;
+
       // Abrir galería
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes,
         allowsEditing,
         aspect: allowsEditing ? aspect : undefined,
         quality: 1, // Usar calidad máxima inicial, luego optimizamos
@@ -213,9 +218,14 @@ export function useImageUpload(options: ImageUploadOptions = {}): ImageUploadRes
         return null;
       }
 
+      const mediaTypes =
+        ImagePicker.MediaType?.Images ??
+        ImagePicker.MediaTypeOptions?.Images ??
+        ImagePicker.MediaTypeOptions?.All;
+
       // Abrir cámara
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes,
         allowsEditing,
         aspect: allowsEditing ? aspect : undefined,
         quality: 1, // Usar calidad máxima inicial, luego optimizamos

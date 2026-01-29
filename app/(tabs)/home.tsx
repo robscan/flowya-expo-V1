@@ -297,6 +297,7 @@ export default function HomeScreen() {
   // Estados
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isHomeFocused, setIsHomeFocused] = useState(false);
   
   // Hooks de datos
   const { spots, isLoading: isLoadingSpots, refreshSpots } = useSpot();
@@ -422,9 +423,13 @@ export default function HomeScreen() {
   // V1.2: Actualizar snapshot al reentrar a la vista
   useFocusEffect(
     useCallback(() => {
+      setIsHomeFocused(true);
       if (hasLoadedOnce) {
         updatePinnedSnapshot();
       }
+      return () => {
+        setIsHomeFocused(false);
+      };
     }, [hasLoadedOnce]) // updatePinnedSnapshot es estable, no necesita estar en dependencias
   );
 
@@ -498,9 +503,7 @@ export default function HomeScreen() {
       const exists = homeData.availableRegions.some(
         r => r.regionId === selectedRegionId
       );
-      
       if (!exists) {
-        // regionId seleccionado no existe en disponibles → resetear (solo si no es "Current location")
         setSelectedRegionId(null);
       }
     }
@@ -520,6 +523,7 @@ export default function HomeScreen() {
     const region = homeData.availableRegions.find(r => r.regionId === selectedRegionId);
     return region?.label || null;
   }, [isCurrentLocation, contextRegionLabel, selectedRegionId, homeData.availableRegions]);
+
 
   // Verificar si hay contenido
   const hasContent = useMemo(() => {
@@ -570,6 +574,36 @@ export default function HomeScreen() {
   if (!hasContent) {
     return (
       <>
+        {isHomeFocused && (
+          <RegionHeader
+            currentRegionLabel={selectedRegionLabel}
+            currentRegionId={selectedRegionId}
+            isCurrentLocation={isCurrentLocation}
+            availableRegions={homeData.availableRegions}
+            onRegionSelect={setSelectedRegionId}
+            onCurrentLocationSelect={setCurrentLocation}
+            rightAction={{
+              icon: 'profile',
+              onPress: handleProfilePress,
+            }}
+            visible={isHeaderVisible}
+            absolute
+          />
+        )}
+        <HomeEmptyState
+          colors={colors}
+          selectedRegionLabel={selectedRegionLabel}
+          onAddSpot={handleAddSpot}
+          onExploreMap={handleExploreMap}
+        />
+      </>
+    );
+  }
+
+  // Si hay contenido: renderizar secciones
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isHomeFocused && (
         <RegionHeader
           currentRegionLabel={selectedRegionLabel}
           currentRegionId={selectedRegionId}
@@ -584,33 +618,7 @@ export default function HomeScreen() {
           visible={isHeaderVisible}
           absolute
         />
-        <HomeEmptyState
-          colors={colors}
-          selectedRegionLabel={selectedRegionLabel}
-          onAddSpot={handleAddSpot}
-          onExploreMap={handleExploreMap}
-        />
-      </>
-    );
-  }
-
-  // Si hay contenido: renderizar secciones
-  return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <RegionHeader
-        currentRegionLabel={selectedRegionLabel}
-        currentRegionId={selectedRegionId}
-        isCurrentLocation={isCurrentLocation}
-        availableRegions={homeData.availableRegions}
-        onRegionSelect={setSelectedRegionId}
-        onCurrentLocationSelect={setCurrentLocation}
-        rightAction={{
-          icon: 'profile',
-          onPress: handleProfilePress,
-        }}
-        visible={isHeaderVisible}
-        absolute
-      />
+      )}
 
       <ScrollView
         style={styles.content}

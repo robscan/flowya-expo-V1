@@ -93,7 +93,7 @@ export function prepareHomeData(
   const usedSpotIds = new Set<string>();
 
   // 1. Nearby spots (highest priority)
-  // V1.2 REGLA CANÓNICA: Nearby SIEMPRE se muestra cuando hay spots cercanos
+  // CANONICAL: Nearby se calcula por distancia a BaseLocation y respeta regionId seleccionado
   // NO filtra por estado de Pin (to_visit / visited)
   // Es una sección contextual de viaje, no de descubrimiento editorial
   const nearbySpots: SpotWithDistance[] = (() => {

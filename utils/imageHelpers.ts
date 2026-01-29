@@ -146,5 +146,6 @@ export function getSpotImageUrls(spot: Spot): string[] {
   const candidates = [spot.image?.url, ...(spot.photos ?? [])].filter(
     (url): url is string => Boolean(url && url.trim().length > 0)
   );
-  return candidates.filter((url) => !isStockImage(url));
+  const validUrls = candidates.filter((url) => !isStockImage(url));
+  return validUrls;
 }

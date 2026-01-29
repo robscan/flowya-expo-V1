@@ -60,7 +60,7 @@ interface MapboxGeocodeResponse {
  * 
  * Esta función:
  * - Usa Mapbox Geocoding API para obtener información de región
- * - Deriva regionId estable desde feature ID o short_code
+ * - Deriva regionId estable desde countryCode + type + place
  * - Prioriza: place (ciudad) → region (estado/departamento)
  * - NO muestra locality ni country como niveles
  * - Normaliza countryCode a ISO 3166-1 alpha-2 (solo metadata)
@@ -140,8 +140,24 @@ export async function resolveRegion(
     let regionLabel: string;
     let regionId: string;
     
+    const deriveCountryCode = (shortCode?: string): string => {
+      if (!shortCode) return '';
+      const normalized = shortCode.toUpperCase();
+      return normalized.split('-')[0] || '';
+    };
+
     // Extraer countryCode del country context (solo para metadata, NO se muestra como nivel)
-    const countryCode = countryContext?.short_code?.toUpperCase() || '';
+    let countryCode = deriveCountryCode(countryContext?.short_code);
+    if (!countryCode) {
+      countryCode =
+        deriveCountryCode(regionContext?.short_code)
+        || deriveCountryCode(placeContext?.short_code)
+        || deriveCountryCode((feature.properties as { short_code?: string } | undefined)?.short_code);
+    }
+    if (!countryCode) {
+      regionCache.set(cacheKey, null);
+      return null;
+    }
 
     // Prioridad 1: place (ciudad) - NIVEL PRIMARIO PREFERIDO
     if (placeContext) {
@@ -149,7 +165,7 @@ export async function resolveRegion(
       regionLabel = placeContext.text;
       // IMPORTANTE: Usar regla canónica para generar regionId estable
       // NO usar feature.id o placeContext.id (varían entre llamadas de Mapbox)
-      // REGLA CANÓNICA: country_code.normalized_place_name
+      // REGLA CANÓNICA: country_code.type.normalized_place_name
       try {
         regionId = generateCanonicalRegionId(countryCode, placeContext.text, 'city');
       } catch (error) {
@@ -166,7 +182,7 @@ export async function resolveRegion(
       regionLabel = regionContext.text;
       // IMPORTANTE: Usar regla canónica para generar regionId estable
       // NO usar regionContext.id o feature.id (varían entre llamadas de Mapbox)
-      // REGLA CANÓNICA: country_code.normalized_place_name
+      // REGLA CANÓNICA: country_code.type.normalized_place_name
       try {
         regionId = generateCanonicalRegionId(countryCode, regionContext.text, 'region');
       } catch (error) {
@@ -183,7 +199,7 @@ export async function resolveRegion(
       regionLabel = feature.text;
       // IMPORTANTE: Usar regla canónica para generar regionId estable
       // NO usar feature.id (varía entre llamadas de Mapbox)
-      // REGLA CANÓNICA: country_code.normalized_place_name
+      // REGLA CANÓNICA: country_code.type.normalized_place_name
       try {
         regionId = generateCanonicalRegionId(countryCode, feature.text, 'city');
       } catch (error) {

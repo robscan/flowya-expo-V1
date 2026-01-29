@@ -8,18 +8,18 @@
  * - El sistema no estaba colapsando correctamente esas variantes
  * 
  * SOLUCIÓN CANÓNICA:
- * - Generar regionId usando: country_code + normalized_place_name
+ * - Generar regionId usando: country_code + type + normalized_place_name
  * - Esto garantiza que Barcelona siempre tenga el mismo regionId
  * - Sin depender de feature.id volátil de Mapbox
  * 
  * REGLA CANÓNICA DEFINITIVA:
- * regionId = `${countryCode.toLowerCase()}.${normalizedPlaceName}`
+ * regionId = `${countryCode.toLowerCase()}.${regionType}.${normalizedPlaceName}`
  * 
  * Ejemplos:
- * - Barcelona, ES → "es.barcelona"
- * - Berlin, DE → "de.berlin"
- * - Mexico City, MX → "mx.mexico-city"
- * - Playa del Carmen, MX → "mx.playa-del-carmen"
+ * - Barcelona, ES (city) → "es.city.barcelona"
+ * - Berlin, DE (city) → "de.city.berlin"
+ * - Mexico City, MX (city) → "mx.city.mexico-city"
+ * - Quintana Roo, MX (region) → "mx.region.quintana-roo"
  */
 
 /**
@@ -62,19 +62,19 @@ function normalizePlaceName(placeName: string): string {
  * CANONICAL: Regla única para garantizar que Barcelona siempre tenga el mismo regionId
  * 
  * REGLA:
- * regionId = `${countryCode.toLowerCase()}.${normalizedPlaceName}`
+ * regionId = `${countryCode.toLowerCase()}.${regionType}.${normalizedPlaceName}`
  * 
  * Esto garantiza:
- * - Barcelona, ES → siempre "es.barcelona" (un solo regionId)
- * - Berlin, DE → siempre "de.berlin" (un solo regionId)
- * - Mexico City, MX → siempre "mx.mexico-city" (un solo regionId)
+ * - Barcelona, ES → siempre "es.city.barcelona" (un solo regionId)
+ * - Berlin, DE → siempre "de.city.berlin" (un solo regionId)
+ * - Mexico City, MX → siempre "mx.city.mexico-city" (un solo regionId)
  * 
  * Sin depender de feature.id volátil de Mapbox.
  * 
  * @param countryCode - Código de país ISO 3166-1 alpha-2 (ej: "ES", "DE", "MX")
  * @param placeName - Nombre del lugar (ej: "Barcelona", "Berlin", "Mexico City")
  * @param regionType - Tipo de región ("city" o "region")
- * @returns regionId canónico estable (ej: "es.barcelona", "de.berlin")
+ * @returns regionId canónico estable (ej: "es.city.barcelona", "de.city.berlin")
  */
 export function generateCanonicalRegionId(
   countryCode: string,
@@ -101,25 +101,25 @@ export function generateCanonicalRegionId(
     throw new Error(`generateCanonicalRegionId: Invalid normalized values (country: "${normalizedCountry}", place: "${normalizedPlace}")`);
   }
 
-  // Generar regionId canónico: country_code.normalized_place_name
-  const regionId = `${normalizedCountry}.${normalizedPlace}`;
+  // Generar regionId canónico: country_code.type.normalized_place_name
+  const regionId = `${normalizedCountry}.${regionType}.${normalizedPlace}`;
 
   return regionId;
 }
 
 /**
  * Validar si un regionId es canónico (generado con la regla nueva)
- * CANONICAL: Verifica si un regionId sigue el formato country.place
+ * CANONICAL: Verifica si un regionId sigue el formato country.type.place
  * 
  * @param regionId - regionId a validar
- * @returns true si el regionId es canónico (formato country.place)
+ * @returns true si el regionId es canónico (formato country.type.place)
  */
 export function isCanonicalRegionId(regionId: string): boolean {
   if (!regionId || typeof regionId !== 'string') {
     return false;
   }
 
-  // Formato canónico: country.place (ej: "es.barcelona", "de.berlin")
-  const canonicalPattern = /^[a-z]{2}\.[a-z0-9-]+$/;
+  // Formato canónico: country.type.place (ej: "es.city.barcelona", "de.region.berlin")
+  const canonicalPattern = /^[a-z]{2}\.(city|region)\.[a-z0-9-]+$/;
   return canonicalPattern.test(regionId);
 }

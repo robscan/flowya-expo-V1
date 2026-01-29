@@ -479,6 +479,8 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
 
       const generatedContent = await generateSpotContent(tempSpot, {
         fields,
+        // Acción explícita del usuario: regenerar aunque exista contenido previo
+        forceRegenerate: true,
       });
 
       setPreviewContent(generatedContent);
@@ -537,7 +539,7 @@ export function useSpotForm(options: UseSpotFormOptions = {}): UseSpotFormResult
       
       // FASE 4: Extraer city/country de locationRegion si no existen
       if (locationRegion && !location.city) {
-        if (locationRegion.type === 'city' || locationRegion.type === 'locality') {
+        if (locationRegion.type === 'city') {
           location.city = locationRegion.label;
         }
       }

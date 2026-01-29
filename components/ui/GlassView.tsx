@@ -38,7 +38,7 @@ export function GlassView({
   const renderContent = () => {
     // Obtener border radius del style si existe
     const borderRadius = (style as any)?.borderRadius || 0;
-    
+
     return (
       <View style={[styles.container, glassStyle, style]}>
         {/* Glow interno - simula resplandor de luz reflejado en el borde */}

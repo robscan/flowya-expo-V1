@@ -93,6 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (storedSession) {
           try {
             const parsedSession = JSON.parse(storedSession);
+            if (supabase && parsedSession?.access_token && parsedSession?.refresh_token) {
+              await supabase.auth.setSession({
+                access_token: parsedSession.access_token,
+                refresh_token: parsedSession.refresh_token,
+              });
+            }
             setSession(parsedSession);
             setUser(parsedSession?.user ?? null);
           } catch (parseError) {
@@ -101,10 +107,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       } else {
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
         if (currentSession) {
+          setSession(currentSession);
+          setUser(currentSession?.user ?? null);
           await saveSession(currentSession);
+        } else {
+          const storedSession = await AsyncStorage.getItem(STORAGE_KEY);
+          if (storedSession) {
+            try {
+              const parsedSession = JSON.parse(storedSession);
+              if (supabase && parsedSession?.access_token && parsedSession?.refresh_token) {
+                await supabase.auth.setSession({
+                  access_token: parsedSession.access_token,
+                  refresh_token: parsedSession.refresh_token,
+                });
+              }
+              setSession(parsedSession);
+              setUser(parsedSession?.user ?? null);
+            } catch (parseError) {
+              console.error('Error parsing stored session:', parseError);
+              await clearSession();
+            }
+          }
         }
       }
     } catch (error) {

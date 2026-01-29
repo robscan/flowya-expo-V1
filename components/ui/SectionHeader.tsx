@@ -15,7 +15,7 @@
  */
 
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Icon, IconName } from '@/components/ui/Icon';
@@ -66,7 +66,6 @@ export function SectionHeader({
 }: SectionHeaderProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-
   // TextInput ref for autofocus
   const textInputRef = useRef<TextInput>(null);
 

@@ -7,7 +7,7 @@
  * - Editable: For FlowScreen or editing contexts (supports delete, doesn't break on small screens)
  */
 
-import { memo } from 'react';
+import React, { memo } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassView } from '@/components/ui/GlassView';
@@ -21,8 +21,10 @@ import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/
 import { Flow, getFlowSpots } from '@/data/flows';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useEntityTranslations } from '@/hooks/useEntityTranslations';
 import { calculatePathDistance } from '@/utils/distance';
 import { isFlowComplete } from '@/utils/flowValidation';
+import { resolveTranslatedField } from '@/utils/translationsService';
 
 interface FlowCardDisplayProps {
   flow: Flow;
@@ -35,6 +37,7 @@ interface FlowCardDisplayProps {
 const FlowCardDisplay = memo(function FlowCardDisplay({ flow, spots, onPress, distance, customName }: FlowCardDisplayProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const { translations } = useEntityTranslations({ entityType: 'flow', entityId: flow.id });
 
   // Calcular distancia si no se proporciona
   const flowSpots = getFlowSpots(flow, spots);
@@ -43,7 +46,12 @@ const FlowCardDisplay = memo(function FlowCardDisplay({ flow, spots, onPress, di
   const movementModeLabel = getMovementModeLabel(flow.movementMode);
 
   // Usar nombre personalizado si está disponible, sino el título del flow
-  const displayName = customName || flow.title;
+  const translatedTitle = resolveTranslatedField({
+    translations,
+    field: 'title',
+    fallback: flow.title,
+  });
+  const displayName = customName || translatedTitle;
 
   // Verificar si el flow está completo
   const flowIsComplete = isFlowComplete(flow, spots);

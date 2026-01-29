@@ -23,6 +23,7 @@ import { Colors } from '@/constants/theme';
 import { textStyles } from '@/constants/typography';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOverlay } from '@/contexts/OverlayContext';
+import { useRegion } from '@/contexts/RegionContext';
 import { useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Spot } from '@/data/spots';
@@ -30,6 +31,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { useSpotDistance } from '@/hooks/useSpotDistance';
 import { useVisibleSpots, ViewportBounds } from '@/hooks/useVisibleSpots';
+import { getSpotsByRegion } from '@/core/region';
 
 export default function MapScreen() {
   const colorScheme = useColorScheme();
@@ -41,16 +43,26 @@ export default function MapScreen() {
 
   // Ubicación base estable
   const { baseLocation } = useBaseLocation();
+  const { selectedRegionId, isCurrentLocation, setSelectedRegionId } = useRegion();
 
   const { spots, isLoading: spotsLoading, getSpotById } = useSpot();
-  const { setIsTabBarVisible } = useOverlay();
+  const { setIsTabBarVisible, setIsTabBarLocked } = useOverlay();
   const { isSpotPinned, getPinState, getPinnedSpots } = useSaved();
   const { user } = useAuth();
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
+  const [hasMapInteraction, setHasMapInteraction] = useState(false);
+  useEffect(() => {
+    if (!params.spotId) return;
+    const spot = getSpotById(params.spotId);
+    const spotRegionId = spot?.locationRegion?.regionId ?? null;
+    const isMismatch = !!spotRegionId && spotRegionId !== selectedRegionId;
+    if (isMismatch && spotRegionId) {
+      void setSelectedRegionId(spotRegionId);
+    }
+  }, [params.spotId, getSpotById, selectedRegionId, isCurrentLocation]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pinStateFilter, setPinStateFilter] = useState<PinStateFilterType>('all');
   const [viewportBounds, setViewportBounds] = useState<ViewportBounds | null>(null);
-  
   // Calcular distancia del spot seleccionado (siempre, no condicionalmente)
   const selectedSpotDistance = useSpotDistance(selectedSpot?.id || null, baseLocation);
   
@@ -115,27 +127,81 @@ export default function MapScreen() {
     });
   }, [spots, pinStateFilter, isSpotPinned, getPinState]);
 
+  const viewportMinSpots = 10;
   // V1.3: Lazy loading - Filtrar spots visibles en viewport
-  const filteredSpots = useVisibleSpots(
+  const viewportSpots = useVisibleSpots(
     preFilteredSpots,
     viewportBounds,
-    { buffer: 0.2, minSpots: 50 }
+    { buffer: 0.2, minSpots: viewportMinSpots }
   );
+
+  const regionSpots = useMemo(() => {
+    if (!selectedRegionId) {
+      return spots;
+    }
+    return getSpotsByRegion(spots, selectedRegionId);
+  }, [spots, selectedRegionId]);
+
+  const spotRegionIdFromParam = useMemo(() => {
+    if (!params.spotId) return null;
+    const spot = getSpotById(params.spotId);
+    return spot?.locationRegion?.regionId ?? null;
+  }, [params.spotId, getSpotById]);
+
+  const spotFromParams = useMemo(() => {
+    if (!params.spotId) return undefined;
+    return getSpotById(params.spotId);
+  }, [params.spotId, getSpotById]);
+
+  // CANONICAL: En Map, primero viewport (bbox), luego regionId
+  const filteredSpots = useMemo(() => {
+    if (!selectedRegionId || isCurrentLocation) {
+      return viewportSpots;
+    }
+    const regionFiltered = getSpotsByRegion(viewportSpots, selectedRegionId);
+    return regionFiltered;
+  }, [viewportSpots, selectedRegionId, isCurrentLocation]);
+
+
+  useEffect(() => {
+    if (isCurrentLocation || !selectedRegionId || regionSpots.length === 0) {
+      return;
+    }
+    if (spotRegionIdFromParam && spotRegionIdFromParam !== selectedRegionId) {
+      return;
+    }
+    const latitudes = regionSpots.map((spot) => spot.location.lat);
+    const longitudes = regionSpots.map((spot) => spot.location.lng);
+    const minLat = Math.min(...latitudes);
+    const maxLat = Math.max(...latitudes);
+    const minLng = Math.min(...longitudes);
+    const maxLng = Math.max(...longitudes);
+    const center = {
+      latitude: (minLat + maxLat) / 2,
+      longitude: (minLng + maxLng) / 2,
+    };
+    mapViewRef.current?.flyToCoordinates(center, 10);
+  }, [isCurrentLocation, selectedRegionId, regionSpots, spotRegionIdFromParam]);
+
+  const mapSpots = useMemo(() => {
+    if (spotFromParams && !filteredSpots.find((spot) => spot.id === spotFromParams.id)) {
+      return [...filteredSpots, spotFromParams];
+    }
+    return filteredSpots;
+  }, [filteredSpots, spotFromParams]);
 
   // CANONICAL: TabBar visible when Map is active, hidden when fullscreen
   useFocusEffect(
     useCallback(() => {
-      // Solo establecer visible si no está en fullscreen
-      if (!isFullscreen) {
-        setIsTabBarVisible(true);
-      }
-    }, [setIsTabBarVisible, isFullscreen])
+      return () => {};
+    }, [selectedRegionId, isCurrentLocation, params.spotId, isFullscreen, hasMapInteraction])
   );
 
   // CANONICAL: Ocultar/mostrar TabBar según estado de fullscreen
   useEffect(() => {
-    setIsTabBarVisible(!isFullscreen);
-  }, [isFullscreen, setIsTabBarVisible]);
+    const shouldShowTabBar = true;
+    setIsTabBarVisible(shouldShowTabBar);
+  }, [setIsTabBarVisible]);
 
   // CANONICAL: Forzar resize del mapa cuando cambia fullscreen
   useEffect(() => {
@@ -154,6 +220,10 @@ export default function MapScreen() {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
       UIManager.setLayoutAnimationEnabledExperimental(true);
     }
+  }, []);
+
+  const handleViewportChange = useCallback((bounds: ViewportBounds) => {
+    setViewportBounds(bounds);
   }, []);
 
   // Handle Spot selection
@@ -184,6 +254,22 @@ export default function MapScreen() {
   const handleFullscreenToggle = () => {
     setIsFullscreen(!isFullscreen);
   };
+
+  const handleMapInteraction = useCallback(() => {
+    setHasMapInteraction(true);
+  }, [params.spotId]);
+
+  useEffect(() => {
+    const shouldAllow = !params.spotId;
+    setHasMapInteraction(shouldAllow);
+  }, [params.spotId]);
+
+  useEffect(() => {
+    setIsTabBarLocked(false);
+    return () => {
+      setIsTabBarLocked(false);
+    };
+  }, [params.spotId, hasMapInteraction, setIsTabBarLocked]);
 
   // Handle Spot creation from map (long press)
   const handleMapLongPress = (location: { latitude: number; longitude: number }) => {
@@ -266,7 +352,7 @@ export default function MapScreen() {
     }
 
     let spot: Spot | undefined = getSpotById(params.spotId);
-    
+
     if (!spot) {
       console.warn(`MapScreen: Spot with id ${params.spotId} not found`);
       return;
@@ -334,16 +420,19 @@ export default function MapScreen() {
         }}>
         <FlowyaMapView
           ref={mapViewRef}
-          spots={filteredSpots as Spot[]}
+          spots={mapSpots as Spot[]}
           onSpotPress={handleSpotPress}
           onLongPress={handleMapLongPress}
+          onUserInteraction={handleMapInteraction}
           showUserLocation={!!baseLocation}
           userLocation={baseLocation}
           highlightedSpotId={highlightedSpotId}
           disableNativeControls={true}
-          onViewportChange={(bounds) => setViewportBounds(bounds)}
+          onViewportChange={handleViewportChange}
+          autoCenterOnUserLocation={isCurrentLocation}
         />
       </View>
+
 
       {/* V1.2: Pin State Filter - Parte superior del mapa */}
       <View style={styles.topControls}>
@@ -440,6 +529,7 @@ export default function MapScreen() {
               state="default"
               distance={selectedSpotDistance}
               onPress={() => handleSpotCardPress(selectedSpot)}
+              showPinAction={true}
             />
           </View>
         </>

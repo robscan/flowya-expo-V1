@@ -168,3 +168,21 @@ Una vez registrado este bloque en DECISIONES_CANONICAS.md:
 ### Alcance UI
 - CTA de IA solo informativo (sugerencias, resumen, patrones).
 - Ninguna UI dispara cambios persistentes en Spot/Flow desde IA.
+
+---
+
+## Sistema de Ubicación — Decisiones canónicas (V1)
+
+### RegionId canónico
+- Formato oficial: `country.type.place` (ej.: `mx.city.playa-del-carmen`).
+- Se usa en comparaciones y filtros; nunca se compara por label.
+
+### Prioridad de filtros en Map
+- Primero **viewport/bbox** (define el universo visible).
+- Luego **regionId** como refinamiento dentro de lo visible.
+
+### Niveles válidos
+- Solo `city` y `region` (no usar `locality`).
+
+### Fallback legacy
+- No existe fallback permanente desde `city/country` legacy en UX.

@@ -13,7 +13,7 @@
  */
 
 import { useRouter } from 'expo-router';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { GestureResponderEvent, Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { Chip } from '@/components/ui/Chip';
@@ -32,10 +32,12 @@ import { PinState, useSaved } from '@/contexts/SavedContext';
 import { useSpot } from '@/contexts/SpotContext';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useEntityTranslations } from '@/hooks/useEntityTranslations';
 import { showAlert } from '@/utils/alertPolyfill';
 import { hasSeenPinModal, markPinModalSeen } from '@/utils/pinFirstTime';
 import { getSpotImageSource } from '@/utils/imageHelpers';
 import { getSpotTypeLabel } from '@/utils/spotFormHelpers';
+import { resolveTranslatedField } from '@/utils/translationsService';
 
 interface SpotMediaCardProps {
   spot: Spot;
@@ -45,7 +47,7 @@ interface SpotMediaCardProps {
   size?: 'large' | 'small'; // Tamaño de la card (default: 'large')
 }
 
-export const SpotMediaCard = memo(function SpotMediaCard({ 
+export const SpotMediaCard = memo(function SpotMediaCard({
   spot, 
   onPress, 
   distance,
@@ -62,6 +64,19 @@ export const SpotMediaCard = memo(function SpotMediaCard({
   const spotTypeLabel = getSpotTypeLabel(spot.type);
   const isPinned = isSpotPinned(spot.id);
   const pinState = getPinState(spot.id);
+  const descriptionText = spot.shortDescription || spot.description || spot.whyItMatters;
+  const { translations } = useEntityTranslations({ entityType: 'spot', entityId: spot.id });
+  const nameText = resolveTranslatedField({
+    translations,
+    field: 'name',
+    fallback: spot.name || 'Spot sin nombre',
+  });
+  const descriptionTranslated = resolveTranslatedField({
+    translations,
+    field: 'shortDescription',
+    fallback: descriptionText || '',
+  });
+  const hasDescription = typeof descriptionTranslated === 'string' && descriptionTranslated.trim().length > 0;
   
   // Estados para modal y Toast
   const [showPinModal, setShowPinModal] = useState(false);
@@ -156,14 +171,8 @@ export const SpotMediaCard = memo(function SpotMediaCard({
 
   // Render variant="small" (compacto para grid y sliders)
   if (size === 'small') {
-    return (
+    const smallContent = (
       <>
-        <TouchableOpacity 
-          onPress={onPress} 
-          style={styles.smallCardContainer} 
-          activeOpacity={0.7}
-          delayPressIn={Platform.OS === 'web' ? 150 : 0}
-        >
         {/* Imagen cuadrada 160px - siempre visible */}
         <View style={styles.smallImageContainer}>
           <OptimizedImage
@@ -220,7 +229,7 @@ export const SpotMediaCard = memo(function SpotMediaCard({
           style={[styles.smallTitle, { color: colors.text }]} 
           numberOfLines={2}
         >
-          {spot.name || 'Spot sin nombre'}
+          {nameText}
         </Text>
 
         {/* InfoMeta debajo del título */}
@@ -230,7 +239,139 @@ export const SpotMediaCard = memo(function SpotMediaCard({
             size={size}
           />
         )}
-      </TouchableOpacity>
+      </>
+    );
+    return (
+      <>
+        <TouchableOpacity 
+          onPress={onPress} 
+          style={styles.smallCardContainer} 
+          activeOpacity={0.7}
+          delayPressIn={Platform.OS === 'web' ? 150 : 0}
+        >
+          {smallContent}
+        </TouchableOpacity>
+        <PinStateModal
+          visible={showPinModal}
+          onSelect={handlePinStateSelect}
+          onCancel={() => setShowPinModal(false)}
+        />
+        <Modal
+          visible={showToast}
+          transparent
+          animationType="none"
+          onRequestClose={() => setShowToast(false)}
+          statusBarTranslucent>
+          <Toast
+            message={toastMessage}
+            visible={showToast}
+            onHide={() => setShowToast(false)}
+            type="success"
+          />
+        </Modal>
+      </>
+    );
+  }
+
+  const aiBadge = spot.isAiGenerated && (
+    <View style={styles.aiBadge}>
+      <Text style={styles.aiBadgeText}>IA</Text>
+    </View>
+  );
+  // Render size="large" (default)
+  const largeContent = (
+    <>
+      {/* Imagen arriba o placeholder - siempre visible */}
+      <View style={styles.imageContainer}>
+        <OptimizedImage
+          source={imageSource}
+          width="100%"
+          height={200}
+          showFallback={true}
+          fallbackIcon="upload"
+          resizeMode="cover"
+        />
+        {/* Botón "Map" - extremo inferior izquierdo */}
+        <View style={styles.mapViewOverlay}>
+          <Pressable
+            onPress={handleViewOnMap}
+            style={({ pressed }) => [
+              styles.mapViewButton,
+              {
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Chip text="Map" variant="default" icon="visibility" solidBackground={true} />
+          </Pressable>
+        </View>
+        {/* Icono de Pin sobre la imagen - extremo superior derecho */}
+        <View style={styles.bookmarkOverlay}>
+          <View
+            style={[
+              styles.bookmarkButton,
+              {
+                backgroundColor:
+                  colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)',
+              },
+            ]}>
+            <Pressable
+              onPress={handlePinPress}
+              style={({ pressed }) => [
+                iconTouchableContainer.base,
+                pressed && { opacity: 0.7 }
+              ]}>
+              <Icon
+                name={isPinned && pinState === 'visited' ? 'check-circle' : 'pin'}
+                size={24}
+                color={isPinned ? (pinState === 'visited' ? '#4CAF50' : '#2196F3') : colors.text}
+              />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      {/* Contenido principal */}
+      <View style={styles.content}>
+        <View style={styles.spotInfo}>
+          <View style={styles.spotNameRow}>
+            <Text style={[styles.spotName, { color: colors.text }]} numberOfLines={1}>
+              {nameText}
+            </Text>
+            {aiBadge}
+          </View>
+          {hasDescription && (
+            <Text style={[styles.spotDescription, { color: colors.icon }]} numberOfLines={2}>
+              {descriptionTranslated}
+            </Text>
+          )}
+          {/* InfoMeta debajo de la descripción */}
+          <View style={styles.infoMetaContainer}>
+            <InfoMeta
+              chip={{ label: spotTypeLabel }}
+              distance={distance}
+              rating={rating}
+              size="large"
+            />
+          </View>
+        </View>
+      </View>
+    </>
+  );
+  return (
+    <>
+      <Pressable onPress={onPress} style={styles.cardContainer}>
+        <GlassView
+          style={styles.card}
+          intensity="light"
+          opacity="medium"
+          shadowLevel="subtle"
+          enableGlow={true}
+          useGrayBackground={true}
+        >
+          {largeContent}
+        </GlassView>
+      </Pressable>
       <PinStateModal
         visible={showPinModal}
         onSelect={handlePinStateSelect}
@@ -249,114 +390,6 @@ export const SpotMediaCard = memo(function SpotMediaCard({
           type="success"
         />
       </Modal>
-      </>
-    );
-  }
-
-  // Render size="large" (default)
-  return (
-    <>
-      <Pressable onPress={onPress} style={styles.cardContainer}>
-      <GlassView
-        style={styles.card}
-        intensity="light"
-        opacity="medium"
-        shadowLevel="subtle"
-        enableGlow={true}
-        useGrayBackground={true}
-      >
-        {/* Imagen arriba o placeholder - siempre visible */}
-        <View style={styles.imageContainer}>
-          <OptimizedImage
-            source={imageSource}
-            width="100%"
-            height={200}
-            showFallback={true}
-            fallbackIcon="upload"
-            resizeMode="cover"
-          />
-          {/* Botón "Map" - extremo inferior izquierdo */}
-          <View style={styles.mapViewOverlay}>
-            <Pressable
-              onPress={handleViewOnMap}
-              style={({ pressed }) => [
-                styles.mapViewButton,
-                {
-                  opacity: pressed ? 0.7 : 1,
-                },
-              ]}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Chip text="Map" variant="default" icon="visibility" solidBackground={true} />
-            </Pressable>
-          </View>
-          {/* Icono de Pin sobre la imagen - extremo superior derecho */}
-          <View style={styles.bookmarkOverlay}>
-            <View
-              style={[
-                styles.bookmarkButton,
-                {
-                  backgroundColor:
-                    colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.9)',
-                },
-              ]}>
-              <Pressable
-                onPress={handlePinPress}
-                style={({ pressed }) => [
-                  iconTouchableContainer.base,
-                  pressed && { opacity: 0.7 }
-                ]}>
-                <Icon
-                  name={isPinned && pinState === 'visited' ? 'check-circle' : 'pin'}
-                  size={24}
-                  color={isPinned ? (pinState === 'visited' ? '#4CAF50' : '#2196F3') : colors.text}
-                />
-              </Pressable>
-            </View>
-          </View>
-        </View>
-
-        {/* Contenido principal */}
-        <View style={styles.content}>
-          <View style={styles.spotInfo}>
-            <Text style={[styles.spotName, { color: colors.text }]} numberOfLines={1}>
-              {spot.name || 'Spot sin nombre'}
-            </Text>
-            {spot.description && (
-              <Text style={[styles.spotDescription, { color: colors.icon }]} numberOfLines={2}>
-                {spot.description}
-              </Text>
-            )}
-            {/* InfoMeta debajo de la descripción */}
-            <View style={styles.infoMetaContainer}>
-              <InfoMeta
-                chip={{ label: spotTypeLabel }}
-                distance={distance}
-                rating={rating}
-                size="large"
-              />
-            </View>
-          </View>
-        </View>
-      </GlassView>
-    </Pressable>
-    <PinStateModal
-      visible={showPinModal}
-      onSelect={handlePinStateSelect}
-      onCancel={() => setShowPinModal(false)}
-    />
-    <Modal
-      visible={showToast}
-      transparent
-      animationType="none"
-      onRequestClose={() => setShowToast(false)}
-      statusBarTranslucent>
-      <Toast
-        message={toastMessage}
-        visible={showToast}
-        onHide={() => setShowToast(false)}
-        type="success"
-      />
-    </Modal>
     </>
   );
 });
@@ -413,6 +446,22 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     lineHeight: lineHeight.base,
     fontWeight: '500',
+  },
+  spotNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  aiBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'rgba(148, 97, 255, 0.15)',
+  },
+  aiBadgeText: {
+    fontFamily,
+    fontSize: fontSize.xs,
+    color: '#9461FF',
   },
   spotDescription: {
     fontFamily,

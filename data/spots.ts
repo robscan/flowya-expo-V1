@@ -68,6 +68,8 @@ export interface Spot {
   shortDescription?: string; // New - replaces description/whyItMatters (1-2 lines, evocative)
   image: SpotImage; // Changed from photos[] array to single image object (Phase 5)
   hasGeneratedContent: boolean; // New - replaces aiGenerated (true if content was AI-generated)
+  isAiGenerated?: boolean; // AI Coverage - spot generado por IA (no canonico)
+  aiCoverageSessionId?: string; // AI Coverage - session tracking
   
   // Legacy fields for temporary compatibility (will be removed in Phase 6)
   // These fields are maintained for backward compatibility during migration

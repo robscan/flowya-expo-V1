@@ -19,10 +19,11 @@ import { canMigrateSpot, isValidSpotV1_2, migrateSpotToV1_2 } from '@/utils/spot
 import { normalizeAllSpots } from '@/utils/spotNormalizer';
 import { auditAllSpots, logAuditReport, fixSpots as fixAllSpots } from '@/utils/spotAudit';
 import { normalizeSpotId } from '@/utils/normalizeSpotId';
+import { getStorageBucketName } from '@/utils/storageUpload';
 import { supabase } from '@/utils/supabase';
 
 const STORAGE_KEY = '@flowya_spots';
-const REGION_REMIGRATION_KEY = '@flowya_region_remigration_done';
+const REGION_REMIGRATION_KEY = '@flowya_region_remigration_done_v2';
 const LEGACY_MARKED_KEY = '@flowya_legacy_marked';
 const V1_2_MIGRATION_KEY = '@flowya_v1_2_migration_done';
 
@@ -181,7 +182,6 @@ export function SpotProvider({ children }: { children: ReactNode }) {
 
     const imagePayload = row.image && typeof row.image === 'object' ? row.image : null;
     const imageUrl = typeof imagePayload?.url === 'string' ? imagePayload.url : '';
-
     const rawType = typeof row.type === 'string' ? row.type : 'other';
     const allowedTypes = new Set([
       'beach',
@@ -241,10 +241,91 @@ export function SpotProvider({ children }: { children: ReactNode }) {
       console.error('[SpotContext] Error fetching spots from Supabase:', error.message);
       return null;
     }
+    const rows = data || [];
 
-    const mapped = (data || [])
+    let mapped = rows
       .map((row) => mapSupabaseSpotToModel(row))
       .filter((spot): spot is Spot => Boolean(spot));
+
+    const missingImageSpotIds = mapped
+      .filter((spot) => !spot.image?.url)
+      .map((spot) => spot.id);
+
+    if (missingImageSpotIds.length > 0) {
+      const { data: mediaRows, error: mediaError } = await supabase.rpc('get_spot_media_for_spot_ids', {
+        spot_ids: missingImageSpotIds,
+      });
+      const mediaRowsArray = Array.isArray(mediaRows) ? mediaRows : [];
+      if (mediaRowsArray.length === 0 && !mediaError) {
+        const { data: appliedRows } = await supabase.from('spot_contributions').select('id,spot_id,payload').eq('status', 'applied').limit(150);
+        const withImage = (appliedRows || []).filter((r: { payload?: { image?: { url?: string } } }) => {
+          const u = r?.payload?.image?.url;
+          return typeof u === 'string' && u.trim().length > 0;
+        });
+        if (withImage.length > 0) {
+          await supabase.rpc('backfill_spot_media_from_applied');
+          const { data: refetchRpc } = await supabase.rpc('get_spot_media_for_spot_ids', { spot_ids: missingImageSpotIds });
+          const refetchRows = Array.isArray(refetchRpc) ? refetchRpc : [];
+          if (refetchRows && refetchRows.length > 0) {
+            const bucket = getStorageBucketName();
+            const mediaBySpot = new Map<string, { url: string; created_at?: string }>();
+            for (const row of refetchRows) {
+              if (!row?.spot_id || !row?.storage_path) continue;
+              const storagePath = String(row.storage_path);
+              const normalizedPath = storagePath.startsWith(`${bucket}/`)
+                ? storagePath.slice(bucket.length + 1)
+                : storagePath;
+              const { data } = supabase.storage.from(bucket).getPublicUrl(normalizedPath);
+              if (!data?.publicUrl) continue;
+              const existing = mediaBySpot.get(row.spot_id);
+              if (!existing || (row.created_at && existing.created_at && row.created_at > existing.created_at)) {
+                mediaBySpot.set(row.spot_id, { url: data.publicUrl, created_at: row.created_at });
+              } else if (!existing) {
+                mediaBySpot.set(row.spot_id, { url: data.publicUrl, created_at: row.created_at });
+              }
+            }
+            mapped = mapped.map((spot) => {
+              if (spot.image?.url) return spot;
+              const media = mediaBySpot.get(spot.id);
+              if (!media?.url) return spot;
+              return { ...spot, image: { ...spot.image, url: media.url } };
+            });
+          }
+        }
+      }
+
+      if (!mediaError && mediaRowsArray.length > 0) {
+        const bucket = getStorageBucketName();
+        const mediaBySpot = new Map<string, { url: string; created_at?: string }>();
+        for (const row of mediaRowsArray) {
+          if (!row?.spot_id || !row?.storage_path) continue;
+          const storagePath = String(row.storage_path);
+          const normalizedPath = storagePath.startsWith(`${bucket}/`)
+            ? storagePath.slice(bucket.length + 1)
+            : storagePath;
+          const { data } = supabase.storage.from(bucket).getPublicUrl(normalizedPath);
+          if (!data?.publicUrl) continue;
+          const existing = mediaBySpot.get(row.spot_id);
+          if (!existing || (row.created_at && existing.created_at && row.created_at > existing.created_at)) {
+            mediaBySpot.set(row.spot_id, { url: data.publicUrl, created_at: row.created_at });
+          } else if (!existing) {
+            mediaBySpot.set(row.spot_id, { url: data.publicUrl, created_at: row.created_at });
+          }
+        }
+        mapped = mapped.map((spot) => {
+          if (spot.image?.url) return spot;
+          const media = mediaBySpot.get(spot.id);
+          if (!media?.url) return spot;
+          return {
+            ...spot,
+            image: {
+              ...spot.image,
+              url: media.url,
+            },
+          };
+        });
+      }
+    }
 
     return normalizeAllSpots(mapped);
   }, []);
@@ -255,9 +336,11 @@ export function SpotProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       const supabaseSpots = await fetchSupabaseSpots();
       if (supabaseSpots) {
-        initializeSpotCache(supabaseSpots);
-        setSpots(supabaseSpots);
-        await saveSpots(supabaseSpots);
+        const shouldForceRemigration = await shouldForceRegionRemigration();
+        const migratedSpots = await migrateSpotsRegions(supabaseSpots, shouldForceRemigration);
+        initializeSpotCache(migratedSpots);
+        setSpots(migratedSpots);
+        await saveSpots(migratedSpots);
         return;
       }
 
@@ -276,7 +359,7 @@ export function SpotProvider({ children }: { children: ReactNode }) {
         // CANONICAL: Migrar owners legacy (UNA SOLA VEZ, no dinámico)
         // Esta migración se ejecuta una sola vez y persiste cambios permanentemente
         loadedSpots = await migrateOwnersLegacy(spotsWithDates);
-        
+
         // Verificar si hubo cambios en owners para guardar
         const hasOwnerChanges = loadedSpots.some((spot, index) => {
           const original = spotsWithDates[index];
@@ -533,8 +616,7 @@ export function SpotProvider({ children }: { children: ReactNode }) {
 
   const getSpotById = (id: string): Spot | undefined => {
     const normalizedSpotId = normalizeSpotId(id);
-    const found = spots.find((spot) => spot.id === normalizedSpotId);
-    return found;
+    return spots.find((spot) => spot.id === normalizedSpotId);
   };
 
   const getSpotsByType = (type: Spot['type']): Spot[] => {

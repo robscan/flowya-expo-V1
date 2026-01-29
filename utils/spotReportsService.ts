@@ -1,4 +1,5 @@
 import { supabase } from '@/utils/supabase';
+import { normalizeSpotId } from '@/utils/normalizeSpotId';
 import type { SpotReportReason, SpotReportRecord } from '@/types/spotContributions';
 
 export async function createSpotReport(params: {
@@ -10,11 +11,16 @@ export async function createSpotReport(params: {
   if (!supabase) {
     return { data: null, error: 'Supabase not configured' };
   }
+  if (!params.reporterId) {
+    return { data: null, error: 'Reporter is required' };
+  }
+  const normalizedSpotId = normalizeSpotId(params.spotId) || params.spotId;
+  await supabase.auth.getUser();
 
   const { data, error } = await supabase
     .from('spot_reports')
     .insert({
-      spot_id: params.spotId,
+      spot_id: normalizedSpotId,
       reporter_id: params.reporterId,
       reason: params.reason,
       media_id: params.mediaId ?? null,

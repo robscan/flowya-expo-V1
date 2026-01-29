@@ -38,14 +38,14 @@ import { Spot, SpotImage, SpotType, SpotV1_2 } from '@/data/spots';
 export function migrateSpotToV1_2(spot: Spot): SpotV1_2 {
   // Extraer city y country de locationRegion si existe
   // LocationRegion tiene: label, type, countryCode
-  // city se extrae del label cuando type es 'city' o 'locality'
+  // city se extrae del label cuando type es 'city'
   // country se convierte de countryCode (ISO 3166-1 alpha-2) a nombre de país
   let city: string | undefined = undefined;
   let country: string | undefined = undefined;
 
   if (spot.locationRegion) {
-    // Extraer city del label cuando el tipo es city o locality
-    if (spot.locationRegion.type === 'city' || spot.locationRegion.type === 'locality') {
+    // Extraer city del label cuando el tipo es city
+    if (spot.locationRegion.type === 'city') {
       city = spot.locationRegion.label;
     }
     

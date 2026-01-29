@@ -48,7 +48,8 @@ export type SpotMediaStatus = 'active' | 'soft_hidden';
 export interface SpotMediaPublicRecord {
   id: string;
   spot_id: string;
-  url: string;
+  storage_path: string;
+  url?: string;
   source?: string | null;
   license?: string | null;
   status: SpotMediaStatus;

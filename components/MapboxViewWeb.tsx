@@ -26,6 +26,7 @@ interface MapboxViewWebProps {
   onSpotPress: (spot: Spot) => void;
   onLongPress?: (location: { latitude: number; longitude: number }) => void;
   onClick?: (location: { latitude: number; longitude: number }) => void;
+  onUserInteraction?: () => void;
   initialRegion?: Region;
   showRoute?: boolean;
   flowSpots?: Spot[];
@@ -38,6 +39,7 @@ interface MapboxViewWebProps {
   flowSpotsOrder?: Spot[]; // Orden de spots en el flow para pines numerados
   disableNativeControls?: boolean; // Deshabilitar controles nativos si se usan controles custom
   onViewportChange?: (bounds: { north: number; south: number; east: number; west: number }) => void; // Callback cuando cambia el viewport
+  autoCenterOnUserLocation?: boolean;
 }
 
 export interface MapboxViewWebRef {
@@ -188,6 +190,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
   onSpotPress,
   onLongPress,
   onClick,
+  onUserInteraction,
   initialRegion,
   showRoute = false,
   flowSpots = [],
@@ -200,20 +203,28 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
   flowSpotsOrder = [],
   disableNativeControls = false,
   onViewportChange,
+  autoCenterOnUserLocation = true,
 }, ref) => {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { isSpotPinned, getPinState } = useSaved();
   const containerRef = useRef<any>(null);
   const mapInstanceRef = useRef<any>(null);
+  const pendingSpotIdRef = useRef<string | null>(null);
+  const pendingFlyToRef = useRef<{ coordinates: { latitude: number; longitude: number }; zoom: number } | null>(null);
   const markersRef = useRef<any[]>([]);
   const popupRef = useRef<any>(null);
   const userLocationMarkerRef = useRef<any>(null);
+  const onViewportChangeRef = useRef<MapboxViewWebProps['onViewportChange']>(onViewportChange);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentZoom, setCurrentZoom] = useState<number>(13);
 
   const region = initialRegion || calculateInitialRegion(spots, userLocation);
+
+  useEffect(() => {
+    onViewportChangeRef.current = onViewportChange;
+  }, [onViewportChange]);
   
   // V1.2: Helper para obtener color e icono del marker según estado del pin
   const getMarkerStyle = (spot: Spot) => {
@@ -258,7 +269,10 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       });
     },
     centerOnSpot: (spotId: string) => {
-      if (!mapInstanceRef.current) return;
+      if (!mapInstanceRef.current) {
+        pendingSpotIdRef.current = spotId;
+        return;
+      }
       const spot = spots.find(s => s.id === spotId);
       if (spot) {
         setCurrentZoom(15);
@@ -273,7 +287,10 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
       }
     },
     flyToCoordinates: (coordinates: { latitude: number; longitude: number }, zoom: number = 15) => {
-      if (!mapInstanceRef.current) return;
+      if (!mapInstanceRef.current) {
+        pendingFlyToRef.current = { coordinates, zoom };
+        return;
+      }
       setCurrentZoom(zoom);
       mapInstanceRef.current.flyTo({
         center: [coordinates.longitude, coordinates.latitude],
@@ -391,10 +408,10 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
 
           // Track viewport changes for lazy loading
           const updateViewport = () => {
-            if (!mounted || !onViewportChange) return;
+            if (!mounted || !onViewportChangeRef.current) return;
             try {
               const bounds = map.getBounds();
-              onViewportChange({
+              onViewportChangeRef.current({
                 north: bounds.getNorth(),
                 south: bounds.getSouth(),
                 east: bounds.getEast(),
@@ -414,6 +431,25 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
             setIsLoaded(true);
             mapInstanceRef.current = map;
             setCurrentZoom(map.getZoom());
+            const pendingSpotId = pendingSpotIdRef.current;
+            const pendingFlyTo = pendingFlyToRef.current;
+            if (pendingSpotId) {
+              pendingSpotIdRef.current = null;
+              const pendingSpot = spots.find((spot) => spot.id === pendingSpotId);
+              if (pendingSpot && mapInstanceRef.current) {
+                const loc = pendingSpot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number };
+                const lng = 'lng' in loc && loc.lng !== undefined ? loc.lng : (loc.longitude ?? 0);
+                const lat = 'lat' in loc && loc.lat !== undefined ? loc.lat : (loc.latitude ?? 0);
+                mapInstanceRef.current.jumpTo({ center: [lng, lat], zoom: 15 });
+              }
+            } else if (pendingFlyTo && mapInstanceRef.current) {
+              pendingFlyToRef.current = null;
+              mapInstanceRef.current.flyTo({
+                center: [pendingFlyTo.coordinates.longitude, pendingFlyTo.coordinates.latitude],
+                zoom: pendingFlyTo.zoom,
+                duration: 500,
+              });
+            }
 
             // Agregar marcadores
             markersRef.current = spots.map((spot) => {
@@ -570,6 +606,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
           let isClick = false;
           
           map.on('click', (e: any) => {
+            onUserInteraction?.();
             // Si hay onClick prop, usarla directamente (para LocationSelectorWeb)
             if (onClick) {
               onClick({
@@ -599,6 +636,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
           });
 
           map.on('mousedown', (e: any) => {
+            onUserInteraction?.();
             // Long press handler (para mobile o cuando se mantiene presionado)
             longPressTimer = setTimeout(() => {
               if (onLongPress) {
@@ -619,6 +657,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
           });
 
           map.on('dragstart', () => {
+            onUserInteraction?.();
             if (longPressTimer) {
               clearTimeout(longPressTimer);
               longPressTimer = null;
@@ -649,6 +688,7 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
     };
   }, []);
 
+
   // Actualizar marcadores cuando cambian los spots, highlightedSpotId o zoom
   useEffect(() => {
     if (!isLoaded || !mapInstanceRef.current) return;
@@ -669,7 +709,6 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
     
     const map = mapInstanceRef.current;
     const showLabel = currentZoom >= 14; // Mostrar nombres cuando zoom >= 14
-
     markersRef.current = spots.map((spot) => {
       const el = document.createElement('div');
       el.className = 'mapbox-marker';
@@ -745,18 +784,17 @@ const MapboxViewWebComponent = forwardRef<MapboxViewWebRef, MapboxViewWebProps>(
 
   // Actualizar mapa cuando cambia la ubicación del usuario (si el mapa ya está cargado)
   useEffect(() => {
+    if (!autoCenterOnUserLocation) return;
     if (!isLoaded || !mapInstanceRef.current || !userLocation) return;
-    
-    // Solo actualizar si no hay spots destacados (para no interrumpir la navegación)
     if (highlightedSpotId) return;
-    
+
     // Centrar en la ubicación del usuario con zoom razonable
     mapInstanceRef.current.flyTo({
       center: [userLocation.longitude, userLocation.latitude],
       zoom: 13,
       duration: 500,
     });
-  }, [isLoaded, userLocation, highlightedSpotId]);
+  }, [isLoaded, userLocation, highlightedSpotId, spots.length, autoCenterOnUserLocation]);
 
   if (error) {
     return (

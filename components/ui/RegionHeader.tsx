@@ -48,10 +48,12 @@ export function RegionHeader({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const lastOpenAtRef = useRef<number | null>(null);
   const translateY = useRef(new Animated.Value(visible ? 0 : -100)).current;
   const opacity = useRef(new Animated.Value(visible ? 1 : 0)).current;
   const dropdownOpacity = useRef(new Animated.Value(0)).current;
   const dropdownScale = useRef(new Animated.Value(0.95)).current;
+
   
   // Calcular altura máxima del dropdown (65% del viewport)
   const screenHeight = Dimensions.get('window').height;
@@ -121,15 +123,28 @@ export function RegionHeader({
   }, [isDropdownOpen, dropdownOpacity, dropdownScale]);
 
   const handleRegionPress = () => {
+    if (!isDropdownOpen) {
+      lastOpenAtRef.current = Date.now();
+    }
     setIsDropdownOpen(!isDropdownOpen);
   };
 
   const handleRegionSelect = (regionId: string | null) => {
+    const lastOpenAt = lastOpenAtRef.current;
+    if (lastOpenAt && Date.now() - lastOpenAt < 250) {
+      return;
+    }
+    lastOpenAtRef.current = null;
     onRegionSelect(regionId);
     setIsDropdownOpen(false);
   };
 
   const handleCurrentLocationSelect = () => {
+    const lastOpenAt = lastOpenAtRef.current;
+    if (lastOpenAt && Date.now() - lastOpenAt < 250) {
+      return;
+    }
+    lastOpenAtRef.current = null;
     onCurrentLocationSelect();
     setIsDropdownOpen(false);
   };

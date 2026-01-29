@@ -50,8 +50,10 @@ import { getFlowSpots } from '@/data/flows';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useBaseLocation } from '@/hooks/useBaseLocation';
 import { getSpotDistance } from '@/hooks/useSpotDistance';
+import { useEntityTranslations } from '@/hooks/useEntityTranslations';
 import { calculatePathDistance } from '@/utils/distance';
 import { mapMovementModeToNavigationMode, openNavigationApp } from '@/utils/navigationHelpers';
+import { resolveTranslatedField } from '@/utils/translationsService';
 
 export default function FlowDetailScreen() {
   const router = useRouter();
@@ -75,6 +77,19 @@ export default function FlowDetailScreen() {
 
   // Get flow from context
   const flow = id ? getFlowById(id) : null;
+  const { translations } = useEntityTranslations({ entityType: 'flow', entityId: flow?.id ?? null });
+  const translatedTitle = resolveTranslatedField({
+    translations,
+    field: 'title',
+    fallback: flow?.title || '',
+  });
+  const translatedDescription = resolveTranslatedField({
+    translations,
+    field: 'description',
+    fallback: flow?.description || '',
+  });
+  const hasTranslatedDescription =
+    typeof translatedDescription === 'string' && translatedDescription.trim().length > 0;
 
   // Calcular flowSpots usando useMemo para evitar recálculos
   const flowSpots = useMemo(() => {
@@ -220,11 +235,12 @@ export default function FlowDetailScreen() {
     if (!flow) return;
     try {
       const shareUrl = `flowya.app/flow-detail?id=${flow.id}`;
-      const shareMessage = `Mira "${flow.title}" en FLOWYA. ${shareUrl}`;
+      const shareTitle = translatedTitle || flow.title;
+      const shareMessage = `Mira "${shareTitle}" en FLOWYA. ${shareUrl}`;
       
       await Share.share({
         message: shareMessage,
-        title: flow.title,
+        title: shareTitle,
       });
     } catch (error) {
       console.error('Error sharing:', error);
@@ -506,7 +522,7 @@ export default function FlowDetailScreen() {
           <View style={styles.flowInfoContainer}>
             <View style={styles.flowHeader}>
               <Text style={[textStyles.heading, { color: colors.text }]}>
-                {flow.title}
+                {translatedTitle || flow.title}
               </Text>
             </View>
             {/* Campo de descripción: editable en modo edición */}
@@ -529,9 +545,9 @@ export default function FlowDetailScreen() {
                 textAlignVertical="top"
               />
             ) : (
-              flow.description && (
+              hasTranslatedDescription && (
                 <Text style={[textStyles.body, { color: colors.text, marginTop: spacing.sm }]}>
-                  {flow.description}
+                  {translatedDescription}
                 </Text>
               )
             )}

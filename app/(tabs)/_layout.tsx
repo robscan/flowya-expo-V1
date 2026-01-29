@@ -1,6 +1,7 @@
 import { useOverlay } from '@/contexts/OverlayContext';
 import { BlurView } from 'expo-blur';
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname, useSegments } from 'expo-router';
+import React, { useEffect, useRef } from 'react';
 import { Platform, StyleSheet, View, ViewStyle } from 'react-native';
 
 import { Icon } from '@/components/ui/Icon';
@@ -12,7 +13,31 @@ import { glassColors } from '@/utils/glassStyles';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  const { tabBarHeight: contextTabBarHeight, isTabBarLabelsVisible, isTabBarVisible } = useOverlay();
+  const { tabBarHeight: contextTabBarHeight, isTabBarLabelsVisible, isTabBarVisible, isTabBarLocked } = useOverlay();
+  const pathname = usePathname();
+  const segments = useSegments();
+  const previousPathRef = useRef<string | null>(null);
+  const lastMapFocusAtRef = useRef<number | null>(null);
+  const lastPointerDownRef = useRef<{ at: number; y: number; withinTabBar: boolean } | null>(null);
+
+  useEffect(() => {
+    const previousPath = previousPathRef.current;
+    previousPathRef.current = pathname;
+  }, [pathname, segments]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const windowHeight = window.innerHeight;
+      const tabBarHeight = contextTabBarHeight ?? 0;
+      const withinTabBar = event.clientY >= windowHeight - tabBarHeight;
+      lastPointerDownRef.current = { at: Date.now(), y: event.clientY, withinTabBar };
+    };
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+    };
+  }, [contextTabBarHeight]);
 
   // Tab bar background con efecto glass (BlurView en iOS/Android, transparencia en web)
   // Fondo gris sutil con blur
@@ -65,7 +90,7 @@ export default function TabLayout() {
     borderTopRightRadius: 0, // SIN bordes redondeados - Tab Bar plano
     elevation: 0, // SIN elevación - Tab Bar plano (Android)
     opacity: isTabBarVisible ? 1 : 0, // Opacity para transición suave
-    pointerEvents: isTabBarVisible ? 'auto' : 'none', // Deshabilitar interacción cuando está oculto
+    pointerEvents: isTabBarVisible && !isTabBarLocked ? 'auto' : 'none', // Deshabilitar interacción cuando está oculto o bloqueado
     overflow: 'hidden', // Asegurar que cuando height = 0, el contenido no se vea
   };
 
@@ -91,7 +116,36 @@ export default function TabLayout() {
             tabBarItemStyle: {
               gap: spacing.xs / 2, // 4px - Espacio adicional entre icono y label (valor mínimo necesario)
             },
-          }}>
+          }}
+          screenListeners={({ route }) => ({
+            tabPress: (e) => {
+              const now = Date.now();
+              const lastMapFocusAt = lastMapFocusAtRef.current;
+              const lastPointerDown = lastPointerDownRef.current;
+              const hasRecentTabBarPointer =
+                Platform.OS !== 'web'
+                  ? true
+                  : !!lastPointerDown &&
+                    lastPointerDown.withinTabBar &&
+                    now - lastPointerDown.at < 800;
+              const isRapidMapExit =
+                pathname === '/map' &&
+                route.name === 'home' &&
+                lastMapFocusAt !== null &&
+                now - lastMapFocusAt < 1000;
+              const isLockedExit = isTabBarLocked && pathname === '/map' && route.name !== 'map';
+              const isGhostExit = pathname === '/map' && route.name !== 'map' && !hasRecentTabBarPointer;
+              if (isRapidMapExit || isLockedExit || isGhostExit) {
+                e.preventDefault();
+                return;
+              }
+            },
+            focus: () => {
+              if (route.name === 'map') {
+                lastMapFocusAtRef.current = Date.now();
+              }
+            },
+          })}>
           <Tabs.Screen
             name="index"
             options={{

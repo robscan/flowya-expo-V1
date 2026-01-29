@@ -24,6 +24,8 @@ import { Colors } from '@/constants/theme';
 import { fontFamily, fontFamilyMedium, fontSize, lineHeight } from '@/constants/typography';
 import { Spot } from '@/data/spots';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useEntityTranslations } from '@/hooks/useEntityTranslations';
+import { resolveTranslatedField } from '@/utils/translationsService';
 
 interface FlowSpotCardProps {
   spot: Spot;
@@ -65,6 +67,20 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const [useMiles, setUseMiles] = useState(false);
+  const descriptionText = spot.shortDescription || spot.description || spot.whyItMatters;
+  const { translations } = useEntityTranslations({ entityType: 'spot', entityId: spot.id });
+  const nameText = resolveTranslatedField({
+    translations,
+    field: 'name',
+    fallback: spot.name || 'Spot sin nombre',
+  });
+  const descriptionTranslated = resolveTranslatedField({
+    translations,
+    field: 'shortDescription',
+    fallback: descriptionText || '',
+  });
+  const hasDescription =
+    typeof descriptionTranslated === 'string' && descriptionTranslated.trim().length > 0;
 
   const distanceText = formatDistance(distance, useMiles);
 
@@ -125,13 +141,18 @@ export function FlowSpotCard({ spot, index, onPress, distance, estimatedTime, is
           {/* Spot info */}
           <View style={styles.spotInfo}>
             <View style={styles.spotInfoHeader}>
-            <Text style={[styles.spotTitle, { color: colors.text }]} numberOfLines={1}>
-              {spot.name || 'Spot sin nombre'}
-            </Text>
+              <Text style={[styles.spotTitle, { color: colors.text }]} numberOfLines={1}>
+                {nameText}
+              </Text>
+              {spot.isAiGenerated && (
+                <View style={styles.aiBadge}>
+                  <Text style={styles.aiBadgeText}>IA</Text>
+                </View>
+              )}
             </View>
-            {spot.description && (
+            {hasDescription && (
               <Text style={[styles.spotDescription, { color: colors.icon }]} numberOfLines={1}>
-                {spot.description}
+                {descriptionTranslated}
               </Text>
             )}
           </View>
@@ -310,6 +331,17 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     lineHeight: lineHeight.base,
     fontWeight: '500',
+  },
+  aiBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'rgba(148, 97, 255, 0.15)',
+  },
+  aiBadgeText: {
+    fontFamily,
+    fontSize: fontSize.xs,
+    color: '#9461FF',
   },
   spotDescription: {
     fontFamily,

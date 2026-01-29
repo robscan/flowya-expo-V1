@@ -36,15 +36,18 @@ export async function migrateSpotRegion(spot: Spot, forceRemigration: boolean = 
   }
 
   // Si no tiene coordenadas, no migrar
-  if (!spot.location || !spot.location.latitude || !spot.location.longitude) {
+  const loc = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number } | undefined;
+  const latitude = loc?.lat ?? loc?.latitude;
+  const longitude = loc?.lng ?? loc?.longitude;
+  if (!loc || typeof latitude !== 'number' || typeof longitude !== 'number') {
     return spot;
   }
 
   try {
     // Resolver región canónica desde Mapbox usando RegionResolver
     const canonicalRegion = await resolveRegion(
-      spot.location.latitude,
-      spot.location.longitude
+      latitude,
+      longitude
     );
 
     if (canonicalRegion) {
@@ -71,7 +74,7 @@ export async function migrateSpotRegion(spot: Spot, forceRemigration: boolean = 
  * 
  * MIGRACIÓN FORZOSA (POST-CORRECCIÓN DE regionId):
  * - Recalcula locationRegion para TODOS los spots para unificar regionId duplicados
- * - Aplica nueva regla canónica de regionId (country_code.normalized_place_name)
+ * - Aplica nueva regla canónica de regionId (country_code.type.normalized_place_name)
  * - Garantiza que Barcelona siempre tenga el mismo regionId
  * 
  * Esta función:
@@ -91,12 +94,15 @@ export async function migrateSpotsRegions(spots: Spot[], forceRemigration: boole
   
   if (forceRemigration) {
     if (__DEV__) {
-      console.log('🔄 Force remigration: Recalculating all spots to unify duplicate regionIds...');
+      console.log('🔄 Force remigration: Recalculating all spots to unify duplicate regionIds (country.type.place)...');
     }
     // Recalcular TODOS los spots para unificar regionId duplicados
     spotsToMigrate = spots.filter((spot) => {
       // Solo migrar spots con coordenadas válidas
-      return spot.location && spot.location.latitude && spot.location.longitude;
+      const location = spot.location as { lat?: number; lng?: number; latitude?: number; longitude?: number } | undefined;
+      const lat = location?.lat ?? location?.latitude;
+      const lng = location?.lng ?? location?.longitude;
+      return typeof lat === 'number' && typeof lng === 'number';
     });
   } else {
     // Filtrar spots que necesitan migración:

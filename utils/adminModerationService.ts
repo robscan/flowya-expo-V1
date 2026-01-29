@@ -131,6 +131,22 @@ export async function createSpotAsAdmin(params: {
   return { data: { id: spotId } };
 }
 
+export async function deleteSpotAsAdmin(spotId: string): Promise<{ error?: string }> {
+  if (!supabase) {
+    return { error: 'Supabase not configured' };
+  }
+  const { error } = await supabase.from('spots').delete().eq('id', spotId);
+  if (error) {
+    return { error: error.message };
+  }
+  await logAdminAction({
+    action: 'delete_spot_admin',
+    entityType: 'spot',
+    entityId: spotId,
+  });
+  return {};
+}
+
 export async function fetchPendingContributions(): Promise<{
   data: SpotContributionRecord[];
   error?: string;

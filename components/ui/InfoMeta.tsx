@@ -107,7 +107,6 @@ export function InfoMeta({
     renderDistance(),
     renderRating(),
   ].filter(Boolean);
-
   if (items.length === 0) return null;
 
   return (

@@ -40,6 +40,7 @@ interface MapViewProps {
   onSpotPress: (spot: Spot) => void;
   onLongPress?: (location: { latitude: number; longitude: number }) => void;
   onClick?: (location: { latitude: number; longitude: number }) => void;
+  onUserInteraction?: () => void;
   initialRegion?: Region;
   // Props adicionales para FlowScreen
   showRoute?: boolean; // Mostrar ruta entre spots (Polyline) - solo móvil
@@ -53,6 +54,7 @@ interface MapViewProps {
   flowSpotsOrder?: Spot[]; // Orden de spots en el flow para pines numerados
   disableNativeControls?: boolean; // Deshabilitar controles nativos si se usan controles custom
   onViewportChange?: (bounds: { north: number; south: number; east: number; west: number }) => void; // Callback cuando cambia el viewport
+  autoCenterOnUserLocation?: boolean; // Controla auto-centro en ubicación del usuario (web)
 }
 
 export interface FlowyaMapViewRef {
@@ -121,6 +123,7 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
   onSpotPress,
   onLongPress,
   onClick,
+  onUserInteraction,
   initialRegion,
   showRoute = false,
   flowSpots = [],
@@ -133,6 +136,7 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
   flowSpotsOrder,
   disableNativeControls = false,
   onViewportChange,
+  autoCenterOnUserLocation = true,
 }, ref) => {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -237,6 +241,7 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
           onSpotPress={onSpotPress}
           onLongPress={onLongPress}
           onClick={onClick}
+          onUserInteraction={onUserInteraction}
           initialRegion={initialRegion || calculateInitialRegion(spots, userLocation)}
           showRoute={showRoute}
           flowSpots={flowSpots}
@@ -249,6 +254,7 @@ export const FlowyaMapView = forwardRef<FlowyaMapViewRef, MapViewProps>(({
           flowSpotsOrder={flowSpotsOrder}
           disableNativeControls={disableNativeControls}
           onViewportChange={onViewportChange}
+          autoCenterOnUserLocation={autoCenterOnUserLocation}
         />
       </View>
     );

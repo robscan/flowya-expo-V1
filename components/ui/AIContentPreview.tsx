@@ -54,6 +54,7 @@ export function AIContentPreview({
 }: AIContentPreviewProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const hasText = (value?: string) => typeof value === 'string' && value.trim().length > 0;
 
   if (!visible) return null;
 
@@ -71,7 +72,7 @@ export function AIContentPreview({
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* SCOPE 2: Mostrar spotDescription si existe */}
-          {content.spotDescription && (
+          {hasText(content.spotDescription) && (
             <View style={styles.section}>
               <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
                 Description
@@ -82,7 +83,7 @@ export function AIContentPreview({
             </View>
           )}
 
-          {content.whyItMatters && (
+          {hasText(content.whyItMatters) && (
             <View style={styles.section}>
               <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
                 Why it matters
@@ -94,7 +95,7 @@ export function AIContentPreview({
           )}
 
           {/* SCOPE 2: Mostrar planInfo si existe */}
-          {content.planInfo && (
+          {hasText(content.planInfo) && (
             <View style={styles.section}>
               <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
                 Plan Info
@@ -105,7 +106,7 @@ export function AIContentPreview({
             </View>
           )}
 
-          {content.culturalContext && (
+          {hasText(content.culturalContext) && (
             <View style={styles.section}>
               <Text style={[textStyles.label, { color: colors.text, marginBottom: spacing.xs }]}>
                 Cultural context

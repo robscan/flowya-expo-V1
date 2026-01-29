@@ -60,6 +60,7 @@ export function ImageSlider({
           height={height}
           showFallback={showFallback}
           resizeMode="cover"
+          priority="high"
         />
       </View>
     );
@@ -79,7 +80,7 @@ export function ImageSlider({
           const index = Math.round(event.nativeEvent.contentOffset.x / SCREEN_WIDTH);
           setCurrentIndex(index);
         }}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <View style={[styles.imageContainer, { width: SCREEN_WIDTH, height }]}>
             <OptimizedImage
               source={{ uri: item }}
@@ -87,6 +88,7 @@ export function ImageSlider({
               height={height}
               showFallback={showFallback}
               resizeMode="cover"
+              priority={index === 0 ? 'high' : 'normal'}
             />
           </View>
         )}

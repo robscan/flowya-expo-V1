@@ -103,6 +103,7 @@ export function ContentHeader({
               height={heroHeight || '100%'}
               showFallback={false}
               resizeMode="cover"
+              priority="high"
             />
             {showOverlay && <View style={styles.heroOverlay} />}
           </View>

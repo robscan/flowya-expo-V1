@@ -15,8 +15,11 @@ import {
   fetchAdminAuditLog,
   fetchContributionCountByStatus,
   fetchContributionTimings,
+  fetchRecentContributionsForUsers,
   fetchPendingContributions,
   fetchRecentReports,
+  fetchUserRole,
+  fetchUserRoles,
   fetchSpotById,
   fetchSpotVersionsForSpot,
   fetchContributionsBySpot,
@@ -28,7 +31,10 @@ import {
   rejectContribution,
   rollbackSpotToVersion,
   setMediaSoftHidden,
+  updateContributionPayload,
+  upsertUserRole,
 } from '@/utils/adminModerationService';
+import { fetchAiCoverageSessions } from '@/utils/aiCoverageService';
 import type {
   SpotContributionRecord,
   SpotMediaPublicRecord,
@@ -43,6 +49,16 @@ type SpotDiffItem = {
   before: string;
   after: string;
 };
+
+type UserContributionSummary = {
+  authorId: string;
+  pending: number;
+  applied: number;
+  rejected: number;
+  total: number;
+};
+
+type AdminRole = 'admin' | 'curator' | 'support' | 'analyst';
 
 const formatDiffValue = (value: unknown): string => {
   if (value === null || value === undefined) return '—';
@@ -112,6 +128,7 @@ export default function AdminScreen() {
   const [auditActionFilter, setAuditActionFilter] = useState<string>('all');
   const [softHiddenCount, setSoftHiddenCount] = useState(0);
   const [needsReviewCount, setNeedsReviewCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const [appliedCount, setAppliedCount] = useState(0);
   const [rejectedCount, setRejectedCount] = useState(0);
   const [avgApplyHours, setAvgApplyHours] = useState(0);
@@ -121,13 +138,38 @@ export default function AdminScreen() {
   const [rejectReason, setRejectReason] = useState('');
   const [pendingRejectId, setPendingRejectId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [userContributionSummary, setUserContributionSummary] = useState<UserContributionSummary[]>([]);
+  const [editContributionId, setEditContributionId] = useState<string | null>(null);
+  const [editContributionPayload, setEditContributionPayload] = useState<string>('');
+  const [editContributionError, setEditContributionError] = useState<string | null>(null);
+  const [adminRole, setAdminRole] = useState<AdminRole | null>(null);
+  const [isLoadingRole, setIsLoadingRole] = useState(false);
+  const [rolesList, setRolesList] = useState<Array<{ user_id: string; role: string; updated_at: string }>>([]);
+  const [roleUserIdInput, setRoleUserIdInput] = useState('');
+  const [selectedRole, setSelectedRole] = useState<AdminRole>('curator');
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const [aiCoverageSessions, setAiCoverageSessions] = useState<Array<{
+    id: string;
+    status: string;
+    source?: string | null;
+    reason?: string | null;
+    created_at: string;
+    generated_count?: number;
+    bbox?: {
+      north: number;
+      south: number;
+      east: number;
+      west: number;
+    };
+  }>>([]);
 
-  const canAccess = isAuthenticated && isAdminUser(user);
-
-  const pendingCount = useMemo(
-    () => contributions.filter((c) => c.status === 'pending').length,
-    [contributions]
-  );
+  const canAccess =
+    isAuthenticated && (isAdminUser(user) || adminRole === 'admin' || adminRole === 'curator' || adminRole === 'support' || adminRole === 'analyst');
+  const canModerateContributions = isAdminUser(user) || adminRole === 'admin' || adminRole === 'curator';
+  const canModerateReports = isAdminUser(user) || adminRole === 'admin' || adminRole === 'curator' || adminRole === 'support';
+  const canEditPayload = isAdminUser(user) || adminRole === 'admin' || adminRole === 'curator';
+  const canRollback = isAdminUser(user) || adminRole === 'admin';
+  const canManageRoles = isAdminUser(user) || adminRole === 'admin';
 
   const refreshData = async () => {
     if (!canAccess) return;
@@ -139,18 +181,26 @@ export default function AdminScreen() {
       auditResult,
       softHiddenResult,
       needsReviewResult,
+      pendingResult,
       appliedResult,
       rejectedResult,
       timingsResult,
+      usersResult,
+      rolesResult,
+      aiCoverageResult,
     ] = await Promise.all([
       fetchPendingContributions(),
       fetchRecentReports(),
       fetchAdminAuditLog(),
       fetchSoftHiddenMediaCount(),
       fetchNeedsReviewCount(),
+      fetchContributionCountByStatus('pending'),
       fetchContributionCountByStatus('applied'),
       fetchContributionCountByStatus('rejected'),
       fetchContributionTimings(),
+      fetchRecentContributionsForUsers(),
+      fetchUserRoles(),
+      fetchAiCoverageSessions({ limit: 20 }),
     ]);
 
     if (contribResult.error) {
@@ -168,6 +218,9 @@ export default function AdminScreen() {
     if (needsReviewResult.error) {
       setErrorMessage(needsReviewResult.error);
     }
+    if (pendingResult.error) {
+      setErrorMessage(pendingResult.error);
+    }
     if (appliedResult.error) {
       setErrorMessage(appliedResult.error);
     }
@@ -177,12 +230,22 @@ export default function AdminScreen() {
     if (timingsResult.error) {
       setErrorMessage(timingsResult.error);
     }
+    if (usersResult.error) {
+      setErrorMessage(usersResult.error);
+    }
+    if (rolesResult.error) {
+      setErrorMessage(rolesResult.error);
+    }
+    if (aiCoverageResult.error) {
+      setErrorMessage(aiCoverageResult.error);
+    }
 
     setContributions(contribResult.data);
     setReports(reportsResult.data);
     setAuditLog(auditResult.data);
     setSoftHiddenCount(softHiddenResult.count);
     setNeedsReviewCount(needsReviewResult.count);
+    setPendingCount(pendingResult.count);
     setAppliedCount(appliedResult.count);
     setRejectedCount(rejectedResult.count);
     if (!timingsResult.error) {
@@ -196,6 +259,35 @@ export default function AdminScreen() {
       const rejectedAvg = rejected.length > 0 ? rejected.reduce((a, b) => a + b, 0) / rejected.length : 0;
       setAvgApplyHours(appliedAvg);
       setAvgRejectHours(rejectedAvg);
+    }
+    if (!usersResult.error) {
+      const summaryMap = new Map<string, UserContributionSummary>();
+      usersResult.data.forEach((entry) => {
+        const authorId = entry.author_id || 'unknown';
+        const existing = summaryMap.get(authorId) || {
+          authorId,
+          pending: 0,
+          applied: 0,
+          rejected: 0,
+          total: 0,
+        };
+        existing.total += 1;
+        if (entry.status === 'pending') existing.pending += 1;
+        if (entry.status === 'applied') existing.applied += 1;
+        if (entry.status === 'rejected') existing.rejected += 1;
+        summaryMap.set(authorId, existing);
+      });
+      const sorted = Array.from(summaryMap.values()).sort((a, b) => {
+        if (b.pending !== a.pending) return b.pending - a.pending;
+        return b.total - a.total;
+      });
+      setUserContributionSummary(sorted.slice(0, 10));
+    }
+    if (!rolesResult.error) {
+      setRolesList(rolesResult.data);
+    }
+    if (!aiCoverageResult.error) {
+      setAiCoverageSessions(aiCoverageResult.data);
     }
     setIsRefreshing(false);
   };
@@ -238,7 +330,26 @@ export default function AdminScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canAccess]);
 
-  if (isLoading) {
+  useEffect(() => {
+    const loadRole = async () => {
+      if (!isAuthenticated || !user?.id) {
+        setAdminRole(null);
+        return;
+      }
+      setIsLoadingRole(true);
+      const result = await fetchUserRole(user.id);
+      if (result.error) {
+        setAdminRole(null);
+        setIsLoadingRole(false);
+        return;
+      }
+      setAdminRole((result.role as AdminRole) || null);
+      setIsLoadingRole(false);
+    };
+    loadRole();
+  }, [isAuthenticated, user?.id]);
+
+  if (isLoading || isLoadingRole) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <Text style={[textStyles.body, { color: colors.icon }]}>Cargando…</Text>
@@ -250,9 +361,7 @@ export default function AdminScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <Text style={[textStyles.heading3, { color: colors.text }]}>Admin Panel</Text>
-        <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm }]}>
-          Acceso restringido.
-        </Text>
+        <Text style={[textStyles.body, { color: colors.icon, marginTop: spacing.sm }]}>Acceso restringido.</Text>
       </View>
     );
   }
@@ -264,6 +373,7 @@ export default function AdminScreen() {
       return;
     }
     setAppliedCount((prev) => prev + 1);
+    setPendingCount((prev) => Math.max(0, prev - 1));
     setContributions((prev) => prev.filter((c) => c.id !== contributionId));
   };
 
@@ -275,6 +385,7 @@ export default function AdminScreen() {
     }
     setContributions((prev) => prev.filter((c) => c.id !== contributionId));
     setRejectedCount((prev) => prev + 1);
+    setPendingCount((prev) => Math.max(0, prev - 1));
     return true;
   };
 
@@ -299,6 +410,57 @@ export default function AdminScreen() {
     setPendingRejectId(contributionId);
     setRejectReason('');
     setRejectModalVisible(true);
+  };
+
+  const handleEditContribution = (contribution: SpotContributionRecord) => {
+    setEditContributionId(contribution.id);
+    setEditContributionPayload(JSON.stringify(contribution.payload || {}, null, 2));
+    setEditContributionError(null);
+  };
+
+  const handleSaveContributionEdit = async () => {
+    if (!editContributionId) return;
+    try {
+      const parsed = JSON.parse(editContributionPayload || '{}');
+      const result = await updateContributionPayload({
+        contributionId: editContributionId,
+        payload: parsed,
+      });
+      if (result.error) {
+        setEditContributionError(result.error);
+        return;
+      }
+      setContributions((prev) =>
+        prev.map((item) => (item.id === editContributionId ? { ...item, payload: parsed } : item))
+      );
+      setEditContributionId(null);
+      setEditContributionPayload('');
+      setEditContributionError(null);
+      Alert.alert('OK', 'Payload actualizado.');
+    } catch (error) {
+      setEditContributionError('Payload JSON invalido.');
+    }
+  };
+
+  const handleAssignRole = async () => {
+    if (!canManageRoles) {
+      setRoleError('No tienes permisos para asignar roles.');
+      return;
+    }
+    const trimmedUserId = roleUserIdInput.trim();
+    if (!trimmedUserId) {
+      setRoleError('User ID requerido.');
+      return;
+    }
+    const result = await upsertUserRole({ userId: trimmedUserId, role: selectedRole });
+    if (result.error) {
+      setRoleError(result.error);
+      return;
+    }
+    setRoleError(null);
+    setRoleUserIdInput('');
+    refreshData();
+    Alert.alert('OK', 'Rol actualizado.');
   };
 
   const handleSoftHideMedia = async (mediaId: string) => {
@@ -414,6 +576,43 @@ export default function AdminScreen() {
           </View>
         </View>
       </Modal>
+      <Modal animationType="fade" transparent visible={!!editContributionId} onRequestClose={() => setEditContributionId(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.background }]}>
+            <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Editar payload</Text>
+            <Text style={[textStyles.caption, { color: colors.icon, marginTop: spacing.xs }]}>
+              Ajusta el payload antes de aplicar.
+            </Text>
+            <TextInput
+              style={[styles.modalInput, { color: colors.text, borderColor: colors.icon }]}
+              value={editContributionPayload}
+              onChangeText={setEditContributionPayload}
+              placeholder="{ }"
+              placeholderTextColor={colors.icon}
+              multiline
+            />
+            {editContributionError && (
+              <Text style={[textStyles.caption, { color: colors.error || '#FF3B30', marginTop: spacing.xs }]}>
+                {editContributionError}
+              </Text>
+            )}
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: colors.icon + '30' }]}
+                onPress={() => setEditContributionId(null)}>
+                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cancelar</Text>
+              </TouchableOpacity>
+              {canEditPayload && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.tint }]}
+                  onPress={handleSaveContributionEdit}>
+                  <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Guardar</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
       <View style={styles.header}>
         <Text style={[textStyles.heading3, { color: colors.text }]}>Admin Panel</Text>
         <TouchableOpacity
@@ -474,6 +673,116 @@ export default function AdminScreen() {
         </GlassView>
       </View>
 
+      <SectionHeader title="Usuarios" variant="large" />
+      {userContributionSummary.length === 0 ? (
+        <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
+          No hay actividad de usuarios reciente.
+        </Text>
+      ) : (
+        userContributionSummary.map((entry) => (
+          <GlassView key={entry.authorId} style={styles.card} intensity="light" opacity="medium">
+            <Text style={[textStyles.bodyMedium, { color: colors.text }]}>
+              {entry.authorId}
+            </Text>
+            <Text style={[textStyles.caption, { color: colors.icon }]}>
+              Pendientes: {entry.pending} · Aplicadas: {entry.applied} · Rechazadas: {entry.rejected}
+            </Text>
+            <Text style={[textStyles.caption, { color: colors.icon }]}>Total: {entry.total}</Text>
+          </GlassView>
+        ))
+      )}
+
+      <SectionHeader title="IA Coverage" variant="large" />
+      {aiCoverageSessions.length === 0 ? (
+        <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
+          No hay items de IA Coverage en V1.
+        </Text>
+      ) : (
+        aiCoverageSessions.map((session) => (
+          <GlassView key={session.id} style={styles.card} intensity="light" opacity="medium">
+            <Text style={[textStyles.bodyMedium, { color: colors.text }]}>
+              {session.status.toUpperCase()}
+            </Text>
+            <Text style={[textStyles.caption, { color: colors.icon }]}>
+              {session.source || 'source: n/a'} · {new Date(session.created_at).toLocaleString()}
+            </Text>
+            {session.bbox ? (
+              <Text style={[textStyles.caption, { color: colors.icon }]}>
+                bbox: {session.bbox.west.toFixed(3)},{session.bbox.south.toFixed(3)} · {session.bbox.east.toFixed(3)},{session.bbox.north.toFixed(3)}
+              </Text>
+            ) : null}
+            {typeof session.generated_count === 'number' ? (
+              <Text style={[textStyles.caption, { color: colors.icon }]}>
+                generados: {session.generated_count}
+              </Text>
+            ) : null}
+            {session.reason ? (
+              <Text style={[textStyles.caption, { color: colors.icon }]}>
+                {session.reason}
+              </Text>
+            ) : null}
+          </GlassView>
+        ))
+      )}
+
+      <SectionHeader title="Roles" variant="large" />
+      {!canManageRoles && (
+        <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
+          Solo Admin puede asignar roles.
+        </Text>
+      )}
+      {canManageRoles && (
+        <GlassView style={styles.card} intensity="light" opacity="medium">
+          <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Asignar rol</Text>
+          <TextInput
+            style={[styles.modalInput, { color: colors.text, borderColor: colors.icon }]}
+            value={roleUserIdInput}
+            onChangeText={setRoleUserIdInput}
+            placeholder="User ID (UUID)"
+            placeholderTextColor={colors.icon}
+          />
+          <View style={styles.actionsRow}>
+            {(['admin', 'curator', 'support', 'analyst'] as AdminRole[]).map((role) => (
+              <TouchableOpacity
+                key={role}
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: selectedRole === role ? colors.tint : colors.icon + '20' },
+                ]}
+                onPress={() => setSelectedRole(role)}>
+                <Text style={[textStyles.caption, { color: selectedRole === role ? '#fff' : colors.text }]}>
+                  {role}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {roleError && (
+            <Text style={[textStyles.caption, { color: colors.error || '#FF3B30', marginTop: spacing.xs }]}>
+              {roleError}
+            </Text>
+          )}
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: colors.tint, marginTop: spacing.sm }]}
+            onPress={handleAssignRole}>
+            <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Guardar rol</Text>
+          </TouchableOpacity>
+        </GlassView>
+      )}
+      {rolesList.length === 0 ? (
+        <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
+          Sin roles asignados.
+        </Text>
+      ) : (
+        rolesList.map((role) => (
+          <GlassView key={`${role.user_id}-${role.role}`} style={styles.card} intensity="light" opacity="medium">
+            <Text style={[textStyles.bodyMedium, { color: colors.text }]}>{role.user_id}</Text>
+            <Text style={[textStyles.caption, { color: colors.icon }]}>
+              Rol: {role.role} · Actualizado: {new Date(role.updated_at).toLocaleString()}
+            </Text>
+          </GlassView>
+        ))
+      )}
+
       <SectionHeader title="Contributions pendientes" variant="large" />
       {contributions.length === 0 ? (
         <Text style={[textStyles.body, { color: colors.icon, marginBottom: spacing.lg }]}>
@@ -489,16 +798,27 @@ export default function AdminScreen() {
               {new Date(contribution.created_at).toLocaleString()}
             </Text>
             <View style={styles.actionsRow}>
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: colors.tint }]}
-                onPress={() => handleApply(contribution.id)}>
-                <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Aplicar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: colors.error || '#FF3B30' }]}
-                onPress={() => handleReject(contribution.id)}>
-                <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Rechazar</Text>
-              </TouchableOpacity>
+              {canModerateContributions && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.tint }]}
+                  onPress={() => handleApply(contribution.id)}>
+                  <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Aplicar</Text>
+                </TouchableOpacity>
+              )}
+              {canModerateContributions && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.error || '#FF3B30' }]}
+                  onPress={() => handleReject(contribution.id)}>
+                  <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Rechazar</Text>
+                </TouchableOpacity>
+              )}
+              {canEditPayload && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.icon + '20' }]}
+                  onPress={() => handleEditContribution(contribution)}>
+                  <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Editar</Text>
+                </TouchableOpacity>
+              )}
               {contribution.spot_id ? (
                 <TouchableOpacity
                   style={[styles.actionButton, { backgroundColor: colors.icon + '30' }]}
@@ -547,11 +867,13 @@ export default function AdminScreen() {
                             onPress={() => setExpandedVersionId((prev) => (prev === version.id ? null : version.id))}>
                             <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Cambios</Text>
                           </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.actionButton, { backgroundColor: colors.icon + '20' }]}
-                            onPress={() => handleRollback(contribution.spot_id as string, version.id)}>
-                            <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Rollback</Text>
-                          </TouchableOpacity>
+                          {canRollback && (
+                            <TouchableOpacity
+                              style={[styles.actionButton, { backgroundColor: colors.icon + '20' }]}
+                              onPress={() => handleRollback(contribution.spot_id as string, version.id)}>
+                              <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Rollback</Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
                       </View>
                       {isExpanded && (
@@ -604,18 +926,20 @@ export default function AdminScreen() {
               {new Date(report.created_at).toLocaleString()}
             </Text>
             <View style={styles.actionsRow}>
-              {report.media_id ? (
+              {report.media_id && canModerateReports ? (
                 <TouchableOpacity
                   style={[styles.actionButton, { backgroundColor: colors.tint }]}
                   onPress={() => handleSoftHideMedia(report.media_id as string)}>
                   <Text style={[textStyles.bodyMedium, { color: '#fff' }]}>Soft hide</Text>
                 </TouchableOpacity>
               ) : null}
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: colors.icon + '50' }]}
-                onPress={() => handleNeedsReview(report.spot_id)}>
-                <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Needs review</Text>
-              </TouchableOpacity>
+              {canModerateReports && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.icon + '50' }]}
+                  onPress={() => handleNeedsReview(report.spot_id)}>
+                  <Text style={[textStyles.bodyMedium, { color: colors.text }]}>Needs review</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={[styles.actionButton, { backgroundColor: colors.icon + '20' }]}
                 onPress={() => loadSpotDetails(report.spot_id)}>
